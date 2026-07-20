@@ -45,6 +45,13 @@ describe('scoreAnswer', () => {
     expect(r.base).toBe(1000)
   })
 
+  it('clamps a corrupt negative prior streak to 0 (no negative bonus)', () => {
+    const r = scoreAnswer({ correct: true, responseMs: 0, timeLimitMs: T, priorStreak: -5 })
+    expect(r.newStreak).toBe(1)
+    expect(r.streakBonus).toBe(50)
+    expect(r.points).toBe(1050)
+  })
+
   it('guards against a non-positive time limit (no NaN)', () => {
     const r = scoreAnswer({ correct: true, responseMs: 100, timeLimitMs: 0, priorStreak: 0 })
     expect(r.base).toBe(1000)

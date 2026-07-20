@@ -28,7 +28,7 @@ Three things at once that nothing else combines:
 
 - **Two ways in** — host a live class, or join one with a room code + nickname (no signup to play).
 - **AI generation** — topic prompt or lecture PDF → a full, editable deck.
-- **Live at scale** — built and load-tested for 100+ concurrent students per room.
+- **Built for scale** — designed for 100+ concurrent students per room.
 - **Real-time everything** — synced questions, live-animating charts, a live leaderboard.
 - **Slide types** — MCQ quiz (scored, with leaderboard), poll, word cloud (more to come).
 
@@ -39,8 +39,14 @@ Claude API · Vercel.
 
 ## Development
 
-Setup instructions land as the app is scaffolded. See the milestone roadmap once the
-project is initialized.
+```bash
+npm install
+cp .env.example .env.local   # then fill in your Supabase project values
+npm run dev                  # http://localhost:3000
+```
+
+Needs a Supabase project (Postgres + Realtime). Scripts: `dev`, `build`, `lint`,
+`typecheck`, `test`, plus `db:generate` / `db:migrate` for schema changes.
 
 ## License
 

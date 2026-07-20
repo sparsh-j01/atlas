@@ -1,32 +1,21 @@
-// Centralized env access.
+// Centralized env access (client-safe half).
 // - Public vars (NEXT_PUBLIC_*) are read as literals so Next can inline them into
-//   client bundles; safe to import anywhere.
-// - Server-only secrets are validated lazily (getter throws on use, not at import),
-//   so a missing var fails loudly at the call site instead of silently at build.
-// ponytail: hand-rolled guard, not zod — three lines, and there's no other
+//   client bundles; safe to import anywhere — browser, server, and plain Node
+//   (drizzle-kit imports `required` from here).
+// - Server-only secrets live in ./env.server behind `import 'server-only'`, so this
+//   file itself never poisons a client bundle. `required` is shared by both.
+// ponytail: hand-rolled guard, not zod — a few lines, and there's no other
 // schema-validation need yet. Reach for zod only if env grows.
 
-function required(name: string): string {
+export function required(name: string): string {
   const value = process.env[name]
   if (!value) throw new Error(`Missing required env var: ${name}`)
   return value
 }
 
-// Public — safe in the browser.
+// Public — safe in the browser. Literal form (not a getter) so Next statically
+// inlines them client-side. Empty-string fallback keeps import + `next build`
+// safe when unset (CI builds without secrets); a missing value surfaces at the
+// Supabase client call, not here.
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-
-// Server-only. These getters just turn a missing var into an obvious error; the
-// values are never in the client bundle regardless (non-NEXT_PUBLIC vars are undefined
-// client-side).
-export const serverEnv = {
-  get serviceRoleKey() {
-    return required('SUPABASE_SERVICE_ROLE_KEY')
-  },
-  get databaseUrl() {
-    return required('DATABASE_URL')
-  },
-  get directUrl() {
-    return required('DIRECT_URL')
-  },
-}

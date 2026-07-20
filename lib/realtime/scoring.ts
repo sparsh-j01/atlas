@@ -31,8 +31,11 @@ export function scoreAnswer(
   params: { correct: boolean; responseMs: number; timeLimitMs: number; priorStreak: number },
   config = SCORING,
 ): ScoreResult {
-  const { correct, responseMs, timeLimitMs, priorStreak } = params
+  const { correct, responseMs, timeLimitMs } = params
   if (!correct) return { points: 0, base: 0, streakBonus: 0, newStreak: 0 }
+
+  // Corrupt/negative prior streak (bad persisted data) must not yield a negative bonus.
+  const priorStreak = Math.max(0, params.priorStreak)
 
   const { BASE, SPEED_FACTOR, STREAK_STEP, STREAK_CAP_STEPS } = config
   const ratio = timeLimitMs > 0 ? clamp(responseMs / timeLimitMs, 0, 1) : 0
