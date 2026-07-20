@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm install  # not npm ci: esbuild optional platform deps trip npm ci EBADPLATFORM
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
