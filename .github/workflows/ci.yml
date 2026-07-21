@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this job only checks out and builds — it needs read, nothing more.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install  # not npm ci: esbuild optional platform deps trip npm ci EBADPLATFORM
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test

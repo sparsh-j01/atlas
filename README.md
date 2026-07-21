@@ -1,21 +1,34 @@
-# Live Interactive Quiz Platform
+# Live Classroom Quiz Platform
 
-An AI-powered live audience-interaction platform. A presenter builds an interactive
-deck — quiz questions, polls, word clouds — and up to 100+ participants join from
-their phones with a room code and respond in real time, with results and a
-leaderboard animating live on the big screen.
+A live, in-class quiz game where the questions come from **your own material**.
+Upload a lecture PDF or describe a topic, and AI builds a complete, editable deck —
+quiz questions, polls, word clouds. Then run it live: students join from their
+phones with a room code, answer in real time, and watch results and a competitive
+leaderboard animate on the big screen.
 
-What makes it different: **AI builds the whole deck for you**. Describe a topic or
-upload a PDF, and it generates a complete, editable interactive deck grounded in
-that material.
+Think Mentimeter's live visuals + Kahoot's competition, with an AI front door that
+builds the whole assessment from your lecture material.
 
 > Status: early development. Working name TBD.
 
+## What makes it different
+
+Three things at once that nothing else combines:
+
+- **Live, not a form.** 100+ students on the same question at the same instant — a
+  synchronized room with a shared timer and a real-time leaderboard, not async
+  submissions you grade later.
+- **Grounded in your material.** Not generic internet questions — the deck is
+  generated from the exact PDF or topic you give it, and you review and edit every
+  question before it goes live.
+- **Competitive and visual.** Speed-based scoring, an animated leaderboard, and live
+  polls and word clouds that grow on screen as students respond.
+
 ## Highlights
 
-- **Two ways in** — host a room, or join one with a code + nickname (no signup to play).
-- **AI generation** — topic prompt or PDF upload → a full interactive deck.
-- **Live at scale** — built for 100+ concurrent participants per room.
+- **Two ways in** — host a live class, or join one with a room code + nickname (no signup to play).
+- **AI generation** — topic prompt or lecture PDF → a full, editable deck.
+- **Built for scale** — designed for 100+ concurrent students per room.
 - **Real-time everything** — synced questions, live-animating charts, a live leaderboard.
 - **Slide types** — MCQ quiz (scored, with leaderboard), poll, word cloud (more to come).
 
@@ -26,8 +39,14 @@ Claude API · Vercel.
 
 ## Development
 
-Setup instructions land as the app is scaffolded. See the milestone roadmap once
-the project is initialized.
+```bash
+npm install
+cp .env.example .env.local   # then fill in your Supabase project values
+npm run dev                  # http://localhost:3000
+```
+
+Needs a Supabase project (Postgres + Realtime). Scripts: `dev`, `build`, `lint`,
+`typecheck`, `test`, plus `db:generate` / `db:migrate` for schema changes.
 
 ## License
 
