@@ -25,9 +25,19 @@ export interface AggregateWordCloud {
 export type Aggregate = AggregateMcq | AggregateWordCloud
 
 // --- Payloads ---
+// Client-safe slide shape — the answer key (is_correct) is stripped server-side before
+// this ever leaves the server. This is all a client is allowed to see before reveal.
+export interface SanitizedSlide {
+  id: string
+  type: string
+  prompt: string
+  options: { id: string; text: string }[]
+  points: number
+}
+
 export interface SlideShowPayload {
   index: number
-  slide: unknown // sanitized slide (no is_correct); tightened when slide types land (M2/M3)
+  slide: SanitizedSlide
   serverStartedAt: string // ISO timestamp
   timeLimitMs: number
 }
@@ -63,7 +73,7 @@ export interface LeaderboardUpdatePayload {
 }
 
 export interface SessionStatePayload {
-  status: 'lobby' | 'active' | 'ended'
+  status: 'lobby' | 'active' | 'revealed' | 'ended'
 }
 
 export interface SessionEndedPayload {
