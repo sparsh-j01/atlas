@@ -33,10 +33,22 @@ export function SlideCard({
 
   function save() {
     startTransition(async () => {
-      const res = await saveSlideAction(deckId, slide.id, m)
-      setServerErrors(res.errors)
-      setSaved(res.errors.length === 0)
+      try {
+        const res = await saveSlideAction(deckId, slide.id, m)
+        setServerErrors(res.errors)
+        setSaved(res.errors.length === 0)
+      } catch {
+        setServerErrors(['Save failed — please retry.'])
+        setSaved(false)
+      }
     })
+  }
+
+  // Guard the numeric fields: skip non-finite parses so a bad value never round-trips
+  // into the controlled input as "NaN".
+  function patchNumber(patchFor: (n: number) => Partial<EditableMcq>, raw: string) {
+    const n = Number(raw)
+    if (Number.isFinite(n)) patch(patchFor(n))
   }
 
   return (
@@ -99,7 +111,7 @@ export function SlideCard({
             max={300}
             className={`${input} w-20`}
             value={Math.round(m.timeLimitMs / 1000)}
-            onChange={(e) => patch({ timeLimitMs: Number(e.target.value) * 1000 })}
+            onChange={(e) => patchNumber((n) => ({ timeLimitMs: n * 1000 }), e.target.value)}
           />
         </label>
         <label className="flex items-center gap-2">
@@ -111,7 +123,7 @@ export function SlideCard({
             step={100}
             className={`${input} w-24`}
             value={m.points}
-            onChange={(e) => patch({ points: Number(e.target.value) })}
+            onChange={(e) => patchNumber((n) => ({ points: n }), e.target.value)}
           />
         </label>
       </div>

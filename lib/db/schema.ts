@@ -29,19 +29,25 @@ export const profiles = pgTable('profiles', {
 // SQL (Drizzle can't express policies/triggers). App access is Drizzle scoped by
 // owner_id (see lib/decks.ts); the policies are defense-in-depth on the anon-key path.
 
-export const decks = pgTable('decks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  ownerId: uuid('owner_id')
-    .notNull()
-    .references(() => profiles.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
-  description: text('description'),
-  status: text('status').notNull().default('draft'), // draft | ready
-  sourceType: text('source_type').notNull().default('manual'), // manual | topic | pdf
-  sourceRef: text('source_ref'), // topic string or Storage path (AI paths land in M6/M7)
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}).enableRLS()
+export const decks = pgTable(
+  'decks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description'),
+    status: text('status').notNull().default('draft'), // draft | ready
+    sourceType: text('source_type').notNull().default('manual'), // manual | topic | pdf
+    sourceRef: text('source_ref'), // topic string or Storage path (AI paths land in M6/M7)
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  // Every deck query filters by owner_id (see lib/decks.ts) and it's the profile-delete
+  // cascade target — index it.
+  (t) => [index('decks_owner_id_idx').on(t.ownerId)],
+).enableRLS()
 
 export const slides = pgTable(
   'slides',

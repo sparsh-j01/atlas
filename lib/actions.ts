@@ -39,6 +39,7 @@ export async function addSlideAction(deckId: string) {
   const stored = toStored(blankMcq()) // blank MCQ template — filled in, then saved (validated)
   await data.addSlide(deckId, user.id, { type: 'quiz_mcq', prompt: stored.prompt, config: stored.config })
   revalidatePath(editPath(deckId))
+  revalidatePath('/dashboard') // slide count is rendered on the dashboard
 }
 
 export async function saveSlideAction(
@@ -58,6 +59,7 @@ export async function deleteSlideAction(deckId: string, slideId: string) {
   const user = await requireUser()
   await data.deleteSlide(deckId, slideId, user.id)
   revalidatePath(editPath(deckId))
+  revalidatePath('/dashboard') // slide count is rendered on the dashboard
 }
 
 export async function reorderSlidesAction(deckId: string, orderedIds: string[]) {

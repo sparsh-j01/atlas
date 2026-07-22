@@ -15,10 +15,13 @@ export async function updateSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll()
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value)
         response = NextResponse.next({ request })
         for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, options)
+        // On token refresh Supabase sends no-store/private cache headers — forward them so a
+        // CDN can't cache this authenticated response and serve one user's session to another.
+        for (const [key, value] of Object.entries(headers)) response.headers.set(key, value)
       },
     },
   })

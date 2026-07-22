@@ -85,14 +85,20 @@ export async function addSlide(
   slide: { type: string; prompt: string; config: McqConfig },
 ) {
   await assertOwnedDeck(deckId, ownerId)
-  const [{ next }] = await db
-    .select({ next: sql<number>`coalesce(max(${slides.position}) + 1, 0)` })
-    .from(slides)
-    .where(eq(slides.deckId, deckId))
-  const [row] = await db
-    .insert(slides)
-    .values({ deckId, position: next, type: slide.type, prompt: slide.prompt, config: slide.config })
-    .returning()
+  // Lock the deck row so concurrent addSlide calls for the same deck serialize — otherwise
+  // both read the same max(position) and the second insert trips the unique(deck_id, position).
+  const row = await db.transaction(async (tx) => {
+    await tx.execute(sql`select 1 from ${decks} where ${decks.id} = ${deckId} for update`)
+    const [{ next }] = await tx
+      .select({ next: sql<number>`coalesce(max(${slides.position}) + 1, 0)` })
+      .from(slides)
+      .where(eq(slides.deckId, deckId))
+    const [inserted] = await tx
+      .insert(slides)
+      .values({ deckId, position: next, type: slide.type, prompt: slide.prompt, config: slide.config })
+      .returning()
+    return inserted
+  })
   await touchDeck(deckId, ownerId)
   return row
 }
@@ -124,8 +130,15 @@ export async function reorderSlides(deckId: string, ownerId: string, orderedIds:
   await db.transaction(async (tx) => {
     const current = await tx.select({ id: slides.id }).from(slides).where(eq(slides.deckId, deckId))
     const currentSet = new Set(current.map((s) => s.id))
-    // Must be an exact permutation of this deck's slides — reject missing/extra/foreign ids.
-    if (orderedIds.length !== currentSet.size || !orderedIds.every((id) => currentSet.has(id))) {
+    // Must be an exact permutation of this deck's slides — reject missing/extra/foreign/duplicate
+    // ids. Checking orderedSet.size guards against duplicates masking an omitted id (e.g.
+    // [a,a,b] vs {a,b,c} would otherwise pass the length+membership test and corrupt order).
+    const orderedSet = new Set(orderedIds)
+    if (
+      orderedSet.size !== orderedIds.length ||
+      orderedSet.size !== currentSet.size ||
+      !orderedIds.every((id) => currentSet.has(id))
+    ) {
       throw new Error('reorder set mismatch')
     }
     for (let i = 0; i < orderedIds.length; i++) {

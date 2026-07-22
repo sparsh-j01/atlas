@@ -23,6 +23,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
   const [description, setDescription] = useState(deck.description ?? '')
   const [status, setStatus] = useState(deck.status)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
   // Server positions are the source of truth (each reorder persists + revalidates);
@@ -36,16 +37,36 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
   const liRefs = useRef<Record<string, HTMLLIElement | null>>({})
   const dragId = useRef<string | null>(null)
 
+  // Fire-and-forget server actions surface failures here instead of vanishing as
+  // unhandled rejections — the optimistic UI would otherwise silently revert.
+  function run(p: Promise<unknown>, msg: string) {
+    p.then(() => setActionError(null)).catch(() => setActionError(msg))
+  }
+
+  function persistOrder(next: string[]) {
+    startTransition(() => {
+      reorderOptimistic(next)
+      run(reorderSlidesAction(deck.id, next), 'Could not save the new order — please retry.')
+    })
+  }
+
   function onDrop(targetId: string) {
     const from = dragId.current
     if (!from || from === targetId) return
     const next = ordered.map((s) => s.id).filter((id) => id !== from)
     const idx = next.indexOf(targetId)
     next.splice(idx < 0 ? next.length : idx, 0, from)
-    startTransition(() => {
-      reorderOptimistic(next)
-      reorderSlidesAction(deck.id, next).catch(() => {})
-    })
+    persistOrder(next)
+  }
+
+  // Keyboard-accessible reorder for keyboard/assistive-tech users — same persist path as drag.
+  function move(id: string, dir: -1 | 1) {
+    const ids = ordered.map((s) => s.id)
+    const i = ids.indexOf(id)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= ids.length) return
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    persistOrder(ids)
   }
 
   function toggleStatus() {
@@ -71,14 +92,16 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           className={`${input} text-xl font-semibold`}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => updateDeckAction(deck.id, { title })}
+          onBlur={() => run(updateDeckAction(deck.id, { title }), 'Could not save the title.')}
           placeholder="Deck title"
         />
         <textarea
           className={input}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          onBlur={() => updateDeckAction(deck.id, { description: description || null })}
+          onBlur={() =>
+            run(updateDeckAction(deck.id, { description: description || null }), 'Could not save the description.')
+          }
           placeholder="Description (optional)"
           rows={2}
         />
@@ -102,6 +125,12 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           {statusError && <span className="text-sm text-amber-600">{statusError}</span>}
         </div>
       </div>
+
+      {actionError && (
+        <p role="alert" className="mt-4 text-sm text-amber-600">
+          {actionError}
+        </p>
+      )}
 
       <ul className="mt-6 flex flex-col gap-4">
         {ordered.map((s, i) => (
@@ -135,6 +164,26 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
               >
                 ⠿
               </button>
+              <button
+                type="button"
+                onClick={() => move(s.id, -1)}
+                disabled={i === 0}
+                aria-label="Move slide up"
+                title="Move up"
+                className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(s.id, 1)}
+                disabled={i === ordered.length - 1}
+                aria-label="Move slide down"
+                title="Move down"
+                className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
+              >
+                ↓
+              </button>
               <span className="text-sm font-medium text-neutral-500">Slide {i + 1}</span>
               <span className="ml-auto">
                 <DeleteButton
@@ -150,7 +199,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
 
       <button
         type="button"
-        onClick={() => startTransition(() => void addSlideAction(deck.id))}
+        onClick={() => startTransition(() => run(addSlideAction(deck.id), 'Could not add a slide.'))}
         className="mt-4 w-full rounded-lg border border-dashed border-neutral-300 py-3 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700"
       >
         + Add MCQ slide
