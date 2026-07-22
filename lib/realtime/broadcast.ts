@@ -40,6 +40,11 @@ export async function broadcast(code: string, event: EventName, payload: unknown
   } catch (e) {
     console.error(`[broadcast] ${event} threw:`, e)
   } finally {
-    await supabase.removeChannel(channel).catch(() => {})
+    // removeChannel() RESOLVES with 'ok' | 'timed out' | 'error' (it never rejects), and it only
+    // tears the channel out of the shared client's registry when the leave acks 'ok'. On a
+    // timed-out/errored leave we tear down locally — otherwise the singleton client accumulates
+    // stale channels across every broadcast.
+    const status = await supabase.removeChannel(channel).catch(() => 'error' as const)
+    if (status !== 'ok') channel.teardown()
   }
 }
