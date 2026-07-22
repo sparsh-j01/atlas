@@ -10,6 +10,9 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+// Slide config shape lives in the pure lib/mcq module (shared with the client editor),
+// so schema.ts stays the single place columns are declared without duplicating the type.
+import type { SlideConfig } from '@/lib/mcq'
 
 // App data for authenticated creators; `id` mirrors auth.users.id (Supabase Auth),
 // row created on signup. RLS is ENABLED from creation (deny-all by default); the own-row
@@ -20,6 +23,43 @@ export const profiles = pgTable('profiles', {
   displayName: text('display_name'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS()
+
+// --- Creator content (M2): decks + slides, owner-isolated. RLS is enabled here; the
+// owner-only policies + the signup trigger that seeds `profiles` live in the migration
+// SQL (Drizzle can't express policies/triggers). App access is Drizzle scoped by
+// owner_id (see lib/decks.ts); the policies are defense-in-depth on the anon-key path.
+
+export const decks = pgTable('decks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerId: uuid('owner_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  description: text('description'),
+  status: text('status').notNull().default('draft'), // draft | ready
+  sourceType: text('source_type').notNull().default('manual'), // manual | topic | pdf
+  sourceRef: text('source_ref'), // topic string or Storage path (AI paths land in M6/M7)
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS()
+
+export const slides = pgTable(
+  'slides',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deckId: uuid('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(), // 0-based order within the deck
+    type: text('type').notNull(), // quiz_mcq (M2) | poll | word_cloud | ... (M5+)
+    prompt: text('prompt').notNull(),
+    config: jsonb('config').$type<SlideConfig>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  // No unique index on (deck_id, position) here: the migration adds it as a DEFERRABLE
+  // constraint so a full-list reorder can rewrite every position in one transaction
+  // (checked at commit) without transient-collision errors. See lib/decks.ts reorder.
+).enableRLS()
 
 // --- Live session tables (M1 spike) ---
 // Only the service role touches these (it bypasses RLS); RLS is enabled with NO anon
