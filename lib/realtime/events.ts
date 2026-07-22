@@ -73,7 +73,7 @@ export interface LeaderboardUpdatePayload {
 }
 
 export interface SessionStatePayload {
-  status: 'lobby' | 'active' | 'ended'
+  status: 'lobby' | 'active' | 'revealed' | 'ended'
 }
 
 export interface SessionEndedPayload {

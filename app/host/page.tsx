@@ -24,15 +24,23 @@ export default function HostPage() {
   const [aggregate, setAggregate] = useState<AggregateMcq | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
   async function start() {
     setBusy(true)
+    setError('')
     try {
       const res = await fetch('/api/sessions/start', { method: 'POST' })
+      if (!res.ok) {
+        setError('Could not start the session. Try again.')
+        return
+      }
       const data = await res.json()
       setSession({ code: data.code, hostToken: data.hostToken })
       setSlide(data.slide)
       setPhase('live')
+    } catch {
+      setError('Could not start the session. Try again.')
     } finally {
       setBusy(false)
     }
@@ -41,12 +49,16 @@ export default function HostPage() {
   async function reveal() {
     if (!session) return
     setBusy(true)
+    setError('')
     try {
-      await fetch(`/api/sessions/${session.code}/reveal`, {
+      const res = await fetch(`/api/sessions/${session.code}/reveal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hostToken: session.hostToken }),
       })
+      if (!res.ok) setError('Reveal failed — try again.')
+    } catch {
+      setError('Reveal failed — try again.')
     } finally {
       setBusy(false)
     }
@@ -91,6 +103,7 @@ export default function HostPage() {
         >
           {busy ? 'Starting…' : 'Start session'}
         </button>
+        {error && <p className="text-sm text-red-600">{error}</p>}
       </main>
     )
   }
@@ -146,6 +159,8 @@ export default function HostPage() {
           {busy ? 'Revealing…' : 'Reveal answer'}
         </button>
       )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       {leaderboard.length > 0 && (
         <section>

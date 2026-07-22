@@ -33,7 +33,7 @@ export const sessions = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     code: text('code').notNull(), // 6-digit PIN, unique among non-ended (index below)
-    status: text('status').notNull().default('lobby'), // lobby | active | ended
+    status: text('status').notNull().default('lobby'), // lobby | active | revealed | ended
     hostToken: text('host_token').notNull(), // server-issued; gates reveal/advance
     currentSlideIndex: integer('current_slide_index').notNull().default(-1), // -1 in lobby
     currentSlideStartedAt: timestamp('current_slide_started_at', { withTimezone: true }),

@@ -36,10 +36,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .where(eq(participants.sessionId, session.id))
   const top = rankLeaderboard(parts, session.lastTopn)
 
-  // Remember this top-N so the next leaderboard broadcast can compute movement deltas.
+  // Close the answer window BEFORE broadcasting the correct option: flipping status off
+  // 'active' makes answersOpen() false, so late submits are rejected the moment reveal
+  // commits (see answer/route.ts). Also remember this top-N for the next delta computation.
   await db
     .update(sessions)
-    .set({ lastTopn: top.map((e) => ({ participantId: e.participantId, rank: e.rank })) })
+    .set({
+      status: 'revealed',
+      lastTopn: top.map((e) => ({ participantId: e.participantId, rank: e.rank })),
+    })
     .where(eq(sessions.id, session.id))
 
   await broadcast(code, EVENTS.SLIDE_REVEAL, {

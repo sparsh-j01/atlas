@@ -51,6 +51,7 @@ async function main() {
   const leaderboardLatency: number[] = []
   const gotLeaderboard: Array<() => void> = []
   const clients: SupabaseClient[] = []
+  const subscribedIdx: number[] = [] // task indices that reached SUBSCRIBED (for the fan-out wait)
 
   // T0 for the fan-out measurement — stamped just before the single reveal call, read by
   // every client's leaderboard handler (shared closure; no per-channel plumbing).
@@ -87,6 +88,7 @@ async function main() {
           }
         })
       })
+      subscribedIdx.push(i)
 
       // Answer at a human-ish random moment inside the window.
       await new Promise((r) => setTimeout(r, rand(Math.min(timeLimitMs - 2000, 6000))))
@@ -100,7 +102,10 @@ async function main() {
 
   console.log(`Joined ${joinOk}/${N}, answers accepted ${answerOk}/${joinOk}. Revealing…`)
 
-  const done = clients.map((_, i) => new Promise<void>((resolve) => (gotLeaderboard[i] = resolve)))
+  // Key the resolvers by the SAME task index the broadcast handler uses (gotLeaderboard[i]).
+  // `clients` is push-ordered by join-completion, so clients.map's index diverged from `i`
+  // and most `done` promises never resolved — the wait always hit the 10s cap.
+  const done = subscribedIdx.map((i) => new Promise<void>((resolve) => (gotLeaderboard[i] = resolve)))
   revealSentAt = Date.now()
   await post(`/api/sessions/${code}/reveal`, { hostToken })
 

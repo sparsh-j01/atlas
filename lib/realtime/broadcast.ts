@@ -22,15 +22,24 @@ function realtimeClient(): SupabaseClient {
   return client
 }
 
+// Best-effort, post-commit view hint: every caller (start/answer/reveal) has already
+// committed its DB mutation before publishing, and clients reconcile through /state. So a
+// Realtime delivery failure must NEVER propagate — otherwise a transient outage turns a
+// committed session/answer/reveal into a 500 and the host loses its code/token. Log and
+// swallow; never throw.
+// ponytail: no durable retry in M1. Upgrade path — a transactional outbox drained by a
+// worker — lands with the private-channel hardening in M8/M9 (docs/architecture.md).
 export async function broadcast(code: string, event: EventName, payload: unknown): Promise<void> {
   const supabase = realtimeClient()
   const channel = supabase.channel(sessionChannel(code))
   try {
     const res = await channel.httpSend(event, payload as object)
     if (!res.success) {
-      throw new Error(`broadcast ${event} failed (${res.status}): ${res.error}`)
+      console.error(`[broadcast] ${event} failed (${res.status}): ${res.error}`)
     }
+  } catch (e) {
+    console.error(`[broadcast] ${event} threw:`, e)
   } finally {
-    await supabase.removeChannel(channel)
+    await supabase.removeChannel(channel).catch(() => {})
   }
 }

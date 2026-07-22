@@ -22,6 +22,7 @@ export default function PlayPage() {
   const pickedRef = useRef<string | null>(null)
   const [correctId, setCorrectId] = useState<string | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [notice, setNotice] = useState('')
 
   async function join() {
     setError('')
@@ -64,11 +65,29 @@ export default function PlayPage() {
     pickedRef.current = optionId
     setPicked(optionId)
     setPhase('answered')
-    await fetch(`/api/sessions/${me.code}/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientToken: me.clientToken, optionId }),
-    })
+    setNotice('')
+    try {
+      const res = await fetch(`/api/sessions/${me.code}/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientToken: me.clientToken, optionId }),
+      })
+      const data = await res.json().catch(() => null)
+      // A rejected submit (late / window closed / invalid) must not masquerade as a locked-in
+      // answer — otherwise "Not this time" at reveal is indistinguishable from an honest miss.
+      // Roll back the optimistic lock and say why.
+      if (!res.ok || !data?.accepted) {
+        pickedRef.current = null
+        setPicked(null)
+        setPhase('playing')
+        setNotice(data?.reason === 'late' ? 'Too slow — the answer window closed.' : 'That didn’t go through — try again.')
+      }
+    } catch {
+      pickedRef.current = null
+      setPicked(null)
+      setPhase('playing')
+      setNotice('Network error — try again.')
+    }
   }
 
   // Subscribe + announce presence once joined.
@@ -158,6 +177,7 @@ export default function PlayPage() {
       </div>
 
       {phase === 'answered' && <p className="text-center text-neutral-500">Answer locked in — hang tight.</p>}
+      {notice && <p className="text-center text-sm text-red-600">{notice}</p>}
       {myResult && (
         <p className={`text-center text-lg font-semibold ${myResult === 'correct' ? 'text-green-600' : 'text-red-600'}`}>
           {myResult === 'correct' ? 'Correct!' : 'Not this time.'}

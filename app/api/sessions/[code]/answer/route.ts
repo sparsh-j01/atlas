@@ -5,6 +5,7 @@ import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { correctOptionId, isValidOptionId, SPIKE_QUESTION, SPIKE_SLIDE_ID } from '@/lib/realtime/question'
 import { scoreAnswer } from '@/lib/realtime/scoring'
+import { answersOpen } from '@/lib/realtime/session-state'
 import { bad, findLiveSession } from '@/lib/realtime/session-util'
 
 // Server-authoritative answer: rejects late answers by SERVER receipt time, scores,
@@ -20,7 +21,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   }
 
   const session = await findLiveSession(code)
-  if (!session || session.status !== 'active' || !session.currentSlideStartedAt) {
+  // Reveal-gate: once the host reveals (status → 'revealed'), answersOpen() is false and we
+  // reject here, even if the participant's own timer hasn't elapsed. Closes the cheat window.
+  if (!session || !answersOpen(session)) {
     return bad(409, 'session is not accepting answers')
   }
 

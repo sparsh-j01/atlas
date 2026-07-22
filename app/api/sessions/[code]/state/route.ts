@@ -11,7 +11,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
-  const token = new URL(req.url).searchParams.get('token')
+  // Reconnect token is a bearer secret — read it from the Authorization header, not the URL
+  // query (which leaks into logs, browser history, and Referer). Clients send `Bearer <token>`.
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || null
 
   const session = await findLiveSession(code)
   if (!session) return bad(404, 'session not found')

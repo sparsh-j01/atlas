@@ -25,7 +25,10 @@ export async function POST() {
         .returning()
       break
     } catch (e) {
-      if (isUniqueViolation(e) && attempt < 4) continue // code collided with a live session
+      // Retry on a code collision; the loop bound (5 attempts) handles exhaustion, falling
+      // through to the bad(500) below. (A `< 4` guard here would rethrow on the last attempt
+      // and make that graceful fallback dead code.)
+      if (isUniqueViolation(e)) continue
       throw e
     }
   }
