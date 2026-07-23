@@ -15,6 +15,20 @@
       "when": 1784608295065,
       "tag": "0001_robust_the_fallen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784698166494,
+      "tag": "0002_sparkling_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784742619615,
+      "tag": "0003_thin_black_tom",
+      "breakpoints": true
     }
   ]
 }
