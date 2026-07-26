@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { answers, participants, sessions } from '@/lib/db/schema'
-import { rankLeaderboard, tallyMcq } from '@/lib/realtime/aggregate'
+import { participants, sessions } from '@/lib/db/schema'
+import { rankLeaderboard } from '@/lib/realtime/aggregate'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { correctOptionId } from '@/lib/mcq'
-import { currentSlide } from '@/lib/realtime/live-slide'
+import { currentSlide, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
 import { getHostedSession } from '@/lib/sessions'
 
@@ -20,11 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   const slide = await currentSlide(session)
   if (!slide) return bad(409, 'no slide is live')
 
-  const answerRows = await db
-    .select({ response: answers.response })
-    .from(answers)
-    .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, slide.id)))
-  const aggregate = tallyMcq(answerRows.map((r) => ({ optionId: r.response.optionId })))
+  const aggregate = await tallySlideAnswers(session.id, slide.id)
 
   const parts = await db
     .select({
@@ -39,12 +35,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
 
   // Close the answer window BEFORE broadcasting the correct option: flipping status off
   // 'active' makes answersOpen() false, so late submits are rejected the moment reveal
-  // commits (see answer/route.ts). Also remember this top-N for the next delta computation.
+  // commits (see answer/route.ts). Also remember this top-N for the next delta computation,
+  // and record that this slide's key is now public so re-showing it can't reopen scoring
+  // (see advance/route.ts).
   await db
     .update(sessions)
     .set({
       status: 'revealed',
       lastTopn: top.map((e) => ({ participantId: e.participantId, rank: e.rank })),
+      revealedSlideIds: session.revealedSlideIds.includes(slide.id)
+        ? session.revealedSlideIds
+        : [...session.revealedSlideIds, slide.id],
     })
     .where(eq(sessions.id, session.id))
 

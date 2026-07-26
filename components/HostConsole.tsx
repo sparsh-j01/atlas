@@ -76,10 +76,12 @@ export function HostConsole({
     if (!data) return
     setIndex(data.index)
     setSlide(data.slide)
-    setStatus('active')
-    setAnswered(0)
-    setCorrectId(null)
-    setAggregate(null)
+    // Re-showing an already-revealed slide comes back 'revealed' with its tally, so going
+    // back to discuss a question shows the results again instead of a blank re-run.
+    setStatus(data.status)
+    setAggregate(data.aggregate ?? null)
+    setCorrectId(data.correctOptionId ?? null)
+    setAnswered(data.aggregate?.total ?? 0)
   }
 
   async function reveal() {

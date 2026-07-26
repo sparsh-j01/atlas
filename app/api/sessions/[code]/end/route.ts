@@ -15,6 +15,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   const session = await getHostedSession(code, await hostTokenFrom(req, code))
   if (!session) return bad(404, 'session not found')
 
+  // Close the answer window FIRST, then snapshot. Reading scores before the flip would let
+  // an answer commit in the gap: it lands in participants.score but misses the ranking we
+  // broadcast, so the final podium disagrees with what's persisted.
+  await db
+    .update(sessions)
+    .set({ status: 'ended', endedAt: new Date() })
+    .where(eq(sessions.id, session.id))
+
   const parts = await db
     .select({
       participantId: participants.id,
@@ -25,13 +33,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .from(participants)
     .where(eq(participants.sessionId, session.id))
   const fullRanking = rankLeaderboard(parts, session.lastTopn, parts.length)
-
-  // Flip status before broadcasting: 'ended' closes the answer window (answersOpen) the
-  // moment this commits, so nothing sneaks in between the update and the fan-out.
-  await db
-    .update(sessions)
-    .set({ status: 'ended', endedAt: new Date() })
-    .where(eq(sessions.id, session.id))
 
   await broadcast(code, EVENTS.SESSION_ENDED, { podium: fullRanking.slice(0, 3), fullRanking })
 

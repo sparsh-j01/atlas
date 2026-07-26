@@ -33,6 +33,11 @@ export default function PlayPage() {
   const [now, setNow] = useState(() => Date.now())
   const [picked, setPicked] = useState<string | null>(null)
   const pickedRef = useRef<string | null>(null)
+  // This phone's own answer per slide. The host can navigate back to a slide we already
+  // answered, and a broadcast can't carry the pick (one payload, every participant), so
+  // without this a player who answered would be told "No answer in". Read inside the
+  // broadcast handler, which closes over stale state — hence a ref, not state.
+  const picksRef = useRef<Record<string, string>>({})
   const [correctId, setCorrectId] = useState<string | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [notice, setNotice] = useState('')
@@ -52,6 +57,7 @@ export default function PlayPage() {
       // answers by its own clock. Upgrade path if it ever matters: a clock-offset handshake.
       setDeadline(serverStartedAt && timeLimitMs ? Date.parse(serverStartedAt) + timeLimitMs : null)
       setNow(Date.now()) // seed the countdown here, so the first frame isn't a tick stale
+      if (s && alreadyPicked) picksRef.current[s.id] = alreadyPicked
       pickedRef.current = alreadyPicked
       setPicked(alreadyPicked)
       setCorrectId(null)
@@ -100,7 +106,8 @@ export default function PlayPage() {
   }
 
   async function answer(optionId: string) {
-    if (!me || pickedRef.current || status !== 'active') return
+    if (!me || !slide || pickedRef.current || status !== 'active') return
+    const slideId = slide.id
     pickedRef.current = optionId
     setPicked(optionId)
     setNotice('')
@@ -122,7 +129,11 @@ export default function PlayPage() {
             ? 'Too slow — the answer window closed.'
             : 'That didn’t go through — try again.',
         )
+        return
       }
+      // Remember it against the slide, so a host who navigates back to this question
+      // still sees this phone reporting the answer it actually gave.
+      picksRef.current[slideId] = optionId
     } catch {
       pickedRef.current = null
       setPicked(null)
@@ -174,8 +185,12 @@ export default function PlayPage() {
     const channel = openSessionChannel(supabase, me.code)
     channel
       .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
-        setStatus('active')
-        showSlide(payload.slide as SanitizedSlide, payload.serverStartedAt, payload.timeLimitMs)
+        const next = payload.slide as SanitizedSlide
+        // Trust the server's status: a re-shown slide arrives already 'revealed', so the
+        // options never flash as tappable before the slide:reveal lands.
+        setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
+        // Restore this phone's answer if it already has one for the slide being shown.
+        showSlide(next, payload.serverStartedAt, payload.timeLimitMs, picksRef.current[next.id] ?? null)
       })
       .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
         setCorrectId((payload as SlideRevealPayload).correctOptionId ?? null)

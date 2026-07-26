@@ -51,13 +51,17 @@ async function json(res: Response) {
 
 async function main() {
   const sql = postgres(DB_URL!, { prepare: false })
+  // Two slides minimum: the navigation checks below are the point of the walk, and silently
+  // skipping them on a one-slide deck would report a pass that never tested advance/back.
   const [deck] = await sql`
-    select d.id, d.owner_id, (select count(*) from slides s where s.deck_id = d.id)::int as slides
-    from decks d
-    where d.status = 'ready' and exists (select 1 from slides s where s.deck_id = d.id)
+    select d.id, d.owner_id, count(s.id)::int as slides
+    from decks d join slides s on s.deck_id = d.id
+    where d.status = 'ready'
+    group by d.id, d.owner_id
+    having count(s.id) >= 2
     limit 1`
   if (!deck) {
-    console.error('No ready deck with slides. Create one in the app (and mark it ready) first.')
+    console.error('No ready deck with at least 2 slides. The navigation checks need two; add a slide and mark the deck ready.')
     process.exit(1)
   }
 
@@ -77,6 +81,11 @@ async function main() {
   const alice = joined.body.clientToken as string
   assert.ok(alice, 'join issues a server-side client token')
   ok('join in the lobby: token issued, no slide yet')
+
+  // A second player who deliberately never answers — used at the end to prove that
+  // re-showing a revealed slide can't hand them the disclosed answer for points.
+  const abstainer = (await json(await call(`${code}/join`, { body: { nickname: 'Abstainer' } })))
+    .body.clientToken as string
 
   // --- Host-only controls ------------------------------------------------------
   assert.equal((await call(`${code}/advance`, { body: { index: 0 } })).status, 404)
@@ -132,8 +141,8 @@ async function main() {
   const revealed = await json(await call(`${code}/reveal`, { token: hostToken }))
   assert.equal(revealed.status, 200)
   assert.ok(revealed.body.correctOptionId, 'reveal discloses the correct option')
-  assert.equal(revealed.body.aggregate.total, 1)
-  assert.equal(revealed.body.top.length, 1)
+  assert.equal(revealed.body.aggregate.total, 1, 'one of the two players answered')
+  assert.equal(revealed.body.top.length, 2, 'both players are ranked, answered or not')
   ok('reveal discloses the answer, tallies responses, ranks the leaderboard')
 
   const late = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
@@ -145,18 +154,27 @@ async function main() {
   ok('/state discloses the answer only once revealed')
 
   // --- Navigation --------------------------------------------------------------
-  if (deck.slides > 1) {
-    const next = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
-    assert.equal(next.status, 200)
-    assert.notEqual(next.body.slide.id, slide.id)
-    const stale = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
-    assert.equal(stale.status, 400, 'an answer aimed at the previous slide must not score')
-    ok('advance moves on; an answer for the previous slide is rejected, not mis-scored')
+  const next = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
+  assert.equal(next.status, 200)
+  assert.notEqual(next.body.slide.id, slide.id)
+  assert.equal(next.body.status, 'active', 'a fresh slide opens the answer window')
+  const stale = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
+  assert.equal(stale.status, 400, 'an answer aimed at the previous slide must not score')
+  ok('advance moves on; an answer for the previous slide is rejected, not mis-scored')
 
-    const back = await json(await call(`${code}/advance`, { body: { index: 0 }, token: hostToken }))
-    assert.equal(back.body.slide.id, slide.id)
-    ok('advance goes backwards too (Back / re-show)')
-  }
+  // Going Back to a slide whose key is already public must NOT reopen scoring. Left open,
+  // anyone who sat that question out could submit the answer they watched being revealed.
+  const back = await json(await call(`${code}/advance`, { body: { index: 0 }, token: hostToken }))
+  assert.equal(back.body.slide.id, slide.id)
+  assert.equal(back.body.status, 'revealed', 're-showing a revealed slide must stay revealed')
+  assert.equal(back.body.correctOptionId, revealed.body.correctOptionId)
+  const cheat = await json(
+    await call(`${code}/answer`, {
+      body: { clientToken: abstainer, optionId: revealed.body.correctOptionId },
+    }),
+  )
+  assert.equal(cheat.status, 409, 'a player who sat the slide out must not score the disclosed answer')
+  ok('Back re-shows a revealed slide with its results, and cannot reopen scoring')
 
   // --- End ---------------------------------------------------------------------
   const ended = await json(await call(`${code}/end`, { token: hostToken }))

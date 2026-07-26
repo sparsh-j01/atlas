@@ -1,0 +1,2 @@
+ALTER TABLE "sessions" ADD COLUMN "revealed_slide_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "sessions_active_deck_idx" ON "sessions" USING btree ("deck_id") WHERE "sessions"."status" <> 'ended';

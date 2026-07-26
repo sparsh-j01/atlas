@@ -89,6 +89,11 @@ export const sessions = pgTable(
     hostToken: text('host_token').notNull(), // server-issued; gates reveal/advance
     currentSlideIndex: integer('current_slide_index').notNull().default(-1), // -1 in lobby
     currentSlideStartedAt: timestamp('current_slide_started_at', { withTimezone: true }),
+    // Slides whose answer key has already gone out to the room. Re-showing one must NOT
+    // reopen scoring: the correct option is public by then, so anyone who sat the question
+    // out could submit it for full points. advance/ consults this to re-show a revealed
+    // slide in its revealed state instead of flipping the session back to 'active'.
+    revealedSlideIds: jsonb('revealed_slide_ids').$type<string[]>().notNull().default([]),
     // Live-broadcast bookkeeping: leaky-bucket throttle + last-broadcast top-N for deltas.
     lastBcast: timestamp('last_bcast', { withTimezone: true }),
     lastTopn: jsonb('last_topn').$type<{ participantId: string; rank: number }[]>(),
@@ -98,6 +103,10 @@ export const sessions = pgTable(
   (t) => [
     // A code is reusable once a session ends; unique only among live sessions.
     uniqueIndex('sessions_active_code_idx').on(t.code).where(sql`${t.status} <> 'ended'`),
+    // One live room per deck. Without this, a double-clicked Present opens a second session
+    // on the same deck: two codes, two rosters, and ending one leaves the deck still locked
+    // by the other. lib/sessions.ts resumes the existing room rather than surfacing this.
+    uniqueIndex('sessions_active_deck_idx').on(t.deckId).where(sql`${t.status} <> 'ended'`),
   ],
 ).enableRLS()
 

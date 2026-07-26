@@ -40,6 +40,10 @@ export interface SlideShowPayload {
   slide: SanitizedSlide
   serverStartedAt: string // ISO timestamp
   timeLimitMs: number
+  // 'revealed' when the host re-shows a slide whose answer already went out — the window
+  // stays shut. Without it a client would render the slide as answerable for the moment
+  // between this event and the slide:reveal that follows.
+  status: 'active' | 'revealed'
 }
 
 export interface ResultsUpdatePayload {

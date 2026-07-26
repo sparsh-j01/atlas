@@ -1,9 +1,10 @@
 import 'server-only'
-import { asc, count, eq } from 'drizzle-orm'
+import { and, asc, count, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { slides } from '@/lib/db/schema'
+import { answers, slides } from '@/lib/db/schema'
 import { sanitizeOptions, type McqConfig } from '@/lib/mcq'
-import type { SanitizedSlide } from './events'
+import { tallyMcq } from './aggregate'
+import type { AggregateMcq, SanitizedSlide } from './events'
 
 // The live session's view of a saved slide — replaces the M1 hardcoded question, so every
 // route now reads prompt/options/answer-key off the deck row the host launched.
@@ -48,6 +49,16 @@ export function currentSlide(session: {
 export async function slideCount(deckId: string): Promise<number> {
   const [row] = await db.select({ n: count() }).from(slides).where(eq(slides.deckId, deckId))
   return row.n
+}
+
+/** Count the responses to one slide. Computed on read — no stored counter, so there's no
+ *  concurrent-increment race. Shared by reveal and by advance re-showing a revealed slide. */
+export async function tallySlideAnswers(sessionId: string, slideId: string): Promise<AggregateMcq> {
+  const rows = await db
+    .select({ response: answers.response })
+    .from(answers)
+    .where(and(eq(answers.sessionId, sessionId), eq(answers.slideId, slideId)))
+  return tallyMcq(rows.map((r) => ({ optionId: r.response.optionId })))
 }
 
 /** The slide as clients may see it BEFORE reveal — the answer key is stripped. */

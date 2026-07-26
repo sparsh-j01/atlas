@@ -33,6 +33,21 @@ if (!SUPABASE_URL || !ANON || !DB_URL) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / DIRECT_URL in .env.local')
   process.exit(1)
 }
+// Number() takes NaN, 0, negatives and fractions, and Array.from({length: NaN}) is empty —
+// a typo would otherwise "pass" with zero clients and NaN percentiles.
+if (!Number.isInteger(N) || N < 1) {
+  console.error(`Client count must be a positive integer (got "${process.argv[2] ?? process.env.LOADTEST_N}").`)
+  process.exit(1)
+}
+
+// Module-scoped so any exit path can close the room. A session left live keeps its deck
+// locked for editing (lib/decks.ts), so bailing out early must not strand it.
+let room: { code: string; hostToken: string } | null = null
+const closeRoom = async () => {
+  if (!room) return
+  await post(`/api/sessions/${room.code}/end`, undefined, room.hostToken).catch(() => {})
+  room = null
+}
 
 const pctl = (xs: number[], p: number) => {
   if (xs.length === 0) return NaN
@@ -70,11 +85,13 @@ async function main() {
     insert into sessions (deck_id, host_id, code, status, host_token)
     values (${deck.id}, ${deck.owner_id}, ${code}, 'lobby', ${hostToken})`
   await sql.end()
+  room = { code, hostToken } // registered immediately, so every later exit path can close it
 
   // Show the first slide — this is what opens the answer window and starts the server clock.
   const shown = await post(`/api/sessions/${code}/advance`, { index: 0 }, hostToken)
   if (!shown.ok) {
     console.error(`advance failed (${shown.status}): ${await shown.text()}`)
+    await closeRoom()
     process.exit(1)
   }
   const { slide, timeLimitMs } = (await shown.json()) as {
@@ -145,7 +162,14 @@ async function main() {
   // and most `done` promises never resolved — the wait always hit the 10s cap.
   const done = subscribedIdx.map((i) => new Promise<void>((resolve) => (gotLeaderboard[i] = resolve)))
   revealSentAt = Date.now()
-  await post(`/api/sessions/${code}/reveal`, undefined, hostToken)
+  // fetch() resolves on HTTP errors, so an unchecked reveal turns a broken run into a
+  // "0 clients received" result that still exits 0 — the run has to fail loudly instead.
+  const revealed = await post(`/api/sessions/${code}/reveal`, undefined, hostToken)
+  if (!revealed.ok) {
+    console.error(`reveal failed (${revealed.status}): ${await revealed.text()}`)
+    await closeRoom()
+    process.exit(1)
+  }
 
   // Wait for the fan-out (10s cap).
   await Promise.race([Promise.all(done), new Promise((r) => setTimeout(r, 10_000))])
@@ -159,12 +183,18 @@ async function main() {
   console.log(`  max: ${Math.max(...leaderboardLatency, 0)} ms`)
 
   // End the room: frees the code and unlocks the deck for editing again.
-  await post(`/api/sessions/${code}/end`, undefined, hostToken)
+  const ended = await post(`/api/sessions/${code}/end`, undefined, hostToken)
+  room = null
   clients.forEach((c) => c.removeAllChannels())
+  if (!ended.ok) {
+    console.error(`\nend failed (${ended.status}): ${await ended.text()} — the room is still live.`)
+    process.exit(1)
+  }
   process.exit(0)
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(e)
+  await closeRoom()
   process.exit(1)
 })
