@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { answers, participants, sessions } from '@/lib/db/schema'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
-import { correctOptionId, isValidOptionId, SPIKE_QUESTION, SPIKE_SLIDE_ID } from '@/lib/realtime/question'
+import { correctOptionId, isValidOptionId } from '@/lib/mcq'
+import { currentSlide } from '@/lib/realtime/live-slide'
 import { scoreAnswer } from '@/lib/realtime/scoring'
 import { answersOpen } from '@/lib/realtime/session-state'
 import { bad, findLiveSession } from '@/lib/realtime/session-util'
@@ -15,10 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   const { code } = await params
   const body = await req.json().catch(() => null)
   const clientToken = typeof body?.clientToken === 'string' ? body.clientToken : ''
-  const optionId = body?.optionId
-  if (!clientToken || !isValidOptionId(optionId)) {
-    return bad(400, 'clientToken and a valid optionId are required')
-  }
+  if (!clientToken) return bad(400, 'clientToken is required')
 
   const session = await findLiveSession(code)
   // Reveal-gate: once the host reveals (status → 'revealed'), answersOpen() is false and we
@@ -27,6 +25,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     return bad(409, 'session is not accepting answers')
   }
 
+  // The live slide is the only valid target: option ids are per-slide uuids, so an answer
+  // aimed at the previous slide fails this check rather than scoring against the new one.
+  const slide = await currentSlide(session)
+  if (!slide || !isValidOptionId(slide.config, body?.optionId))
+    return bad(400, 'a valid optionId is required')
+  const optionId = body.optionId
+
   const [p] = await db
     .select()
     .from(participants)
@@ -34,17 +39,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .limit(1)
   if (!p) return bad(403, 'unknown participant')
 
+  const { timeLimitMs } = slide.config
   const responseMs = Date.now() - session.currentSlideStartedAt.getTime()
   // Late answers are rejected by the server clock — never a client-sent timestamp.
-  if (responseMs > SPIKE_QUESTION.timeLimitMs) {
+  if (responseMs > timeLimitMs) {
     return Response.json({ accepted: false, reason: 'late' })
   }
 
-  const correct = optionId === correctOptionId()
+  const correct = optionId === correctOptionId(slide.config)
   const { points, newStreak } = scoreAnswer({
     correct,
     responseMs,
-    timeLimitMs: SPIKE_QUESTION.timeLimitMs,
+    timeLimitMs,
     priorStreak: p.streak,
   })
 
@@ -55,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       .insert(answers)
       .values({
         sessionId: session.id,
-        slideId: SPIKE_SLIDE_ID,
+        slideId: slide.id,
         participantId: p.id,
         response: { optionId },
         isCorrect: correct,
@@ -89,12 +95,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     const [{ answered }] = await db
       .select({ answered: count() })
       .from(answers)
-      .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, SPIKE_SLIDE_ID)))
+      .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, slide.id)))
     const [{ total }] = await db
       .select({ total: count() })
       .from(participants)
       .where(eq(participants.sessionId, session.id))
-    await broadcast(code, EVENTS.ANSWERED_COUNT, { slideId: SPIKE_SLIDE_ID, answered, total })
+    await broadcast(code, EVENTS.ANSWERED_COUNT, { slideId: slide.id, answered, total })
   }
 
   // Own-correctness is withheld until reveal (Kahoot-style suspense; nothing leaks).

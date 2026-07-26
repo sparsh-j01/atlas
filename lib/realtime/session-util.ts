@@ -1,5 +1,6 @@
 import 'server-only'
 import { randomInt, randomUUID } from 'node:crypto'
+import { cookies } from 'next/headers'
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
@@ -24,9 +25,26 @@ export async function findLiveSession(code: string) {
   return rows[0] ?? null
 }
 
-/** Postgres unique-violation (SQLSTATE 23505), surfaced through postgres.js. */
-export function isUniqueViolation(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && 'code' in e && (e as { code: unknown }).code === '23505'
+/** The host's capability token for `code`, as the control routes (advance/reveal/end)
+ *  receive it. Normally the httpOnly cookie the launch set — the browser attaches it
+ *  automatically, so the token never touches client JS, and `SameSite=Lax` keeps a
+ *  cross-site POST from carrying it (no CSRF token needed). The `Authorization: Bearer`
+ *  fallback is for non-browser hosts: the load-test harness drives a room over HTTP. */
+export async function hostTokenFrom(req: Request, code: string): Promise<string> {
+  const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (bearer) return bearer
+  return (await cookies()).get(`htk_${code}`)?.value ?? ''
+}
+
+/** Postgres unique-violation (SQLSTATE 23505), surfaced through postgres.js. Pass a
+ *  constraint/index name when the caller needs to tell two unique indexes apart — a session
+ *  insert can trip either the live-code index or the one-room-per-deck index, and they call
+ *  for opposite responses (retry vs. resume the existing room). */
+export function isUniqueViolation(e: unknown, constraint?: string): boolean {
+  if (typeof e !== 'object' || e === null || !('code' in e)) return false
+  const err = e as { code: unknown; constraint_name?: unknown }
+  if (err.code !== '23505') return false
+  return constraint === undefined || err.constraint_name === constraint
 }
 
 export function bad(status: number, error: string): Response {

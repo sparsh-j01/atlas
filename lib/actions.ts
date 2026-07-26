@@ -1,10 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import * as data from '@/lib/decks'
+import { createSessionFromDeck } from '@/lib/sessions'
 import { blankMcq, toStored, validateMcq, type EditableMcq } from '@/lib/mcq'
 
 const editPath = (deckId: string) => `/decks/${deckId}/edit`
@@ -93,6 +95,26 @@ export async function setDeckStatusAction(
   revalidatePath(editPath(deckId))
   revalidatePath('/dashboard')
   return {}
+}
+
+/** Launch one of the creator's ready decks into a live lobby. Creates the session, stashes
+ *  the host token in an httpOnly cookie (never the URL — it's what authorizes advance/reveal),
+ *  and sends the host to the lobby. Present is only offered on ready decks, so a thrown
+ *  eligibility error here is a rare race — let it hit the error boundary. */
+export async function launchDeckAction(deckId: string): Promise<void> {
+  const user = await requireUser()
+  const { code, hostToken } = await createSessionFromDeck(deckId, user.id)
+  ;(await cookies()).set(`htk_${code}`, hostToken, {
+    httpOnly: true,
+    // This cookie IS the credential for advance/reveal/end, so it must never ride a
+    // plaintext request — an http:// hit on a custom domain would leak it before the
+    // redirect to HTTPS. Conditional, not a literal `true`, so http://localhost still works.
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/', // must cover /api/sessions/*, not just /host — that's what the token authorizes
+    maxAge: 60 * 60 * 6, // 6h — long enough to run a session; this cookie is the host's key to it
+  })
+  redirect(`/host/${code}`)
 }
 
 export async function signOutAction() {

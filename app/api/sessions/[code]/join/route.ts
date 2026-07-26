@@ -1,11 +1,13 @@
 import { db } from '@/lib/db'
 import { participants } from '@/lib/db/schema'
-import { sanitizeSlide, SPIKE_QUESTION } from '@/lib/realtime/question'
+import { currentSlide, sanitizeSlide } from '@/lib/realtime/live-slide'
 import { bad, findLiveSession, newToken } from '@/lib/realtime/session-util'
+import { answersOpen } from '@/lib/realtime/session-state'
 
 // Anonymous participant join. Issues the SERVER-side client_token (identity); a
-// client-set token is never trusted. Returns the sanitized slide so the player can render
-// immediately without racing the slide:show broadcast.
+// client-set token is never trusted. Returns the live slide (if one is open) so the player
+// can render immediately without racing the slide:show broadcast — a join during the lobby
+// or a reveal gets null and waits for the next broadcast.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   const body = await req.json().catch(() => null)
@@ -22,12 +24,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .values({ sessionId: session.id, nickname, avatarSeed, clientToken })
     .returning({ id: participants.id })
 
+  const slide = answersOpen(session) ? await currentSlide(session) : null
   return Response.json({
     clientToken,
     participantId: p.id,
     avatarSeed,
-    slide: session.status === 'active' ? sanitizeSlide() : null,
+    status: session.status,
+    index: session.currentSlideIndex,
+    slide: slide && sanitizeSlide(slide),
     serverStartedAt: session.currentSlideStartedAt?.toISOString() ?? null,
-    timeLimitMs: SPIKE_QUESTION.timeLimitMs,
+    timeLimitMs: slide?.config.timeLimitMs ?? null,
   })
 }

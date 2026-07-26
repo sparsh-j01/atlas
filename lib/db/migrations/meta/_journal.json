@@ -29,6 +29,27 @@
       "when": 1784742619615,
       "tag": "0003_thin_black_tom",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784782740199,
+      "tag": "0004_glamorous_charles_xavier",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785043802952,
+      "tag": "0005_private_session_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785046574270,
+      "tag": "0006_reveal_tracking_and_one_session_per_deck",
+      "breakpoints": true
     }
   ]
 }

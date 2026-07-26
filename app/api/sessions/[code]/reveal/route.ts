@@ -1,29 +1,26 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { answers, participants, sessions } from '@/lib/db/schema'
-import { rankLeaderboard, tallyMcq } from '@/lib/realtime/aggregate'
+import { participants, sessions } from '@/lib/db/schema'
+import { rankLeaderboard } from '@/lib/realtime/aggregate'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
-import { correctOptionId, SPIKE_SLIDE_ID } from '@/lib/realtime/question'
-import { bad, findLiveSession } from '@/lib/realtime/session-util'
+import { correctOptionId } from '@/lib/mcq'
+import { currentSlide, tallySlideAnswers } from '@/lib/realtime/live-slide'
+import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
+import { getHostedSession } from '@/lib/sessions'
 
 // Host-only: disclose the correct answer and broadcast the re-ranked leaderboard. The
 // re-rank happens HERE (not per answer) — that IS the animated reorder, and it's what
-// keeps the hot path flat at 100. Caller must present the session's host_token.
+// keeps the hot path flat at 100.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
-  const body = await req.json().catch(() => null)
-  const hostToken = typeof body?.hostToken === 'string' ? body.hostToken : ''
-
-  const session = await findLiveSession(code)
+  const session = await getHostedSession(code, await hostTokenFrom(req, code))
   if (!session) return bad(404, 'session not found')
-  if (!hostToken || hostToken !== session.hostToken) return bad(403, 'host only')
 
-  const answerRows = await db
-    .select({ response: answers.response })
-    .from(answers)
-    .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, SPIKE_SLIDE_ID)))
-  const aggregate = tallyMcq(answerRows.map((r) => ({ optionId: r.response.optionId })))
+  const slide = await currentSlide(session)
+  if (!slide) return bad(409, 'no slide is live')
+
+  const aggregate = await tallySlideAnswers(session.id, slide.id)
 
   const parts = await db
     .select({
@@ -38,21 +35,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
 
   // Close the answer window BEFORE broadcasting the correct option: flipping status off
   // 'active' makes answersOpen() false, so late submits are rejected the moment reveal
-  // commits (see answer/route.ts). Also remember this top-N for the next delta computation.
-  await db
+  // commits (see answer/route.ts). Also remember this top-N for the next delta computation,
+  // and record that this slide's key is now public so re-showing it can't reopen scoring
+  // (see advance/route.ts).
+  //
+  // Guarded on status like advance: `end` can commit between the read above and this write,
+  // and an unconditional update would reopen the closed room as 'revealed'. Nothing is
+  // disclosed unless this transition wins.
+  const applied = await db
     .update(sessions)
     .set({
       status: 'revealed',
       lastTopn: top.map((e) => ({ participantId: e.participantId, rank: e.rank })),
+      revealedSlideIds: session.revealedSlideIds.includes(slide.id)
+        ? session.revealedSlideIds
+        : [...session.revealedSlideIds, slide.id],
     })
-    .where(eq(sessions.id, session.id))
+    .where(and(eq(sessions.id, session.id), ne(sessions.status, 'ended')))
+    .returning({ id: sessions.id })
+  if (applied.length === 0) return bad(409, 'session has ended')
 
+  const correct = correctOptionId(slide.config)
   await broadcast(code, EVENTS.SLIDE_REVEAL, {
-    slideId: SPIKE_SLIDE_ID,
-    correctOptionId: correctOptionId(),
+    slideId: slide.id,
+    correctOptionId: correct ?? undefined,
     aggregate,
   })
   await broadcast(code, EVENTS.LEADERBOARD_UPDATE, { top })
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, slideId: slide.id, correctOptionId: correct, aggregate, top })
 }

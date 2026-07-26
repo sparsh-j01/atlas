@@ -66,6 +66,27 @@ export function validateMcq(m: EditableMcq): string[] {
   return errors
 }
 
+// --- Live-session views of a saved config (M3) ---
+// Pure so they're unit-tested here; the DB-backed slide loader (lib/realtime/live-slide.ts)
+// is the server-only wrapper around them.
+
+/** Options as clients may see them — the answer key is stripped. This is the anti-cheat
+ *  boundary: everything a participant receives before reveal comes through here. */
+export function sanitizeOptions(c: McqConfig): { id: string; text: string }[] {
+  return c.options.map(({ id, text }) => ({ id, text }))
+}
+
+/** null if nothing is marked correct — unreachable for a saved slide (validateMcq enforces
+ *  exactly one), so callers treat it as "nothing to disclose" rather than throwing mid-game. */
+export function correctOptionId(c: McqConfig): string | null {
+  return c.options.find((o) => o.is_correct)?.id ?? null
+}
+
+/** Whether an untrusted value names one of this slide's options. */
+export function isValidOptionId(c: McqConfig, v: unknown): v is string {
+  return typeof v === 'string' && c.options.some((o) => o.id === v)
+}
+
 /** Trim to the persisted shape. Caller must validate first. */
 export function toStored(m: EditableMcq): { prompt: string; config: McqConfig } {
   return {

@@ -1,7 +1,7 @@
 import 'server-only'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { decks, slides } from '@/lib/db/schema'
+import { decks, sessions, slides } from '@/lib/db/schema'
 import type { McqConfig } from '@/lib/mcq'
 
 // Every function is owner-scoped in its WHERE — this is the real access boundary (Drizzle
@@ -43,13 +43,22 @@ export async function getDeckWithSlides(deckId: string, ownerId: string) {
   return { deck, slides: rows }
 }
 
-async function assertOwnedDeck(deckId: string, ownerId: string): Promise<void> {
+// Guard for every deck mutation: the deck must be the caller's AND not currently live. A
+// non-ended session freezes the deck so its slides can't shift under a running game
+// (docs/schema.md) — one check all mutators route through, rather than per-action guards.
+async function assertDeckEditable(deckId: string, ownerId: string): Promise<void> {
   const [deck] = await db
     .select({ id: decks.id })
     .from(decks)
     .where(and(eq(decks.id, deckId), eq(decks.ownerId, ownerId)))
     .limit(1)
   if (!deck) throw new Error('deck not found')
+  const [live] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.deckId, deckId), ne(sessions.status, 'ended')))
+    .limit(1)
+  if (live) throw new Error('This deck is live — end the session before editing it.')
 }
 
 async function touchDeck(deckId: string, ownerId: string): Promise<void> {
@@ -65,6 +74,7 @@ export async function createDeck(ownerId: string) {
 }
 
 export async function deleteDeck(deckId: string, ownerId: string): Promise<void> {
+  await assertDeckEditable(deckId, ownerId)
   await db.delete(decks).where(and(eq(decks.id, deckId), eq(decks.ownerId, ownerId)))
 }
 
@@ -73,6 +83,7 @@ export async function updateDeck(
   ownerId: string,
   patch: { title?: string; description?: string | null; status?: string },
 ): Promise<void> {
+  await assertDeckEditable(deckId, ownerId)
   await db
     .update(decks)
     .set({ ...patch, updatedAt: new Date() })
@@ -84,7 +95,7 @@ export async function addSlide(
   ownerId: string,
   slide: { type: string; prompt: string; config: McqConfig },
 ) {
-  await assertOwnedDeck(deckId, ownerId)
+  await assertDeckEditable(deckId, ownerId)
   // Lock the deck row so concurrent addSlide calls for the same deck serialize — otherwise
   // both read the same max(position) and the second insert trips the unique(deck_id, position).
   const row = await db.transaction(async (tx) => {
@@ -109,7 +120,7 @@ export async function updateSlide(
   ownerId: string,
   patch: { prompt: string; config: McqConfig },
 ): Promise<void> {
-  await assertOwnedDeck(deckId, ownerId)
+  await assertDeckEditable(deckId, ownerId)
   await db
     .update(slides)
     .set({ prompt: patch.prompt, config: patch.config })
@@ -118,7 +129,7 @@ export async function updateSlide(
 }
 
 export async function deleteSlide(deckId: string, slideId: string, ownerId: string): Promise<void> {
-  await assertOwnedDeck(deckId, ownerId)
+  await assertDeckEditable(deckId, ownerId)
   await db.delete(slides).where(and(eq(slides.id, slideId), eq(slides.deckId, deckId)))
   await touchDeck(deckId, ownerId)
 }
@@ -126,7 +137,7 @@ export async function deleteSlide(deckId: string, slideId: string, ownerId: stri
 /** Rewrite every slide's position to its index in `orderedIds`. The deferred
  *  unique(deck_id, position) constraint lets all rows move in one transaction. */
 export async function reorderSlides(deckId: string, ownerId: string, orderedIds: string[]): Promise<void> {
-  await assertOwnedDeck(deckId, ownerId)
+  await assertDeckEditable(deckId, ownerId)
   await db.transaction(async (tx) => {
     const current = await tx.select({ id: slides.id }).from(slides).where(eq(slides.deckId, deckId))
     const currentSet = new Set(current.map((s) => s.id))

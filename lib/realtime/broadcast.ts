@@ -2,15 +2,16 @@ import 'server-only'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { SUPABASE_URL } from '@/lib/env'
 import { serverEnv } from '@/lib/env.server'
-import { sessionChannel } from './channels'
+import { openSessionChannel } from './channels'
 import type { EventName } from './events'
 
 // Server → clients broadcast over Supabase Realtime via the REST endpoint (`httpSend`),
 // so route handlers publish without opening a WebSocket (right primitive for serverless).
-// The service-role key authorizes the publish.
-// ponytail: channels are public in M1 — broadcasts are view hints, all authority is the
-// HTTP endpoints. Lock to private channels + RLS on realtime.messages in M8/M9 so clients
-// can't spoof broadcasts.
+// The service-role key authorizes the publish — and on a PRIVATE channel it's the only
+// thing that can: RLS on realtime.messages (migration 0005) denies broadcast writes to
+// anon/authenticated, and the service role bypasses RLS. Without that, any participant
+// could forge these events (the anon key is public), so the channel must stay private on
+// both ends — httpSend only reaches private subscribers when the channel is opened private.
 
 let client: SupabaseClient | null = null
 function realtimeClient(): SupabaseClient {
@@ -31,7 +32,7 @@ function realtimeClient(): SupabaseClient {
 // worker — lands with the private-channel hardening in M8/M9 (docs/architecture.md).
 export async function broadcast(code: string, event: EventName, payload: unknown): Promise<void> {
   const supabase = realtimeClient()
-  const channel = supabase.channel(sessionChannel(code))
+  const channel = openSessionChannel(supabase, code)
   try {
     const res = await channel.httpSend(event, payload as object)
     if (!res.success) {
