@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { participants, sessions } from '@/lib/db/schema'
 import { rankLeaderboard } from '@/lib/realtime/aggregate'
@@ -38,7 +38,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   // commits (see answer/route.ts). Also remember this top-N for the next delta computation,
   // and record that this slide's key is now public so re-showing it can't reopen scoring
   // (see advance/route.ts).
-  await db
+  //
+  // Guarded on status like advance: `end` can commit between the read above and this write,
+  // and an unconditional update would reopen the closed room as 'revealed'. Nothing is
+  // disclosed unless this transition wins.
+  const applied = await db
     .update(sessions)
     .set({
       status: 'revealed',
@@ -47,7 +51,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         ? session.revealedSlideIds
         : [...session.revealedSlideIds, slide.id],
     })
-    .where(eq(sessions.id, session.id))
+    .where(and(eq(sessions.id, session.id), ne(sessions.status, 'ended')))
+    .returning({ id: sessions.id })
+  if (applied.length === 0) return bad(409, 'session has ended')
 
   const correct = correctOptionId(slide.config)
   await broadcast(code, EVENTS.SLIDE_REVEAL, {

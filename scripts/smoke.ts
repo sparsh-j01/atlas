@@ -184,6 +184,16 @@ async function main() {
   assert.equal((await call(`${code}/join`, { body: { nickname: 'Bob' } })).status, 404)
   ok('end closes the room: the code stops resolving for state and join')
 
+  // An ended room must stay ended. Both transitions compare-and-set on status, so a request
+  // that read the session before it closed can't write it back to active/revealed.
+  assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: hostToken })).status, 404)
+  assert.equal((await call(`${code}/reveal`, { token: hostToken })).status, 404)
+  const check = postgres(DB_URL!, { prepare: false })
+  const [after] = await check`select status from sessions where code = ${code}`
+  await check.end()
+  assert.equal(after.status, 'ended', 'nothing may resurrect an ended session')
+  ok('advance/reveal cannot bring an ended session back to life')
+
   console.log(`\n${checks} checks passed.`)
   process.exit(0)
 }

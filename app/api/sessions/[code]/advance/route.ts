@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
 import { correctOptionId } from '@/lib/mcq'
@@ -29,18 +29,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   // for full points. Re-show it in its revealed state instead — which is what a host going
   // back to discuss a question actually wants — and answersOpen() keeps the window shut.
   const alreadyRevealed = session.revealedSlideIds.includes(slide.id)
+  const status = alreadyRevealed ? 'revealed' : 'active'
   const startedAt = new Date()
-  await db
+
+  // Compare-and-set on status, not a bare update by id: `end` can commit between the read
+  // above and this write, and an unconditional update would resurrect the closed room —
+  // status back to active with ended_at set, still taking answers. No lock needed; losing
+  // the race just means the session ended underneath us.
+  const applied = await db
     .update(sessions)
     .set({
       currentSlideIndex: index,
       currentSlideStartedAt: startedAt,
-      status: alreadyRevealed ? 'revealed' : 'active',
+      status,
       lastBcast: null, // fresh leaky-bucket window, so the new slide's first answer broadcasts
     })
-    .where(eq(sessions.id, session.id))
-
-  const status = alreadyRevealed ? 'revealed' : 'active'
+    .where(and(eq(sessions.id, session.id), ne(sessions.status, 'ended')))
+    .returning({ id: sessions.id })
+  if (applied.length === 0) return bad(409, 'session has ended')
   const payload = {
     index,
     slide: sanitizeSlide(slide),
