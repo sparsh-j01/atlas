@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import { config } from 'dotenv'
 import postgres from 'postgres'
-import { createFixtureDeck, dropFixtureDeck, sweepStaleFixtures } from './fixture'
+import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 
 config({ path: '.env.local' })
 
@@ -35,8 +35,13 @@ let fixtureDeckId: string | null = null
 const sql = postgres(DB_URL!, { prepare: false })
 
 async function teardown() {
-  if (room) await call(`${room.code}/end`, { token: room.hostToken }).catch(() => {})
-  if (fixtureDeckId) await dropFixtureDeck(sql, fixtureDeckId).catch(() => {})
+  try {
+    if (room) await call(`${room.code}/end`, { token: room.hostToken })
+    // Deck goes only if the room actually closed — see dropFixtureDeckIfIdle.
+    if (fixtureDeckId) await dropFixtureDeckIfIdle(sql, fixtureDeckId)
+  } catch {
+    // Best effort: whatever is left standing gets swept at the start of the next run.
+  }
   await sql.end().catch(() => {})
 }
 

@@ -20,7 +20,7 @@ import postgres from 'postgres'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { openSessionChannel } from '../lib/realtime/channels'
 import { EVENTS } from '../lib/realtime/events'
-import { createFixtureDeck, dropFixtureDeck, sweepStaleFixtures } from './fixture'
+import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 
 config({ path: '.env.local' })
 
@@ -49,11 +49,16 @@ let fixtureDeckId: string | null = null
 const sql = postgres(DB_URL!, { prepare: false })
 
 const teardown = async () => {
-  if (room) {
-    await post(`/api/sessions/${room.code}/end`, undefined, room.hostToken).catch(() => {})
-    room = null
+  try {
+    if (room) {
+      await post(`/api/sessions/${room.code}/end`, undefined, room.hostToken)
+      room = null
+    }
+    // Deck goes only if the room actually closed — see dropFixtureDeckIfIdle.
+    if (fixtureDeckId) await dropFixtureDeckIfIdle(sql, fixtureDeckId)
+  } catch {
+    // Best effort: whatever is left standing gets swept at the start of the next run.
   }
-  if (fixtureDeckId) await dropFixtureDeck(sql, fixtureDeckId).catch(() => {})
   await sql.end().catch(() => {})
 }
 
@@ -191,8 +196,7 @@ async function main() {
   clients.forEach((c) => c.removeAllChannels())
   if (!ended.ok) {
     console.error(`\nend failed (${ended.status}): ${await ended.text()} — the room is still live.`)
-    // Leave the deck in place: deleting it would only detach the room that's still open.
-    fixtureDeckId = null
+    // teardown leaves the deck alone while that room is open, so the next sweep can retry.
     await teardown()
     process.exit(1)
   }

@@ -55,9 +55,37 @@ export async function createFixtureDeck(
   return { deckId: deck.id, ownerId: FIXTURE_OWNER }
 }
 
-/** Remove a run's own deck. Owner-scoped so a wrong id can only ever delete a fixture. */
-export async function dropFixtureDeck(sql: Sql, deckId: string): Promise<void> {
-  await sql`delete from decks where id = ${deckId} and owner_id = ${FIXTURE_OWNER}`
+/**
+ * Drop a run's deck, but only while nothing live still points at it — the teardown both
+ * scripts use. `sessions.deck_id` is ON DELETE SET NULL, so deleting the deck under a room
+ * that is still open detaches that room instead of closing it, and `sweepStaleFixtures`
+ * finds stale rooms *through* their fixture deck: delete the deck and nothing can ever
+ * clean that room up.
+ *
+ * The condition is the DELETE's own `not exists`, not a preceding SELECT, so there is no
+ * window between deciding and deleting. It's read off the table rather than inferred from
+ * the end call's HTTP status, because "no live session references this deck" is the
+ * invariant that actually matters — `fetch()` resolving on a 4xx would otherwise read as a
+ * successful close. A room that won't close keeps its deck for the next run's sweep.
+ *
+ * Returns whether a row actually went, which is not the same as "the deck is gone": false
+ * also covers an already-deleted deck and one owned by somebody else.
+ *
+ * ponytail: under READ COMMITTED a session inserted after the subquery is evaluated could
+ * still commit against a deck this statement is removing. Nobody can launch a fixture deck
+ * but the harness — its owner has no auth.users row, and every run gets its own deck — so
+ * the remaining window has no writer. SERIALIZABLE or `select ... for update` if that ever
+ * stops being true.
+ */
+export async function dropFixtureDeckIfIdle(sql: Sql, deckId: string): Promise<boolean> {
+  const dropped = await sql`
+    delete from decks
+    where id = ${deckId}
+      and owner_id = ${FIXTURE_OWNER}
+      and not exists (
+        select 1 from sessions s where s.deck_id = decks.id and s.status <> 'ended')
+    returning id`
+  return dropped.length > 0
 }
 
 /**
@@ -81,9 +109,10 @@ export async function sweepStaleFixtures(
 
   let cleared = 0
   for (const row of stale) {
-    if (row.code && row.hostToken && !(await endRoom(row.code, row.hostToken))) continue
-    await dropFixtureDeck(sql, row.deckId)
-    cleared++
+    if (row.code && row.hostToken) await endRoom(row.code, row.hostToken)
+    // Same guarded delete the teardown uses, so whether the room really closed is decided by
+    // the table rather than by the end call's return — one arbiter, both paths.
+    if (await dropFixtureDeckIfIdle(sql, row.deckId)) cleared++
   }
   return cleared
 }
