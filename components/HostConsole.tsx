@@ -110,7 +110,7 @@ export function HostConsole({
     setAggregate(data.aggregate ?? null)
     setCorrectId(data.correctOptionId ?? null)
     setExplanation(data.explanation ?? null)
-    setAnswered(data.aggregate?.total ?? 0)
+    setAnswered(0) // live counter for a fresh question; a revealed slide reads its tally instead
     setDeadline(
       data.status === 'active' ? Date.parse(data.serverStartedAt) + data.timeLimitMs : null,
     )
@@ -198,6 +198,13 @@ export function HostConsole({
   const secondsLeft =
     status === 'active' && deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
   const atLast = index >= total - 1
+  // While a question is open the count comes from the leaky-bucket broadcast, which is a
+  // throttled estimate — answers landing inside the same 200ms window as the last one never
+  // get their own message, so it can sit low. Once an aggregate exists (reveal, or a re-shown
+  // revealed slide) it is the DB-authoritative count, so read the total off it. Derived
+  // rather than assigned at each reveal path, so the readout can't disagree with the bars
+  // drawn from that same aggregate.
+  const answeredCount = aggregate?.total ?? answered
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6 sm:p-10">
@@ -210,7 +217,7 @@ export function HostConsole({
           <Stat value={roster.length} label="in the room" />
           {status !== 'lobby' && status !== 'ended' && (
             <>
-              <Stat value={answered} label="answered" />
+              <Stat value={answeredCount} label="answered" />
               {secondsLeft !== null && (
                 <Stat
                   value={secondsLeft}
