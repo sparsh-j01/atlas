@@ -81,6 +81,11 @@ async function main() {
   }
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
   const hostToken = randomUUID()
+  // Close any room already open on this deck first — one live session per deck is a DB
+  // invariant (sessions_active_deck_idx), so a leftover from an interrupted run would make
+  // the insert below fail with a raw constraint error instead of running the test.
+  await sql`update sessions set status = 'ended', ended_at = now()
+            where deck_id = ${deck.id} and status <> 'ended'`
   await sql`
     insert into sessions (deck_id, host_id, code, status, host_token)
     values (${deck.id}, ${deck.owner_id}, ${code}, 'lobby', ${hostToken})`
