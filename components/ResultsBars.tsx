@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import type { AggregateMcq, SanitizedSlide } from '@/lib/realtime/events'
 
 // The reveal view: how the room answered, with the correct option called out. Bars grow
@@ -19,6 +20,15 @@ export function ResultsBars({
   pickedId?: string | null
 }) {
   const total = aggregate?.total ?? 0
+
+  // A CSS transition animates a CHANGE, so mounting at the final width would just paint the
+  // finished chart. Paint at 0 first, then widen on the next frame — that's the reveal.
+  // requestAnimationFrame (not a bare setState) so the zero-width paint actually happens.
+  const [grown, setGrown] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setGrown(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
 
   return (
     <ul className="flex flex-col gap-3">
@@ -47,7 +57,7 @@ export function ResultsBars({
                 className={`h-full rounded-lg transition-[width] duration-700 ease-out motion-reduce:transition-none ${
                   isCorrect ? 'bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
                 }`}
-                style={{ width: `${pct}%` }}
+                style={{ width: grown ? `${pct}%` : '0%' }}
                 role="img"
                 aria-label={`${o.text}: ${n} of ${total} (${pct}%)${isCorrect ? ', correct' : ''}`}
               />
