@@ -56,12 +56,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   if (applied.length === 0) return bad(409, 'session has ended')
 
   const correct = correctOptionId(slide.config)
-  await broadcast(code, EVENTS.SLIDE_REVEAL, {
+  // The explanation ships only here and in the re-show path — it names the answer, so it
+  // must never ride slide:show for a live question.
+  const reveal = {
     slideId: slide.id,
     correctOptionId: correct ?? undefined,
     aggregate,
-  })
+    explanation: slide.config.explanation,
+  }
+  await broadcast(code, EVENTS.SLIDE_REVEAL, reveal)
   await broadcast(code, EVENTS.LEADERBOARD_UPDATE, { top })
 
-  return Response.json({ ok: true, slideId: slide.id, correctOptionId: correct, aggregate, top })
+  return Response.json({ ok: true, ...reveal, correctOptionId: correct, top })
 }

@@ -57,6 +57,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
     serverStartedAt: session.currentSlideStartedAt?.toISOString() ?? null,
     timeLimitMs: slide?.config.timeLimitMs ?? null,
     correctOptionId: revealed && slide ? correctOptionId(slide.config) : null,
+    // Same gate as the answer key: reconnecting mid-reveal restores the explanation,
+    // reconnecting mid-question must not.
+    explanation: revealed && slide ? (slide.config.explanation ?? null) : null,
     score,
     myOptionId,
   })
