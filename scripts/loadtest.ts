@@ -9,10 +9,10 @@
  * The room is hosted over HTTP with the session's host token (`Authorization: Bearer`) —
  * the same routes the browser console uses, where the token rides an httpOnly cookie
  * instead. The session row is created here directly, because launching from the app needs
- * a signed-in creator: pick any of their ready decks and host it.
+ * a signed-in creator; the deck it runs on is created here too (scripts/fixture).
  *
- * Prereqs: a running server (BASE_URL), a live Supabase project (URL + anon key), and at
- * least one deck marked ready with a slide on it. Run:  npx tsx scripts/loadtest.ts [N]
+ * Prereqs: a running server (BASE_URL) and a live Supabase project (URL + anon key).
+ * Run:  npx tsx scripts/loadtest.ts [N]
  */
 import { randomInt, randomUUID } from 'node:crypto'
 import { config } from 'dotenv'
@@ -20,6 +20,7 @@ import postgres from 'postgres'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { openSessionChannel } from '../lib/realtime/channels'
 import { EVENTS } from '../lib/realtime/events'
+import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 
 config({ path: '.env.local' })
 
@@ -40,13 +41,25 @@ if (!Number.isInteger(N) || N < 1) {
   process.exit(1)
 }
 
-// Module-scoped so any exit path can close the room. A session left live keeps its deck
-// locked for editing (lib/decks.ts), so bailing out early must not strand it.
+// Module-scoped so any exit path can close the room and drop the fixture deck. A session
+// left live keeps its deck locked for editing (lib/decks.ts), so bailing out early must not
+// strand it.
 let room: { code: string; hostToken: string } | null = null
-const closeRoom = async () => {
-  if (!room) return
-  await post(`/api/sessions/${room.code}/end`, undefined, room.hostToken).catch(() => {})
-  room = null
+let fixtureDeckId: string | null = null
+const sql = postgres(DB_URL!, { prepare: false })
+
+const teardown = async () => {
+  try {
+    if (room) {
+      await post(`/api/sessions/${room.code}/end`, undefined, room.hostToken)
+      room = null
+    }
+    // Deck goes only if the room actually closed — see dropFixtureDeckIfIdle.
+    if (fixtureDeckId) await dropFixtureDeckIfIdle(sql, fixtureDeckId)
+  } catch {
+    // Best effort: whatever is left standing gets swept at the start of the next run.
+  }
+  await sql.end().catch(() => {})
 }
 
 const pctl = (xs: number[], p: number) => {
@@ -67,31 +80,26 @@ const post = (path: string, body?: unknown, hostToken?: string) =>
 async function main() {
   console.log(`Load test: ${N} clients → ${BASE_URL}`)
 
-  // Host a session on any ready deck. Straight SQL rather than lib/sessions.ts: that module
-  // is `server-only`, which throws the moment it's imported outside a server runtime.
-  const sql = postgres(DB_URL!, { prepare: false })
-  const [deck] = await sql`
-    select d.id, d.owner_id
-    from decks d
-    where d.status = 'ready' and exists (select 1 from slides s where s.deck_id = d.id)
-    limit 1`
-  if (!deck) {
-    console.error('No ready deck with slides. Create one in the app (and mark it ready) first.')
-    process.exit(1)
-  }
+  // Host a session on a deck this run owns. Straight SQL rather than lib/sessions.ts: that
+  // module is `server-only`, which throws the moment it's imported outside a server runtime.
+  await sweepStaleFixtures(sql, async (c, token) =>
+    (await post(`/api/sessions/${c}/end`, undefined, token)).ok,
+  )
+  const { deckId, ownerId } = await createFixtureDeck(sql, { slides: 1 })
+  fixtureDeckId = deckId
+
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
   const hostToken = randomUUID()
   await sql`
     insert into sessions (deck_id, host_id, code, status, host_token)
-    values (${deck.id}, ${deck.owner_id}, ${code}, 'lobby', ${hostToken})`
-  await sql.end()
+    values (${deckId}, ${ownerId}, ${code}, 'lobby', ${hostToken})`
   room = { code, hostToken } // registered immediately, so every later exit path can close it
 
   // Show the first slide — this is what opens the answer window and starts the server clock.
   const shown = await post(`/api/sessions/${code}/advance`, { index: 0 }, hostToken)
   if (!shown.ok) {
     console.error(`advance failed (${shown.status}): ${await shown.text()}`)
-    await closeRoom()
+    await teardown()
     process.exit(1)
   }
   const { slide, timeLimitMs } = (await shown.json()) as {
@@ -99,7 +107,7 @@ async function main() {
     timeLimitMs: number
   }
   const optionIds = slide.options.map((o) => o.id)
-  console.log(`Session ${code} live on deck ${deck.id} — ${optionIds.length} options.`)
+  console.log(`Session ${code} live on fixture deck ${deckId} — ${optionIds.length} options.`)
 
   let joinOk = 0
   let answerOk = 0
@@ -167,7 +175,7 @@ async function main() {
   const revealed = await post(`/api/sessions/${code}/reveal`, undefined, hostToken)
   if (!revealed.ok) {
     console.error(`reveal failed (${revealed.status}): ${await revealed.text()}`)
-    await closeRoom()
+    await teardown()
     process.exit(1)
   }
 
@@ -182,19 +190,22 @@ async function main() {
   console.log(`  p95: ${pctl(leaderboardLatency, 95)} ms`)
   console.log(`  max: ${Math.max(...leaderboardLatency, 0)} ms`)
 
-  // End the room: frees the code and unlocks the deck for editing again.
+  // End the room, then drop the fixture deck this run created.
   const ended = await post(`/api/sessions/${code}/end`, undefined, hostToken)
   room = null
   clients.forEach((c) => c.removeAllChannels())
   if (!ended.ok) {
     console.error(`\nend failed (${ended.status}): ${await ended.text()} — the room is still live.`)
+    // teardown leaves the deck alone while that room is open, so the next sweep can retry.
+    await teardown()
     process.exit(1)
   }
+  await teardown()
   process.exit(0)
 }
 
 main().catch(async (e) => {
   console.error(e)
-  await closeRoom()
+  await teardown()
   process.exit(1)
 })

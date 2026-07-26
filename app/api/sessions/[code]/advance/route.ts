@@ -60,12 +60,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
 
   const aggregate = alreadyRevealed ? await tallySlideAnswers(session.id, slide.id) : null
   const correct = alreadyRevealed ? correctOptionId(slide.config) : null
+  const explanation = alreadyRevealed ? slide.config.explanation : undefined
   if (alreadyRevealed) {
     // Re-disclose so the room sees the results it was already shown, not a blank slide.
     await broadcast(code, EVENTS.SLIDE_REVEAL, {
       slideId: slide.id,
       correctOptionId: correct ?? undefined,
       aggregate,
+      explanation,
     })
   }
 
@@ -76,5 +78,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     total: await slideCount(session.deckId),
     correctOptionId: correct,
     aggregate,
+    explanation,
   })
 }

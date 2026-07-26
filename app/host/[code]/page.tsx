@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { correctOptionId } from '@/lib/mcq'
-import { currentSlide, sanitizeSlide, slideCount } from '@/lib/realtime/live-slide'
+import { currentSlide, sanitizeSlide, slideCount, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { getHostedSession } from '@/lib/sessions'
 import { HostConsole } from '@/components/HostConsole'
 
@@ -14,11 +14,14 @@ export default async function HostSessionPage({ params }: { params: Promise<{ co
   const session = await getHostedSession(code, hostToken)
   if (!session) notFound()
 
-  // Reloading mid-game must land back on the live slide, not a blank console — the same
-  // catch-up the participant gets from /state. The correct option rides along only once
-  // it's already been revealed to the room.
+  // Reloading mid-game must land back on the live slide with its clock still running, not a
+  // blank console — the same catch-up the participant gets from /state. The correct option
+  // and the explanation ride along only once they've already been revealed to the room.
   const slide = await currentSlide(session)
   const revealed = session.status === 'revealed'
+  // The answered counter is broadcast-driven, so without seeding it a reload mid-question
+  // reads "0 answered" while the room has already responded.
+  const tally = slide ? await tallySlideAnswers(session.id, slide.id) : null
 
   return (
     <HostConsole
@@ -27,7 +30,12 @@ export default async function HostSessionPage({ params }: { params: Promise<{ co
       initialIndex={session.currentSlideIndex}
       initialStatus={session.status}
       initialSlide={slide && sanitizeSlide(slide)}
+      initialAnswered={tally?.total ?? 0}
+      initialAggregate={revealed ? tally : null}
       initialCorrectId={revealed && slide ? correctOptionId(slide.config) : null}
+      initialExplanation={revealed && slide ? (slide.config.explanation ?? null) : null}
+      initialServerStartedAt={session.currentSlideStartedAt?.toISOString() ?? null}
+      initialTimeLimitMs={slide?.config.timeLimitMs ?? null}
     />
   )
 }

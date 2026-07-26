@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
+import { Podium } from '@/components/Podium'
 import { openSessionChannel } from '@/lib/realtime/channels'
 import { EVENTS } from '@/lib/realtime/events'
 import type { LeaderboardEntry, SanitizedSlide, SlideRevealPayload } from '@/lib/realtime/events'
@@ -39,6 +40,7 @@ export default function PlayPage() {
   // broadcast handler, which closes over stale state — hence a ref, not state.
   const picksRef = useRef<Record<string, string>>({})
   const [correctId, setCorrectId] = useState<string | null>(null)
+  const [explanation, setExplanation] = useState<string | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [notice, setNotice] = useState('')
 
@@ -61,6 +63,7 @@ export default function PlayPage() {
       pickedRef.current = alreadyPicked
       setPicked(alreadyPicked)
       setCorrectId(null)
+      setExplanation(null) // cleared with the answer key; both only return at reveal
       setNotice('')
     },
     [],
@@ -168,6 +171,7 @@ export default function PlayPage() {
         setStatus(data.status)
         showSlide(data.slide, data.serverStartedAt, data.timeLimitMs, data.myOptionId ?? null)
         setCorrectId(data.correctOptionId ?? null)
+        setExplanation(data.explanation ?? null)
         setMe(saved)
       } catch {
         // Offline on load — stay on the join form rather than pretending to be in a room.
@@ -193,7 +197,9 @@ export default function PlayPage() {
         showSlide(next, payload.serverStartedAt, payload.timeLimitMs, picksRef.current[next.id] ?? null)
       })
       .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
-        setCorrectId((payload as SlideRevealPayload).correctOptionId ?? null)
+        const p = payload as SlideRevealPayload
+        setCorrectId(p.correctOptionId ?? null)
+        setExplanation(p.explanation ?? null)
         setStatus('revealed')
       })
       .on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, ({ payload }) => {
@@ -261,15 +267,22 @@ export default function PlayPage() {
 
   if (status === 'ended') {
     return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-8 text-center">
-        <h1 className="text-2xl font-semibold">That’s a wrap</h1>
-        {myEntry ? (
-          <p className="text-lg">
-            You finished <span className="font-semibold">#{myEntry.rank}</span> with{' '}
-            <span className="font-semibold tabular-nums">{myEntry.score}</span> points.
-          </p>
-        ) : (
-          <p className="text-neutral-500">Thanks for playing.</p>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-8 p-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold">That’s a wrap</h1>
+          {myEntry ? (
+            <p className="mt-2 text-lg">
+              You finished <span className="font-semibold">#{myEntry.rank}</span> with{' '}
+              <span className="font-semibold tabular-nums">{myEntry.score}</span> points.
+            </p>
+          ) : (
+            <p className="mt-2 text-neutral-500">Thanks for playing.</p>
+          )}
+        </div>
+        {/* The same podium the projector shows, with this player's own row picked out —
+            session:ended carries the full ranking, so no extra fetch per phone. */}
+        {leaderboard.length > 0 && (
+          <Podium ranking={leaderboard} highlightId={me.participantId} />
         )}
       </main>
     )
@@ -338,6 +351,11 @@ export default function PlayPage() {
         <p className="text-center text-neutral-500">Answer locked in — hang tight.</p>
       )}
       {notice && <p className="text-center text-sm text-red-600">{notice}</p>}
+      {status === 'revealed' && explanation && (
+        <p className="rounded-lg bg-neutral-100 px-4 py-3 text-sm leading-relaxed dark:bg-neutral-800">
+          {explanation}
+        </p>
+      )}
       {status === 'revealed' && (
         <p
           className={`text-center text-lg font-semibold ${

@@ -5,16 +5,31 @@
 // Stored option shape mirrors lib/realtime/question.ts (`is_correct`) so M3 can feed a
 // saved slide into a live session with no translation.
 export type McqOption = { id: string; text: string; is_correct: boolean }
-export type McqConfig = { options: McqOption[]; timeLimitMs: number; points: number }
+// `explanation` is optional teaching copy shown to the room AFTER the reveal — never
+// before, since it gives the answer away. M6's emit_slide tool emits one per generated
+// question, so the field lands here now rather than needing a schema change later.
+export type McqConfig = {
+  options: McqOption[]
+  timeLimitMs: number
+  points: number
+  explanation?: string
+}
 // Widen to a union (poll | word_cloud) in M5. Single type for now — no speculative variants.
 export type SlideConfig = McqConfig
 
 // Editable draft in the browser is the same shape as stored (option already has an id).
-export type EditableMcq = { prompt: string; options: McqOption[]; timeLimitMs: number; points: number }
+export type EditableMcq = {
+  prompt: string
+  options: McqOption[]
+  timeLimitMs: number
+  points: number
+  explanation?: string
+}
 
 export const MIN_OPTIONS = 2
 export const MAX_OPTIONS = 6
 export const MCQ_DEFAULTS = { timeLimitMs: 20_000, points: 1_000 }
+export const EXPLANATION_MAX = 500
 const TIME_MIN_MS = 5_000
 const TIME_MAX_MS = 300_000
 const POINTS_MAX = 5_000
@@ -63,6 +78,11 @@ export function validateMcq(m: EditableMcq): string[] {
     errors.push(`Time limit must be ${TIME_MIN_MS / 1000}–${TIME_MAX_MS / 1000} seconds.`)
   if (!(m.points >= 0 && m.points <= POINTS_MAX)) errors.push(`Points must be 0–${POINTS_MAX}.`)
 
+  // Optional, but bounded: it goes on a projector at the reveal, and an unbounded blob
+  // would push the results off screen.
+  if ((m.explanation?.trim().length ?? 0) > EXPLANATION_MAX)
+    errors.push(`Explanation must be ${EXPLANATION_MAX} characters or fewer.`)
+
   return errors
 }
 
@@ -89,12 +109,16 @@ export function isValidOptionId(c: McqConfig, v: unknown): v is string {
 
 /** Trim to the persisted shape. Caller must validate first. */
 export function toStored(m: EditableMcq): { prompt: string; config: McqConfig } {
+  const explanation = m.explanation?.trim()
   return {
     prompt: m.prompt.trim(),
     config: {
       options: m.options.map((o) => ({ id: o.id, text: o.text.trim(), is_correct: o.is_correct })),
       timeLimitMs: m.timeLimitMs,
       points: m.points,
+      // Omitted entirely when blank, so an empty string never reaches the reveal payload
+      // and renders as an empty box on the projector.
+      ...(explanation ? { explanation } : {}),
     },
   }
 }

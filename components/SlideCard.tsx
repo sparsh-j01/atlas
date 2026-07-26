@@ -2,7 +2,15 @@
 
 import { useState, useTransition } from 'react'
 import { saveSlideAction } from '@/lib/actions'
-import { MAX_OPTIONS, MIN_OPTIONS, newOption, validateMcq, type EditableMcq, type McqConfig } from '@/lib/mcq'
+import {
+  EXPLANATION_MAX,
+  MAX_OPTIONS,
+  MIN_OPTIONS,
+  newOption,
+  validateMcq,
+  type EditableMcq,
+  type McqConfig,
+} from '@/lib/mcq'
 
 const input =
   'w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900'
@@ -19,6 +27,7 @@ export function SlideCard({
     options: slide.config.options,
     timeLimitMs: slide.config.timeLimitMs,
     points: slide.config.points,
+    explanation: slide.config.explanation ?? '',
   })
   const [pending, startTransition] = useTransition()
   const [serverErrors, setServerErrors] = useState<string[]>([])
@@ -127,6 +136,19 @@ export function SlideCard({
           />
         </label>
       </div>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-neutral-500">
+          Explanation <span className="text-neutral-400">(optional — shown after the reveal)</span>
+        </span>
+        <textarea
+          className={`${input} min-h-16 resize-y`}
+          maxLength={EXPLANATION_MAX}
+          placeholder="Why this answer is right"
+          value={m.explanation ?? ''}
+          onChange={(e) => patch({ explanation: e.target.value })}
+        />
+      </label>
 
       {(errors.length > 0 || serverErrors.length > 0) && (
         <ul className="text-sm text-amber-600">

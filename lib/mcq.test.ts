@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   blankMcq,
   correctOptionId,
+  EXPLANATION_MAX,
   isValidOptionId,
   sanitizeOptions,
+  toStored,
   validateMcq,
   type EditableMcq,
   type McqConfig,
@@ -79,6 +81,28 @@ describe('validateMcq', () => {
     expect(errs).toContain('Question prompt is required.')
     expect(errs).toContain('Every option needs text.')
     expect(errs).not.toContain('Mark exactly one option correct.')
+  })
+})
+
+describe('explanation (optional, shown after the reveal)', () => {
+  it('accepts a slide with no explanation at all', () => {
+    expect(validateMcq(good())).toEqual([])
+    expect(validateMcq({ ...good(), explanation: '' })).toEqual([])
+  })
+
+  it('rejects one longer than the cap', () => {
+    const errs = validateMcq({ ...good(), explanation: 'x'.repeat(EXPLANATION_MAX + 1) })
+    expect(errs.some((e) => e.includes('Explanation'))).toBe(true)
+    expect(validateMcq({ ...good(), explanation: 'x'.repeat(EXPLANATION_MAX) })).toEqual([])
+  })
+
+  it('is trimmed when kept and omitted entirely when blank', () => {
+    // A blank explanation must not persist as "" — the reveal renders an empty box for it.
+    expect(toStored({ ...good(), explanation: '   ' }).config).not.toHaveProperty('explanation')
+    expect(toStored(good()).config).not.toHaveProperty('explanation')
+    expect(toStored({ ...good(), explanation: '  Paris is the capital.  ' }).config.explanation).toBe(
+      'Paris is the capital.',
+    )
   })
 })
 
