@@ -4,13 +4,14 @@
  * the real HTTP routes against a real database, because that's the only place the anti-cheat
  * gates (sanitized payloads, reveal-gate, host-only controls, answer dedupe) actually live.
  *
- * Prereqs: a running server (BASE_URL), and a deck marked ready with at least one slide
- * (two exercises navigation). Run:  npm run smoke
+ * Prereqs: a running server (BASE_URL). The deck it runs on is created here (scripts/fixture),
+ * so there's nothing to set up by hand and nothing of yours it can touch. Run:  npm run smoke
  */
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import { config } from 'dotenv'
 import postgres from 'postgres'
+import { createFixtureDeck, dropFixtureDeck, sweepStaleFixtures } from './fixture'
 
 config({ path: '.env.local' })
 
@@ -27,9 +28,17 @@ const ok = (label: string) => {
   console.log(`  ✓ ${label}`)
 }
 
-// Module-scoped so a failed assertion can still close the room on the way out — a session
-// left live keeps its deck locked for editing (lib/decks.ts).
+// Module-scoped so a failed assertion can still close the room and drop the fixture deck on
+// the way out — a session left live keeps its deck locked for editing (lib/decks.ts).
 let room: { code: string; hostToken: string } | null = null
+let fixtureDeckId: string | null = null
+const sql = postgres(DB_URL!, { prepare: false })
+
+async function teardown() {
+  if (room) await call(`${room.code}/end`, { token: room.hostToken }).catch(() => {})
+  if (fixtureDeckId) await dropFixtureDeck(sql, fixtureDeckId).catch(() => {})
+  await sql.end().catch(() => {})
+}
 
 const call = (
   path: string,
@@ -50,34 +59,23 @@ async function json(res: Response) {
 }
 
 async function main() {
-  const sql = postgres(DB_URL!, { prepare: false })
-  // Two slides minimum: the navigation checks below are the point of the walk, and silently
-  // skipping them on a one-slide deck would report a pass that never tested advance/back.
-  const [deck] = await sql`
-    select d.id, d.owner_id, count(s.id)::int as slides
-    from decks d join slides s on s.deck_id = d.id
-    where d.status = 'ready'
-    group by d.id, d.owner_id
-    having count(s.id) >= 2
-    limit 1`
-  if (!deck) {
-    console.error('No ready deck with at least 2 slides. The navigation checks need two; add a slide and mark the deck ready.')
-    process.exit(1)
-  }
+  // Clear anything a previously interrupted run left behind (its own fixtures only), then
+  // build this run's deck. Two slides: the navigation checks are the point of the walk, and
+  // silently skipping them on a one-slide deck would report a pass that never tested
+  // advance/back.
+  await sweepStaleFixtures(sql, async (code, token) =>
+    (await call(`${code}/end`, { token })).ok,
+  )
+  const { deckId, ownerId } = await createFixtureDeck(sql, { slides: 2 })
+  fixtureDeckId = deckId
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
   const hostToken = randomUUID()
-  // Close any room already open on this deck first. One live session per deck is a DB
-  // invariant (sessions_active_deck_idx), so a leftover from an interrupted run would make
-  // the insert below fail with a raw constraint error instead of running the walk.
-  await sql`update sessions set status = 'ended', ended_at = now()
-            where deck_id = ${deck.id} and status <> 'ended'`
   await sql`
     insert into sessions (deck_id, host_id, code, status, host_token)
-    values (${deck.id}, ${deck.owner_id}, ${code}, 'lobby', ${hostToken})`
-  await sql.end()
+    values (${deckId}, ${ownerId}, ${code}, 'lobby', ${hostToken})`
   room = { code, hostToken }
-  console.log(`Session ${code} on deck ${deck.id} (${deck.slides} slides)\n`)
+  console.log(`Session ${code} on fixture deck ${deckId} (2 slides)\n`)
 
   // --- Lobby -------------------------------------------------------------------
   const joined = await json(await call(`${code}/join`, { body: { nickname: 'Alice' } }))
@@ -193,18 +191,18 @@ async function main() {
   // that read the session before it closed can't write it back to active/revealed.
   assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: hostToken })).status, 404)
   assert.equal((await call(`${code}/reveal`, { token: hostToken })).status, 404)
-  const check = postgres(DB_URL!, { prepare: false })
-  const [after] = await check`select status from sessions where code = ${code}`
-  await check.end()
+  const [after] = await sql`select status from sessions where code = ${code}`
   assert.equal(after.status, 'ended', 'nothing may resurrect an ended session')
   ok('advance/reveal cannot bring an ended session back to life')
+  room = null // proven ended above; teardown only needs to drop the fixture deck now
 
   console.log(`\n${checks} checks passed.`)
+  await teardown()
   process.exit(0)
 }
 
 main().catch(async (e) => {
   console.error('\nFAILED:', e instanceof Error ? e.message : e)
-  if (room) await call(`${room.code}/end`, { token: room.hostToken }).catch(() => {})
+  await teardown()
   process.exit(1)
 })
