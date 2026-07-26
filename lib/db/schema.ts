@@ -67,17 +67,23 @@ export const slides = pgTable(
   // (checked at commit) without transient-collision errors. See lib/decks.ts reorder.
 ).enableRLS()
 
-// --- Live session tables (M1 spike) ---
+// --- Live session tables ---
 // Only the service role touches these (it bypasses RLS); RLS is enabled with NO anon
 // policies so a leaked anon key can't read/write them. See docs/schema.md.
-// M1 runs a single hardcoded question, so there is no deck/slide/host FK yet:
-//   ponytail: `host_token` stands in for host_id until M2 auth; `slide_id` is the
-//   hardcoded question id (text, no FK) until the slides table lands in M3.
+// A session is a live run of one deck by one creator. `answers.slide_id` holds the slide's
+// uuid as text with no FK: answers outlive the slide they were given for, so a later edit
+// or deck delete can't cascade away a finished game's record.
 
 export const sessions = pgTable(
   'sessions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    // Both are always set at launch (lib/sessions.ts is the only writer). Nullable anyway:
+    // `deck_id` has to be, for ON DELETE SET NULL — deleting a deck keeps its finished
+    // sessions as history instead of erasing them. `host_id` cascades (losing the creator
+    // takes their sessions) and stays nullable only so pre-M3 spike rows still load.
+    deckId: uuid('deck_id').references(() => decks.id, { onDelete: 'set null' }),
+    hostId: uuid('host_id').references(() => profiles.id, { onDelete: 'cascade' }),
     code: text('code').notNull(), // 6-digit PIN, unique among non-ended (index below)
     status: text('status').notNull().default('lobby'), // lobby | active | revealed | ended
     hostToken: text('host_token').notNull(), // server-issued; gates reveal/advance

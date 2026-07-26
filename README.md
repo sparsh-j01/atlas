@@ -1,4 +1,4 @@
-# Live Classroom Quiz Platform
+# Atlas
 
 A live, in-class quiz game where the questions come from **your own material**.
 Upload a lecture PDF or describe a topic, and AI builds a complete, editable deck —
@@ -9,7 +9,7 @@ leaderboard animate on the big screen.
 Think Mentimeter's live visuals + Kahoot's competition, with an AI front door that
 builds the whole assessment from your lecture material.
 
-> Status: early development. Working name TBD.
+> Status: early development.
 
 ## What makes it different
 

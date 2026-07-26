@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { validateMcq, blankMcq, type EditableMcq } from './mcq'
+import {
+  blankMcq,
+  correctOptionId,
+  isValidOptionId,
+  sanitizeOptions,
+  validateMcq,
+  type EditableMcq,
+  type McqConfig,
+} from './mcq'
 
 // A valid baseline; each test perturbs one field.
 function good(): EditableMcq {
@@ -71,5 +79,44 @@ describe('validateMcq', () => {
     expect(errs).toContain('Question prompt is required.')
     expect(errs).toContain('Every option needs text.')
     expect(errs).not.toContain('Mark exactly one option correct.')
+  })
+})
+
+// The live-session view of a saved config. sanitizeOptions is the anti-cheat boundary:
+// every option list a participant receives before the reveal is built by it.
+describe('live-session views of a saved config', () => {
+  const config = (): McqConfig => ({
+    options: [
+      { id: '1', text: 'Paris', is_correct: true },
+      { id: '2', text: 'London', is_correct: false },
+    ],
+    timeLimitMs: 20_000,
+    points: 1_000,
+  })
+
+  it('sanitizeOptions never leaks the answer key', () => {
+    const out = sanitizeOptions(config())
+    expect(out).toEqual([
+      { id: '1', text: 'Paris' },
+      { id: '2', text: 'London' },
+    ])
+    // Belt and braces: no serialized form of the output may carry is_correct.
+    expect(JSON.stringify(out)).not.toContain('is_correct')
+  })
+
+  it('correctOptionId finds the marked option, null when none is marked', () => {
+    expect(correctOptionId(config())).toBe('1')
+    const none = config()
+    none.options = none.options.map((o) => ({ ...o, is_correct: false }))
+    expect(correctOptionId(none)).toBeNull()
+  })
+
+  it('isValidOptionId accepts only this slide’s ids — untrusted input never gets through', () => {
+    expect(isValidOptionId(config(), '2')).toBe(true)
+    expect(isValidOptionId(config(), '99')).toBe(false)
+    // An answer aimed at another slide, or junk from a hand-rolled request.
+    for (const junk of [null, undefined, 1, {}, [], true, '']) {
+      expect(isValidOptionId(config(), junk)).toBe(false)
+    }
   })
 })

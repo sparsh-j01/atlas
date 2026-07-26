@@ -9,11 +9,13 @@ export function DeleteButton({
   action,
   confirmText,
   label = 'Delete',
+  pendingLabel = 'Deleting…',
   className = 'text-sm text-red-600 hover:underline',
 }: {
   action: () => Promise<void>
   confirmText: string
   label?: string
+  pendingLabel?: string
   className?: string
 }) {
   const [pending, startTransition] = useTransition()
@@ -37,9 +39,9 @@ export function DeleteButton({
           })
         }}
       >
-        {pending ? 'Deleting…' : label}
+        {pending ? pendingLabel : label}
       </button>
-      {failed && <span className="text-sm text-amber-600">Delete failed — retry.</span>}
+      {failed && <span className="text-sm text-amber-600">{label} failed — retry.</span>}
     </span>
   )
 }

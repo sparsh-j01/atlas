@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
 import { listDecks } from '@/lib/decks'
-import { createDeckAction, deleteDeckAction } from '@/lib/actions'
+import { createDeckAction, deleteDeckAction, launchDeckAction } from '@/lib/actions'
 import { DeleteButton } from '@/components/DeleteButton'
 
 export default async function DashboardPage() {
@@ -32,6 +32,13 @@ export default async function DashboardPage() {
                   {d.slideCount} {d.slideCount === 1 ? 'slide' : 'slides'} · {d.status}
                 </div>
               </Link>
+              {d.status === 'ready' && (
+                <form action={launchDeckAction.bind(null, d.id)}>
+                  <button className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white">
+                    Present
+                  </button>
+                </form>
+              )}
               <DeleteButton
                 action={deleteDeckAction.bind(null, d.id)}
                 confirmText={`Delete "${d.title}" and all its slides?`}
