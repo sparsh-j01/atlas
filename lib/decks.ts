@@ -2,7 +2,7 @@ import 'server-only'
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { decks, sessions, slides } from '@/lib/db/schema'
-import type { McqConfig } from '@/lib/mcq'
+import type { SlideConfig } from '@/lib/slides'
 
 // Every function is owner-scoped in its WHERE — this is the real access boundary (Drizzle
 // connects as postgres and bypasses RLS; the RLS policies are defense-in-depth). Slide ops
@@ -93,7 +93,7 @@ export async function updateDeck(
 export async function addSlide(
   deckId: string,
   ownerId: string,
-  slide: { type: string; prompt: string; config: McqConfig },
+  slide: { type: string; prompt: string; config: SlideConfig },
 ) {
   await assertDeckEditable(deckId, ownerId)
   // Lock the deck row so concurrent addSlide calls for the same deck serialize — otherwise
@@ -118,12 +118,14 @@ export async function updateSlide(
   deckId: string,
   slideId: string,
   ownerId: string,
-  patch: { prompt: string; config: McqConfig },
+  // `type` moves with `config`: nothing in the schema ties them together, so they're only
+  // ever consistent because every write sets both (see saveSlideAction).
+  patch: { type: string; prompt: string; config: SlideConfig },
 ): Promise<void> {
   await assertDeckEditable(deckId, ownerId)
   await db
     .update(slides)
-    .set({ prompt: patch.prompt, config: patch.config })
+    .set({ type: patch.type, prompt: patch.prompt, config: patch.config })
     .where(and(eq(slides.id, slideId), eq(slides.deckId, deckId)))
   await touchDeck(deckId, ownerId)
 }

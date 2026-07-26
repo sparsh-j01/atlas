@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
 import { openSessionChannel } from '@/lib/realtime/channels'
@@ -9,13 +9,15 @@ import type {
   AggregateMcq,
   LeaderboardEntry,
   PresenceState,
+  ResultsUpdatePayload,
   SanitizedSlide,
   SlideRevealPayload,
 } from '@/lib/realtime/events'
+import { isScored } from '@/lib/slides'
 import { DeleteButton } from '@/components/DeleteButton'
 import { Leaderboard } from '@/components/Leaderboard'
 import { Podium } from '@/components/Podium'
-import { ResultsBars } from '@/components/ResultsBars'
+import { ResultsChart } from '@/components/ResultsChart'
 
 type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 
@@ -56,6 +58,14 @@ export function HostConsole({
   const [status, setStatus] = useState<Status>(initialStatus as Status)
   const [index, setIndex] = useState(initialIndex)
   const [slide, setSlide] = useState<SanitizedSlide | null>(initialSlide)
+  // Which slide the live counters below are allowed to be about. Kept as a ref, and written
+  // in the same tick as setSlide rather than from an effect, so there is no frame in which a
+  // broadcast for the incoming slide is judged against the outgoing one and dropped.
+  const slideIdRef = useRef<string | null>(initialSlide?.id ?? null)
+  const showSlide = useCallback((s: SanitizedSlide | null) => {
+    slideIdRef.current = s?.id ?? null
+    setSlide(s)
+  }, [])
   const [roster, setRoster] = useState<PresenceState[]>([])
   const [answered, setAnswered] = useState(initialAnswered)
   const [correctId, setCorrectId] = useState<string | null>(initialCorrectId)
@@ -103,7 +113,7 @@ export function HostConsole({
     const data = await call('advance', { index: target })
     if (!data) return
     setIndex(data.index)
-    setSlide(data.slide)
+    showSlide(data.slide)
     // Re-showing an already-revealed slide comes back 'revealed' with its tally, so going
     // back to discuss a question shows the results again instead of a blank re-run.
     setStatus(data.status)
@@ -137,12 +147,28 @@ export function HostConsole({
 
   // One subscription for the whole session: presence drives the lobby roster, the throttled
   // answered-count drives the live progress readout.
+  //
+  // Both live counters are addressed to a SLIDE, so both check `payload.slideId` against the
+  // slide actually on screen. Answers land continuously while the host is clicking Next, so a
+  // broadcast for the outgoing slide routinely arrives after the incoming slide:show has
+  // already reset the counter to 0 — without the check it overwrites the new slide's readout
+  // with the previous slide's number. Read through a ref because this effect subscribes once
+  // (deps are [code]) and a handler closing over `slide` would see it frozen at mount.
   useEffect(() => {
     const supabase = createClient()
     const channel = openSessionChannel(supabase, code)
+    const isCurrent = (payload: { slideId?: string }) =>
+      !slideIdRef.current || payload.slideId === slideIdRef.current
     channel
       .on('broadcast', { event: EVENTS.ANSWERED_COUNT }, ({ payload }) => {
-        setAnswered(payload.answered)
+        if (isCurrent(payload)) setAnswered(payload.answered)
+      })
+      // Unscored slides send the distribution itself while voting is open — this is the poll
+      // filling in live. A scored question never sends it (see isScored), so an open quiz
+      // can't reach here and leak its tally.
+      .on('broadcast', { event: EVENTS.RESULTS_UPDATE }, ({ payload }) => {
+        const p = payload as ResultsUpdatePayload
+        if (isCurrent(p)) setAggregate(p.aggregate)
       })
       // The console also follows the room, not just its own button clicks. Without these it
       // goes stale whenever the session moves by any other route — a second host tab, or
@@ -150,7 +176,7 @@ export function HostConsole({
       // server is on another.
       .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
         setIndex(payload.index)
-        setSlide(payload.slide as SanitizedSlide)
+        showSlide(payload.slide as SanitizedSlide)
         setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
         setAnswered(0)
         setCorrectId(null)
@@ -167,7 +193,7 @@ export function HostConsole({
         const p = payload as SlideRevealPayload
         setStatus('revealed')
         setCorrectId(p.correctOptionId ?? null)
-        setAggregate(p.aggregate as AggregateMcq)
+        setAggregate(p.aggregate)
         setExplanation(p.explanation ?? null)
         setDeadline(null)
       })
@@ -186,7 +212,7 @@ export function HostConsole({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [code])
+  }, [code, showSlide])
 
   // Tick only while a question is open; the countdown is the only thing that needs `now`.
   useEffect(() => {
@@ -205,6 +231,11 @@ export function HostConsole({
   // rather than assigned at each reveal path, so the readout can't disagree with the bars
   // drawn from that same aggregate.
   const answeredCount = aggregate?.total ?? answered
+  // Unscored slides draw their results while the room is still voting; a quiz waits for the
+  // reveal. Same predicate the server uses to decide what to broadcast, so the screen can't
+  // show a chart the server never filled — or withhold one it did.
+  const scored = slide ? isScored(slide.type) : true
+  const showResults = slide !== null && (status === 'revealed' || !scored)
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6 sm:p-10">
@@ -273,8 +304,8 @@ export function HostConsole({
           {slide && (
             <section className="flex flex-col gap-6">
               <h2 className="text-3xl font-medium sm:text-4xl">{slide.prompt}</h2>
-              {status === 'revealed' ? (
-                <ResultsBars slide={slide} aggregate={aggregate} correctId={correctId} />
+              {showResults ? (
+                <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
               ) : (
                 <ul className="grid gap-4 sm:grid-cols-2">
                   {slide.options.map((o) => (
@@ -295,7 +326,9 @@ export function HostConsole({
             </section>
           )}
 
-          {status === 'revealed' && leaderboard.length > 0 && (
+          {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
+              the last question — putting them up right after one reads as if the poll scored. */}
+          {status === 'revealed' && scored && leaderboard.length > 0 && (
             <section>
               <h3 className="mb-4 text-2xl font-medium">Leaderboard</h3>
               <Leaderboard entries={leaderboard} />
@@ -326,7 +359,11 @@ export function HostConsole({
                     disabled={busy}
                     className="rounded-lg bg-indigo-600 px-8 py-4 text-lg font-medium text-white disabled:opacity-50"
                   >
-                    Reveal
+                    {/* Same endpoint either way — it closes the answer window. On a quiz that
+                        also discloses the key, which is the whole event; on a poll there is
+                        nothing to disclose, so calling it "Reveal" would promise a result the
+                        room has been watching for the last 30 seconds. */}
+                    {scored ? 'Reveal' : 'Close voting'}
                   </button>
                 )}
                 <button

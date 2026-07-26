@@ -19,10 +19,12 @@ export interface AggregateMcq {
   counts: Record<string, number> // optionId -> count
   total: number
 }
-export interface AggregateWordCloud {
-  words: { text: string; weight: number }[]
-}
-export type Aggregate = AggregateMcq | AggregateWordCloud
+// Every MVP slide type answers with an option id (quiz and poll alike), so one aggregate
+// shape covers both and the result components differ only in how they draw it. Becomes a
+// union again the day a free-text type lands — word cloud's `{ words: [...] }` was written
+// here speculatively and removed when that type left the MVP, rather than left as a variant
+// nothing constructs and every consumer has to cast past.
+export type Aggregate = AggregateMcq
 
 // --- Payloads ---
 // Client-safe slide shape — the answer key (is_correct) is stripped server-side before
@@ -33,6 +35,9 @@ export interface SanitizedSlide {
   prompt: string
   options: { id: string; text: string }[]
   points: number
+  // Poll only — how the host chose to draw the result. Presentation, not an answer key, so
+  // it's safe to ship before the window closes (a poll's results are live anyway).
+  chart?: 'bar' | 'pie' | 'donut'
 }
 
 export interface SlideShowPayload {

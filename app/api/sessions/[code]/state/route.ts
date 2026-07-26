@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { answers, participants } from '@/lib/db/schema'
 import { correctOptionId } from '@/lib/mcq'
+import { explanationOf } from '@/lib/slides'
 import { currentSlide, sanitizeSlide } from '@/lib/realtime/live-slide'
 import { bad, findLiveSession } from '@/lib/realtime/session-util'
 
@@ -59,7 +60,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
     correctOptionId: revealed && slide ? correctOptionId(slide.config) : null,
     // Same gate as the answer key: reconnecting mid-reveal restores the explanation,
     // reconnecting mid-question must not.
-    explanation: revealed && slide ? (slide.config.explanation ?? null) : null,
+    explanation: revealed && slide ? (explanationOf(slide.config) ?? null) : null,
     score,
     myOptionId,
   })

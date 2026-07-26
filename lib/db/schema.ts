@@ -10,9 +10,9 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-// Slide config shape lives in the pure lib/mcq module (shared with the client editor),
+// Slide config shape lives in the pure lib/slides module (shared with the client editor),
 // so schema.ts stays the single place columns are declared without duplicating the type.
-import type { SlideConfig } from '@/lib/mcq'
+import type { SlideConfig } from '@/lib/slides'
 
 // App data for authenticated creators; `id` mirrors auth.users.id (Supabase Auth),
 // row created on signup. RLS is ENABLED from creation (deny-all by default); the own-row
@@ -57,7 +57,7 @@ export const slides = pgTable(
       .notNull()
       .references(() => decks.id, { onDelete: 'cascade' }),
     position: integer('position').notNull(), // 0-based order within the deck
-    type: text('type').notNull(), // quiz_mcq (M2) | poll | word_cloud | ... (M5+)
+    type: text('type').notNull(), // quiz_mcq (M2) | poll (M5) — see SLIDE_TYPES in lib/slides.ts
     prompt: text('prompt').notNull(),
     config: jsonb('config').$type<SlideConfig>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

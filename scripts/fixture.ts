@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
-import type { McqConfig } from '../lib/mcq'
+import type { SlideConfig, SlideType } from '../lib/slides'
 
 // Fixed id so fixture rows are always identifiable as the harness's own. Every destructive
 // statement below is scoped to it, which is what makes the sweep safe: it cannot match a
@@ -19,10 +19,15 @@ export const FIXTURE_OWNER = '00000000-0000-4000-8000-00000000dead'
 
 export type Fixture = { deckId: string; ownerId: string }
 
-/** A ready deck with `slides` MCQ slides, owned by the synthetic creator. */
+/** A ready deck of the given slide types, owned by the synthetic creator. Types rather than
+ *  a count, so a walk can build the mixed deck it needs — an unscored slide sitting between
+ *  two scored ones is where the interesting cross-type bugs live. */
 export async function createFixtureDeck(
   sql: Sql,
-  { slides = 2, timeLimitMs = 20_000 }: { slides?: number; timeLimitMs?: number } = {},
+  {
+    types = ['quiz_mcq', 'quiz_mcq'],
+    timeLimitMs = 20_000,
+  }: { types?: SlideType[]; timeLimitMs?: number } = {},
 ): Promise<Fixture> {
   await sql`
     insert into profiles (id, email, display_name)
@@ -34,22 +39,33 @@ export async function createFixtureDeck(
     values (${FIXTURE_OWNER}, ${`Harness fixture ${new Date().toISOString()}`}, 'ready')
     returning id`
 
-  for (let i = 0; i < slides; i++) {
+  for (const [i, type] of types.entries()) {
     // Option ids are per-slide uuids exactly as the editor writes them, so an answer aimed
     // at the wrong slide fails the same id check it fails in a real game.
-    const config: McqConfig = {
-      options: ['A', 'B', 'C', 'D'].map((t, j) => ({
-        id: randomUUID(),
-        text: `Option ${t}`,
-        is_correct: j === 0,
-      })),
-      timeLimitMs,
-      points: 1_000,
-      explanation: `Option A is correct on fixture question ${i + 1}.`,
-    }
+    const letters = ['A', 'B', 'C', 'D']
+    const config: SlideConfig =
+      type === 'poll'
+        ? {
+            // No is_correct on any option — that absence is what the walk asserts, so it is
+            // built the way the poll editor builds it rather than by stripping a key.
+            options: letters.map((t) => ({ id: randomUUID(), text: `Option ${t}` })),
+            timeLimitMs,
+            chart: 'donut',
+          }
+        : {
+            options: letters.map((t, j) => ({
+              id: randomUUID(),
+              text: `Option ${t}`,
+              is_correct: j === 0,
+            })),
+            timeLimitMs,
+            points: 1_000,
+            explanation: `Option A is correct on fixture question ${i + 1}.`,
+          }
+    const prompt = type === 'poll' ? `Fixture poll ${i + 1}` : `Fixture question ${i + 1}`
     await sql`
       insert into slides (deck_id, position, type, prompt, config)
-      values (${deck.id}, ${i}, 'quiz_mcq', ${`Fixture question ${i + 1}`}, ${sql.json(config)})`
+      values (${deck.id}, ${i}, ${type}, ${prompt}, ${sql.json(config)})`
   }
 
   return { deckId: deck.id, ownerId: FIXTURE_OWNER }

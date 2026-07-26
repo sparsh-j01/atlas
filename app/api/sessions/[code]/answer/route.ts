@@ -4,7 +4,8 @@ import { answers, participants, sessions } from '@/lib/db/schema'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { correctOptionId, isValidOptionId } from '@/lib/mcq'
-import { currentSlide } from '@/lib/realtime/live-slide'
+import { isScored } from '@/lib/slides'
+import { currentSlide, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { scoreAnswer } from '@/lib/realtime/scoring'
 import { answersOpen } from '@/lib/realtime/session-state'
 import { bad, findLiveSession } from '@/lib/realtime/session-util'
@@ -46,13 +47,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     return Response.json({ accepted: false, reason: 'late' })
   }
 
-  const correct = optionId === correctOptionId(slide.config)
-  const { points, newStreak } = scoreAnswer({
-    correct,
-    responseMs,
-    timeLimitMs,
-    priorStreak: p.streak,
-  })
+  // Unscored types (poll) record the response and award nothing. `isCorrect` stays null —
+  // there is no correct answer to record — and the streak is carried through untouched
+  // rather than recomputed: a poll dropped between two quiz questions must not break a
+  // player's run. Branching on `correct === null` rather than on `scored` separately keeps
+  // the two from drifting: there is exactly one way to reach scoreAnswer.
+  const correct = isScored(slide.type) ? optionId === correctOptionId(slide.config) : null
+  const { points, newStreak } =
+    correct === null
+      ? { points: 0, newStreak: p.streak }
+      : scoreAnswer({ correct, responseMs, timeLimitMs, priorStreak: p.streak })
 
   // Insert the answer and bump the participant in one transaction. A unique conflict
   // (session, slide, participant) means they already answered → idempotent, no re-score.
@@ -92,15 +96,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     )
     .returning({ id: sessions.id })
   if (won.length > 0) {
-    const [{ answered }] = await db
-      .select({ answered: count() })
-      .from(answers)
-      .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, slide.id)))
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(participants)
-      .where(eq(participants.sessionId, session.id))
-    await broadcast(code, EVENTS.ANSWERED_COUNT, { slideId: slide.id, answered, total })
+    if (correct === null) {
+      // Unscored: send the live distribution. This is the `results:update` path M4 left
+      // deliberately unused — on a scored question a running tally lets the room herd
+      // toward whatever is winning, but a poll has no answer to protect, and watching the
+      // bars move IS the slide.
+      const aggregate = await tallySlideAnswers(session.id, slide.id)
+      await broadcast(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
+    } else {
+      const [{ answered }] = await db
+        .select({ answered: count() })
+        .from(answers)
+        .where(and(eq(answers.sessionId, session.id), eq(answers.slideId, slide.id)))
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(participants)
+        .where(eq(participants.sessionId, session.id))
+      await broadcast(code, EVENTS.ANSWERED_COUNT, { slideId: slide.id, answered, total })
+    }
   }
 
   // Own-correctness is withheld until reveal (Kahoot-style suspense; nothing leaks).
