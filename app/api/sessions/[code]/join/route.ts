@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { participants } from '@/lib/db/schema'
+import { sanitizeNickname } from '@/lib/nickname'
 import { currentSlide, sanitizeSlide } from '@/lib/realtime/live-slide'
 import { bad, findLiveSession, newToken } from '@/lib/realtime/session-util'
 import { answersOpen } from '@/lib/realtime/session-state'
@@ -11,8 +12,13 @@ import { answersOpen } from '@/lib/realtime/session-state'
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   const body = await req.json().catch(() => null)
-  const nickname = typeof body?.nickname === 'string' ? body.nickname.trim() : ''
-  if (!nickname || nickname.length > 24) return bad(400, 'nickname must be 1–24 characters')
+  // Trim, length, invisible characters and the blocklist, in one call — this nickname goes
+  // on a projector in front of a room, and there is no account behind it to appeal to.
+  // Server-side because it is the only side that counts; the filter is deliberately beatable,
+  // which is why the host also gets /kick.
+  const checked = sanitizeNickname(body?.nickname)
+  if (!checked.ok) return bad(400, checked.error)
+  const { nickname } = checked
 
   const session = await findLiveSession(code)
   if (!session) return bad(404, 'session not found')

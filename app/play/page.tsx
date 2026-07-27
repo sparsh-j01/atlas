@@ -7,7 +7,12 @@ import { Podium } from '@/components/Podium'
 import { openSessionChannel } from '@/lib/realtime/channels'
 import { isScored } from '@/lib/slides'
 import { EVENTS } from '@/lib/realtime/events'
-import type { LeaderboardEntry, SanitizedSlide, SlideRevealPayload } from '@/lib/realtime/events'
+import type {
+  LeaderboardEntry,
+  ParticipantKickedPayload,
+  SanitizedSlide,
+  SlideRevealPayload,
+} from '@/lib/realtime/events'
 
 type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 type Joined = {
@@ -45,6 +50,18 @@ export default function PlayPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [notice, setNotice] = useState('')
 
+  // The server's start stamp for the slide currently on screen. Two `advance` calls in quick
+  // succession are two separate serverless invocations publishing independently, so their
+  // slide:show messages can reach a phone out of order and leave it on the slide the room
+  // already left. This is the ordering key: it's set by the server on every advance, it only
+  // moves forward, and it's already in the payload — so no sequence counter has to be
+  // invented, stored, or migrated. A ref, not state, because the broadcast handler subscribes
+  // once and would otherwise close over the value at mount (failure-patterns #11).
+  const startedAtRef = useRef<number>(0)
+  // Which slide this phone is on, for the slide-addressed events (reveal). Same role the
+  // console's slideIdRef plays; written in the same tick as the slide itself.
+  const slideIdRef = useRef<string | null>(null)
+
   // Every path onto a slide (join, reconnect, slide:show) lands here, so a new slide can't
   // leave a stale pick or a stale reveal behind.
   const showSlide = useCallback(
@@ -54,6 +71,8 @@ export default function PlayPage() {
       timeLimitMs: number | null,
       alreadyPicked: string | null = null,
     ) => {
+      startedAtRef.current = serverStartedAt ? Date.parse(serverStartedAt) : 0
+      slideIdRef.current = s?.id ?? null
       setSlide(s)
       // ponytail: the countdown compares the server's start stamp against the phone's clock,
       // so a badly-skewed device sees a wrong number. It's cosmetic — the server rejects late
@@ -191,6 +210,13 @@ export default function PlayPage() {
     channel
       .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
         const next = payload.slide as SanitizedSlide
+        // Drop a slide:show older than the one on screen. Ordering between two independent
+        // publishes isn't guaranteed, and applying the stale one strands this phone on a
+        // slide the room has left — it would sit there until the next broadcast, unable to
+        // answer, since the server scores against ITS current slide. Not `!==`: re-showing
+        // the same slide is legitimate (Back), and it always carries a newer stamp.
+        const startedAt = Date.parse(payload.serverStartedAt)
+        if (startedAt < startedAtRef.current) return
         // Trust the server's status: a re-shown slide arrives already 'revealed', so the
         // options never flash as tappable before the slide:reveal lands.
         setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
@@ -199,6 +225,11 @@ export default function PlayPage() {
       })
       .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
         const p = payload as SlideRevealPayload
+        // The console's copy of this handler was the one flagged in review, but the phone
+        // runs the same shape and the consequence here is worse: a reveal for the outgoing
+        // slide would grey out the options and print "Not this time" on a question this
+        // player is still answering, comparing their pick to the previous slide's key.
+        if (slideIdRef.current && p.slideId !== slideIdRef.current) return
         setCorrectId(p.correctOptionId ?? null)
         setExplanation(p.explanation ?? null)
         setStatus('revealed')
@@ -210,6 +241,18 @@ export default function PlayPage() {
         setLeaderboard(payload.fullRanking as LeaderboardEntry[])
         setStatus('ended')
         localStorage.removeItem(STORE_KEY)
+      })
+      // Broadcast has no per-client addressing, so the whole room hears this and only the
+      // phone it names acts. Back to the join form rather than a dead-end screen: rejoining
+      // under a different name is allowed (there's no identity to ban), and a stuck screen
+      // would just get a page reload anyway.
+      .on('broadcast', { event: EVENTS.PARTICIPANT_KICKED }, ({ payload }) => {
+        if ((payload as ParticipantKickedPayload).participantId !== me.participantId) return
+        localStorage.removeItem(STORE_KEY)
+        setMe(null)
+        setSlide(null)
+        setStatus('lobby')
+        setError('The host removed you from this session.')
       })
       .subscribe((s) => {
         if (s === 'SUBSCRIBED') {

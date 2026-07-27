@@ -155,6 +155,37 @@ async function main() {
   const abstainer = (await json(await call(`${code}/join`, { body: { nickname: 'Abstainer' } })))
     .body.clientToken as string
 
+  // --- Nickname guard + kick ----------------------------------------------------
+  // The name a stranger types lands on a projector in front of a room, so the filter runs
+  // server-side; and because any filter is beatable, the host gets a removal control. Both
+  // halves are checked here — the filter on a padded spelling it must still catch, and the
+  // kick on a player who got in anyway.
+  assert.equal((await call(`${code}/join`, { body: { nickname: 'xX_fUuUcK_Xx' } })).status, 400)
+  assert.equal((await call(`${code}/join`, { body: { nickname: '   ' } })).status, 400)
+  ok('join rejects a blocked nickname through padding, repeats and case')
+
+  const griefer = await json(await call(`${code}/join`, { body: { nickname: 'Rude Name' } }))
+  const grieferId = griefer.body.participantId as string
+  const grieferToken = griefer.body.clientToken as string
+  assert.equal(
+    (await call(`${code}/kick`, { body: { participantId: grieferId }, token: randomUUID() })).status,
+    404,
+    'kick is host-only, and a wrong token must not confirm the room exists',
+  )
+  assert.equal((await call(`${code}/kick`, { body: {}, token: hostToken })).status, 400)
+  assert.equal(
+    (await call(`${code}/kick`, { body: { participantId: randomUUID() }, token: hostToken })).status,
+    404,
+    'kicking someone who is not in this room is a miss, not a silent success',
+  )
+  assert.equal(
+    (await call(`${code}/kick`, { body: { participantId: grieferId }, token: hostToken })).status,
+    200,
+  )
+  // Removed for real, not flagged: their seat is gone from both the read and the write path.
+  assert.equal((await call(`${code}/state`, { method: 'GET', token: grieferToken })).status, 404)
+  ok('host can remove a player; their token stops resolving immediately')
+
   // --- Host-only controls ------------------------------------------------------
   assert.equal((await call(`${code}/advance`, { body: { index: 0 } })).status, 404)
   assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: randomUUID() })).status, 404)
@@ -181,6 +212,12 @@ async function main() {
   assert.equal(beforeReveal.body.myOptionId, null)
   assert.ok(!beforeReveal.text.includes('is_correct'))
   ok('/state pre-reveal: slide present, correct option withheld')
+
+  // A token from some other (or older) room must not read this one. Codes get recycled once
+  // a session ends, so a phone that was offline at the close still holds a token for a code
+  // that now belongs to a different game — it used to get 200 and render this room's slides.
+  assert.equal((await call(`${code}/state`, { method: 'GET', token: randomUUID() })).status, 404)
+  ok('/state rejects a token that names nobody in this session (recycled-code phones)')
 
   // --- Answering ---------------------------------------------------------------
   assert.equal((await call(`${code}/answer`, { body: { clientToken: alice, optionId: 'nope' } })).status, 400)

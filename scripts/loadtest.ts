@@ -120,6 +120,25 @@ async function main() {
   // every client's leaderboard handler (shared closure; no per-channel plumbing).
   let revealSentAt = 0
 
+  // --- Message-rate instrumentation -------------------------------------------------
+  // Supabase counts and rate-limits Realtime per DELIVERED COPY: one broadcast to this room
+  // is ~N+1 messages, not 1. The documented ceiling is 100 msg/s on Free and 500 on Pro, and
+  // crossing it DISCONNECTS clients until throughput drops. So "did every client stay
+  // connected" and "what was our peak messages/second" are the two numbers that decide
+  // whether the 100+ claim holds — and neither was being measured. Bucketed by wall-clock
+  // second across every client, which is the same unit the limit is expressed in.
+  const msgsPerSecond = new Map<number, number>()
+  const countMessage = () => {
+    const bucket = Math.floor(Date.now() / 1000)
+    msgsPerSecond.set(bucket, (msgsPerSecond.get(bucket) ?? 0) + 1)
+  }
+  // A client that drops mid-session and reconnects inside the 10s fan-out wait still
+  // receives the leaderboard, so the old pass/fail could not see it. Record it instead.
+  const drops: string[] = []
+  // Closed only counts as a drop while the run is still measuring: teardown closes all N
+  // channels deliberately, and without this gate a clean run reports N disconnects.
+  let measuring = true
+
   await Promise.all(
     Array.from({ length: N }, async (_, i) => {
       const nickname = `bot-${i}`
@@ -139,15 +158,37 @@ async function main() {
       const supabase = createClient(SUPABASE_URL!, ANON!)
       clients.push(supabase)
       const channel = openSessionChannel(supabase, code)
+      // Every event this phone would receive counts toward the project's messages/second,
+      // so count them all, not just the one the assertion waits on.
+      for (const event of [
+        EVENTS.SLIDE_SHOW,
+        EVENTS.ANSWERED_COUNT,
+        EVENTS.RESULTS_UPDATE,
+        EVENTS.SLIDE_REVEAL,
+        EVENTS.SESSION_ENDED,
+      ]) {
+        channel.on('broadcast', { event }, countMessage)
+      }
       channel.on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, () => {
+        countMessage()
         if (revealSentAt) leaderboardLatency.push(Date.now() - revealSentAt)
         gotLeaderboard[i]?.()
       })
+      let wasSubscribed = false
       await new Promise<void>((resolve) => {
         channel.subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            channel.track({ participantId, nickname, avatarSeed: nickname })
-            resolve()
+            if (!wasSubscribed) {
+              wasSubscribed = true
+              channel.track({ participantId, nickname, avatarSeed: nickname })
+              resolve()
+            } else {
+              // Back after a drop. Silent today, and it is exactly what exceeding the
+              // messages/second limit looks like from the client side.
+              drops.push(`${nickname} re-SUBSCRIBED`)
+            }
+          } else if (measuring && wasSubscribed && (status === 'CHANNEL_ERROR' || status === 'CLOSED')) {
+            drops.push(`${nickname} → ${status}`)
           }
         })
       })
@@ -181,6 +222,7 @@ async function main() {
 
   // Wait for the fan-out (10s cap).
   await Promise.race([Promise.all(done), new Promise((r) => setTimeout(r, 10_000))])
+  measuring = false // everything after this point is teardown, not the run
 
   console.log('\n--- Results ---')
   console.log(`Join success:        ${joinOk}/${N} (${((100 * joinOk) / N).toFixed(1)}%)`)
@@ -189,6 +231,18 @@ async function main() {
   console.log(`  p50: ${pctl(leaderboardLatency, 50)} ms`)
   console.log(`  p95: ${pctl(leaderboardLatency, 95)} ms`)
   console.log(`  max: ${Math.max(...leaderboardLatency, 0)} ms`)
+
+  // The number that decides whether this scales, measured rather than assumed. Free allows
+  // 100 msg/s, Pro 500; over the limit Supabase disconnects clients until the rate drops.
+  // Counted client-side, so it is the delivered copies only — the server's own publishes add
+  // one per broadcast on top, which is why the ceiling comparison uses this as a floor.
+  const totalMsgs = [...msgsPerSecond.values()].reduce((a, b) => a + b, 0)
+  const peak = Math.max(0, ...msgsPerSecond.values())
+  console.log(`Realtime messages:   ${totalMsgs} delivered, peak ${peak}/s across ${joinOk} clients`)
+  console.log(`  vs plan limits:    Free 100/s · Pro 500/s (exceeding either disconnects clients)`)
+  if (drops.length) {
+    console.log(`  DISCONNECTS:       ${drops.length} — ${drops.slice(0, 5).join(', ')}`)
+  }
 
   // End the room, then drop the fixture deck this run created.
   const ended = await post(`/api/sessions/${code}/end`, undefined, hostToken)
@@ -201,6 +255,13 @@ async function main() {
     process.exit(1)
   }
   await teardown()
+  // A run where clients dropped is not a pass, however good the latency numbers look — the
+  // fan-out wait is 10s, which is long enough for a dropped client to reconnect and receive
+  // the leaderboard anyway. That is what made this failure invisible before.
+  if (drops.length) {
+    console.error(`\nFAILED: ${drops.length} client(s) left the channel mid-session.`)
+    process.exit(1)
+  }
   process.exit(0)
 }
 

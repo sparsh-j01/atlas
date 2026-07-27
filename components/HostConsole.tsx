@@ -62,8 +62,18 @@ export function HostConsole({
   // in the same tick as setSlide rather than from an effect, so there is no frame in which a
   // broadcast for the incoming slide is judged against the outgoing one and dropped.
   const slideIdRef = useRef<string | null>(initialSlide?.id ?? null)
-  const showSlide = useCallback((s: SanitizedSlide | null) => {
+  // The server's start stamp for what's on screen, used to drop an out-of-order slide:show
+  // (see the handler below). Same reasoning as the phone's copy in app/play/page.tsx: two
+  // rapid advances publish independently and can arrive reversed, and this console follows
+  // the room, not just its own clicks — a second host tab or the load harness moves it too.
+  const startedAtRef = useRef<number>(
+    initialServerStartedAt ? Date.parse(initialServerStartedAt) : 0,
+  )
+  const showSlide = useCallback((s: SanitizedSlide | null, serverStartedAt?: string | null) => {
     slideIdRef.current = s?.id ?? null
+    if (serverStartedAt !== undefined) {
+      startedAtRef.current = serverStartedAt ? Date.parse(serverStartedAt) : 0
+    }
     setSlide(s)
   }, [])
   const [roster, setRoster] = useState<PresenceState[]>([])
@@ -113,7 +123,7 @@ export function HostConsole({
     const data = await call('advance', { index: target })
     if (!data) return
     setIndex(data.index)
-    showSlide(data.slide)
+    showSlide(data.slide, data.serverStartedAt)
     // Re-showing an already-revealed slide comes back 'revealed' with its tally, so going
     // back to discuss a question shows the results again instead of a blank re-run.
     setStatus(data.status)
@@ -136,6 +146,12 @@ export function HostConsole({
     setExplanation(data.explanation ?? null)
     setLeaderboard(data.top)
     setDeadline(null)
+  }
+
+  async function kick(participantId: string) {
+    await call('kick', { participantId })
+    // Presence drops them when their phone leaves the channel, so the roster corrects
+    // itself; no local list surgery to keep in sync with the server.
   }
 
   async function end() {
@@ -176,8 +192,12 @@ export function HostConsole({
       // the load-test harness driving over HTTP — and would then render one slide while the
       // server is on another.
       .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
+        // Older than what's on screen → a reordered publish for a slide the room already
+        // left. Applying it would put the console on one slide while the server is on
+        // another, which is precisely what this handler exists to prevent.
+        if (Date.parse(payload.serverStartedAt) < startedAtRef.current) return
         setIndex(payload.index)
-        showSlide(payload.slide as SanitizedSlide)
+        showSlide(payload.slide as SanitizedSlide, payload.serverStartedAt)
         setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
         setAnswered(0)
         setCorrectId(null)
@@ -232,7 +252,7 @@ export function HostConsole({
     status === 'active' && deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
   const atLast = index >= total - 1
   // While a question is open the count comes from the leaky-bucket broadcast, which is a
-  // throttled estimate — answers landing inside the same 200ms window as the last one never
+  // throttled estimate — answers landing inside the same 1s window as the last one never
   // get their own message, so it can sit low. Once an aggregate exists (reveal, or a re-shown
   // revealed slide) it is the DB-authoritative count, so read the total off it. Derived
   // rather than assigned at each reveal path, so the readout can't disagree with the bars
@@ -274,22 +294,7 @@ export function HostConsole({
           {roster.length === 0 ? (
             <p className="text-neutral-500">Nobody has joined yet.</p>
           ) : (
-            <ul className="flex flex-wrap gap-3">
-              {roster.map((p) => (
-                <li
-                  key={p.participantId}
-                  className="flex items-center gap-2 rounded-full border border-neutral-200 py-1.5 pl-1.5 pr-4 text-lg dark:border-neutral-800"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={avatarUrl(p.avatarSeed)}
-                    alt=""
-                    className="h-9 w-9 rounded-full bg-neutral-100"
-                  />
-                  <span className="font-medium">{p.nickname}</span>
-                </li>
-              ))}
-            </ul>
+            <Roster roster={roster} onKick={kick} busy={busy} />
           )}
         </section>
       )}
@@ -394,11 +399,64 @@ export function HostConsole({
               />
             </div>
           </div>
+
+          {/* Mid-game access to the same remove control. A native <details> so there's no
+              open/closed state to hold, and it stays collapsed on the projector until the
+              host actually needs it. Only rendered once the lobby roster is gone. */}
+          {status !== 'lobby' && roster.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-neutral-500">
+                Players ({roster.length})
+              </summary>
+              <div className="pt-3">
+                <Roster roster={roster} onKick={kick} busy={busy} />
+              </div>
+            </details>
+          )}
         </>
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
     </main>
+  )
+}
+
+/** The room, with a remove control on every player. Shared by the lobby (where it's the main
+ *  event) and the in-game disclosure below the controls — a bad nickname is at its most
+ *  visible once that player is on the leaderboard, which is exactly when the lobby is gone. */
+function Roster({
+  roster,
+  onKick,
+  busy,
+}: {
+  roster: PresenceState[]
+  onKick: (participantId: string) => void
+  busy: boolean
+}) {
+  return (
+    <ul className="flex flex-wrap gap-3">
+      {roster.map((p) => (
+        <li
+          key={p.participantId}
+          className="flex items-center gap-2 rounded-full border border-neutral-200 py-1.5 pl-1.5 pr-2 text-lg dark:border-neutral-800"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={avatarUrl(p.avatarSeed)} alt="" className="h-9 w-9 rounded-full bg-neutral-100" />
+          <span className="font-medium">{p.nickname}</span>
+          <button
+            onClick={() => onKick(p.participantId)}
+            disabled={busy}
+            // The nickname is in the label, not just the ×, so a screen reader announces
+            // WHICH player this removes — there is one of these per person on screen.
+            aria-label={`Remove ${p.nickname}`}
+            title={`Remove ${p.nickname}`}
+            className="rounded-full px-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950"
+          >
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

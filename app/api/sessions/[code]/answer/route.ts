@@ -7,7 +7,7 @@ import { correctOptionId, isValidOptionId } from '@/lib/mcq'
 import { isScored } from '@/lib/slides'
 import { currentSlide, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { scoreAnswer } from '@/lib/realtime/scoring'
-import { answersOpen } from '@/lib/realtime/session-state'
+import { answersOpen, withinAnswerWindow } from '@/lib/realtime/session-state'
 import { bad, findLiveSession } from '@/lib/realtime/session-util'
 
 // Server-authoritative answer: rejects late answers by SERVER receipt time, scores,
@@ -42,8 +42,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
 
   const { timeLimitMs } = slide.config
   const responseMs = Date.now() - session.currentSlideStartedAt.getTime()
-  // Late answers are rejected by the server clock — never a client-sent timestamp.
-  if (responseMs > timeLimitMs) {
+  // Late answers are rejected by the server clock — never a client-sent timestamp — but with
+  // a grace window, because receipt time includes the upload the tap had to make. See
+  // ANSWER_GRACE_MS: an answer inside the grace scores the floor, so it buys nothing.
+  if (!withinAnswerWindow(responseMs, timeLimitMs)) {
     return Response.json({ accepted: false, reason: 'late' })
   }
 
@@ -75,23 +77,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       .onConflictDoNothing()
       .returning({ id: answers.id })
     if (inserted.length === 0) return false
+    // Increment in SQL rather than writing back `p.score + points` computed in JS. The
+    // unique index above already stops the same player scoring one slide twice, so today
+    // the read-modify-write is safe — but only as a side effect of that index, and only
+    // while one answer per player can be in flight. Let the database do the addition and
+    // the score is correct because of how it's written, not because of what else happens
+    // to be true. `streak` can't be an increment (it resets on a wrong answer), so it
+    // stays last-writer-wins.
     await tx
       .update(participants)
-      .set({ score: p.score + points, streak: newStreak, lastSeenAt: new Date() })
+      .set({
+        score: sql`${participants.score} + ${points}`,
+        streak: newStreak,
+        lastSeenAt: new Date(),
+      })
       .where(eq(participants.id, p.id))
     return true
   })
   if (!applied) return Response.json({ accepted: true, alreadyAnswered: true })
 
-  // Leaky-bucket throttle on the session row: only the writer that wins the 200ms window
+  // Leaky-bucket throttle on the session row: only the writer that wins the window
   // recomputes the count and broadcasts; everyone else just persisted their answer.
+  //
+  // One second, not 200ms, and the reason is a hard vendor limit rather than taste.
+  // Supabase bills AND rate-limits Realtime per delivered copy: one broadcast to a room of
+  // 100 phones plus the projector is ~102 messages, not 1. The documented ceiling is 100
+  // messages/second on Free and 500 on Pro, and crossing it does not cost money, it
+  // DISCONNECTS the clients until throughput drops. At 200ms this room would run ~510/s:
+  // over Pro, 5x over Free, at exactly the 100-player concurrency this project exists to
+  // demonstrate. At 1s it is ~102/s with room to spare on both.
+  // ponytail: a wall-clock window is the cheap fix. If the counter ever needs to feel
+  // smoother, interpolate on the client between messages rather than sending more of them.
   const won = await db
     .update(sessions)
     .set({ lastBcast: sql`now()` })
     .where(
       and(
         eq(sessions.id, session.id),
-        or(isNull(sessions.lastBcast), lt(sessions.lastBcast, sql`now() - interval '200 milliseconds'`)),
+        or(isNull(sessions.lastBcast), lt(sessions.lastBcast, sql`now() - interval '1 second'`)),
       ),
     )
     .returning({ id: sessions.id })
