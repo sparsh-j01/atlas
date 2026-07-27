@@ -148,12 +148,13 @@ export function HostConsole({
   // One subscription for the whole session: presence drives the lobby roster, the throttled
   // answered-count drives the live progress readout.
   //
-  // Both live counters are addressed to a SLIDE, so both check `payload.slideId` against the
-  // slide actually on screen. Answers land continuously while the host is clicking Next, so a
-  // broadcast for the outgoing slide routinely arrives after the incoming slide:show has
-  // already reset the counter to 0 — without the check it overwrites the new slide's readout
-  // with the previous slide's number. Read through a ref because this effect subscribes once
-  // (deps are [code]) and a handler closing over `slide` would see it frozen at mount.
+  // Every slide-addressed event checks `payload.slideId` against the slide actually on
+  // screen — both live counters AND the reveal. Answers land continuously while the host is
+  // clicking Next, so a broadcast for the outgoing slide routinely arrives after the incoming
+  // slide:show has already reset the counter to 0; without the check it overwrites the new
+  // slide's readout with the previous slide's number, or (on a reveal) closes a question the
+  // room is still answering. Read through a ref because this effect subscribes once (deps are
+  // [code]) and a handler closing over `slide` would see it frozen at mount.
   useEffect(() => {
     const supabase = createClient()
     const channel = openSessionChannel(supabase, code)
@@ -191,6 +192,12 @@ export function HostConsole({
       })
       .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
         const p = payload as SlideRevealPayload
+        // Addressed to a slide like the two counters above, so it gets the same check. A
+        // reveal for the OUTGOING slide arriving after the incoming slide:show would
+        // otherwise mark a live question revealed and paint it with the previous slide's
+        // tally and explanation — worse than a stale counter, because it closes the UI on a
+        // question the room is still answering.
+        if (!isCurrent(p)) return
         setStatus('revealed')
         setCorrectId(p.correctOptionId ?? null)
         setAggregate(p.aggregate)

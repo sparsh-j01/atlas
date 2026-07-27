@@ -60,16 +60,37 @@ export function explanationOf(c: SlideConfig): string | undefined {
   return 'explanation' in c ? c.explanation : undefined
 }
 
+// Switches with no `default`, deliberately, and each one declares its return type. That
+// combination is what makes adding a third SLIDE_TYPE a COMPILE error here (TS2366: the
+// function can now fall off the end) instead of a silent fall-through into the MCQ branch.
+// Word cloud is deferred, not cancelled, and a word_cloud draft quietly validated by the MCQ
+// rules is exactly the kind of type/config mismatch toEditable() below exists to fail closed
+// on — better to never let it be constructed.
 export function blankSlide(type: SlideType): EditableSlide {
-  return type === 'poll' ? { type, ...blankPoll() } : { type, ...blankMcq() }
+  switch (type) {
+    case 'poll':
+      return { type, ...blankPoll() }
+    case 'quiz_mcq':
+      return { type, ...blankMcq() }
+  }
 }
 
 export function validateSlide(d: EditableSlide): string[] {
-  return d.type === 'poll' ? validatePoll(d) : validateMcq(d)
+  switch (d.type) {
+    case 'poll':
+      return validatePoll(d)
+    case 'quiz_mcq':
+      return validateMcq(d)
+  }
 }
 
 export function toStoredSlide(d: EditableSlide): { prompt: string; config: SlideConfig } {
-  return d.type === 'poll' ? toStoredPoll(d) : toStored(d)
+  switch (d.type) {
+    case 'poll':
+      return toStoredPoll(d)
+    case 'quiz_mcq':
+      return toStored(d)
+  }
 }
 
 /**

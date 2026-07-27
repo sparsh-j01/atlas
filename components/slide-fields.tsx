@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { saveSlideAction } from '@/lib/actions'
+import { TIME_MAX_MS, TIME_MIN_MS } from '@/lib/mcq'
 import { validateSlide, type EditableSlide } from '@/lib/slides'
 
 // Pieces every slide editor shares. Lives in its own module so SlideCard can import the
@@ -104,8 +105,10 @@ export function TimeLimitField({
       <span className="text-neutral-500">Time (s)</span>
       <input
         type="number"
-        min={5}
-        max={300}
+        // From the same constants validateOptionSlide enforces, in seconds. Hardcoding them
+        // meant the input could silently accept a value the save then rejected.
+        min={TIME_MIN_MS / 1000}
+        max={TIME_MAX_MS / 1000}
         className={`${inputClass} w-20`}
         value={Math.round(timeLimitMs / 1000)}
         onChange={(e) => onChange(e.target.value)}
