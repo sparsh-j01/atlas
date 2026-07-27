@@ -161,6 +161,14 @@ describe('toEditable — the type/config trust boundary', () => {
     expect(toEditable({ type: 'poll', prompt: 'p', config: mcqConfig() })).toBeNull()
   })
 
+  // The discriminating key alone isn't enough: validateSlide iterates `options`, so a config
+  // missing it would throw out of the ready-gate rather than fail it.
+  it('returns null when the config has no option list', () => {
+    const noOptions = { chart: 'bar', timeLimitMs: 30_000 } as unknown as PollConfig
+    expect(toEditable({ type: 'poll', prompt: 'p', config: noOptions })).toBeNull()
+    expect(toEditable({ type: 'quiz_mcq', prompt: 'q', config: { ...mcqConfig(), options: null as never } })).toBeNull()
+  })
+
   it('returns null for a type this build does not know', () => {
     expect(toEditable({ type: 'word_cloud', prompt: 'p', config: pollConfig() })).toBeNull()
     expect(toEditable({ type: '', prompt: 'p', config: mcqConfig() })).toBeNull()

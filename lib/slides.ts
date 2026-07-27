@@ -87,6 +87,10 @@ export function toEditable(s: {
   prompt: string
   config: SlideConfig
 }): EditableSlide | null {
+  // `options` is checked too, not just the discriminating key: the validators below iterate it
+  // (`options.length`, `options.some`), so a row missing it would throw out of the ready-gate
+  // instead of failing it — and SlideCard renders its "unrecognised slide" fallback off a null.
+  if (!Array.isArray(s.config?.options)) return null
   if (s.type === 'poll' && 'chart' in s.config) return { type: 'poll', prompt: s.prompt, ...s.config }
   if (s.type === 'quiz_mcq' && 'points' in s.config)
     return { type: 'quiz_mcq', prompt: s.prompt, ...s.config }

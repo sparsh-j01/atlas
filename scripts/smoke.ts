@@ -77,17 +77,27 @@ async function json(res: Response) {
 // Broadcasts observed on the session channel over the anon key — exactly what a participant's
 // phone receives. The rest of the walk is pure HTTP; this is the only place it can check what
 // the room was actually told, which is where the live-viz rules live.
+// Matched on slide as well as event name. Both live counters are addressed to a slide, and a
+// throttled broadcast for the previous slide can land after the next one is up — matching on
+// the name alone would let that stale message satisfy a wait, or fail a "never sent" check
+// the server actually honoured.
 const seen: { event: string; payload: unknown }[] = []
-const countOf = (event: string) => seen.filter((s) => s.event === event).length
+const forSlide = (event: string, slideId: string) => (s: { event: string; payload: unknown }) =>
+  s.event === event && (s.payload as { slideId?: string })?.slideId === slideId
+const countOf = (event: string, slideId: string) => seen.filter(forSlide(event, slideId)).length
 
-async function waitForEvent(event: string, ms = 5_000): Promise<unknown | null> {
+async function waitFor(fn: () => boolean, ms = 5_000): Promise<boolean> {
   const deadline = Date.now() + ms
-  for (;;) {
-    const hit = seen.find((s) => s.event === event)
-    if (hit) return hit.payload
-    if (Date.now() >= deadline) return null
+  while (!fn()) {
+    if (Date.now() >= deadline) return false
     await new Promise((r) => setTimeout(r, 50))
   }
+  return true
+}
+
+async function waitForEvent(event: string, slideId: string): Promise<unknown | null> {
+  await waitFor(() => seen.some(forSlide(event, slideId)))
+  return seen.find(forSlide(event, slideId))?.payload ?? null
 }
 
 async function main() {
@@ -192,12 +202,12 @@ async function main() {
 
   // The anti-herding rule, checked on the wire rather than inferred from the route: a live
   // quiz may broadcast HOW MANY have answered, never WHAT they answered.
-  const counted = (await waitForEvent(EVENTS.ANSWERED_COUNT)) as AnsweredCountPayload | null
+  const counted = (await waitForEvent(EVENTS.ANSWERED_COUNT, slide.id)) as AnsweredCountPayload | null
   assert.ok(counted, 'a quiz answer broadcasts a live answered-count')
   assert.equal(counted.slideId, slide.id)
   assert.equal(counted.answered, 1)
   assert.equal(
-    countOf(EVENTS.RESULTS_UPDATE),
+    countOf(EVENTS.RESULTS_UPDATE, slide.id),
     0,
     'a live quiz must never broadcast its tally — the room would herd toward the leading answer',
   )
@@ -259,7 +269,6 @@ async function main() {
   const beforeVote = await aliceRow()
   assert.equal(beforeVote.streak, 1, 'the first question was answered correctly, so a streak is running')
 
-  seen.length = 0 // only this slide's broadcasts from here on
   const vote = await json(
     await call(`${code}/answer`, { body: { clientToken: alice, optionId: poll.options[1].id } }),
   )
@@ -274,17 +283,30 @@ async function main() {
 
   // The M5 headline, on the wire: a poll publishes the distribution WHILE the window is
   // still open. This is the results:update path M4 left deliberately unused.
-  const live = (await waitForEvent(EVENTS.RESULTS_UPDATE)) as ResultsUpdatePayload | null
+  const live = (await waitForEvent(EVENTS.RESULTS_UPDATE, poll.id)) as ResultsUpdatePayload | null
   assert.ok(live, 'a poll vote broadcasts the live distribution')
   assert.equal(live.slideId, poll.id)
   assert.equal(live.aggregate.total, 1)
   assert.equal(live.aggregate.counts[poll.options[1].id], 1, 'and it counts the option actually chosen')
   assert.equal(
-    countOf(EVENTS.ANSWERED_COUNT),
+    countOf(EVENTS.ANSWERED_COUNT, poll.id),
     0,
     'a poll sends the distribution instead of the bare count — not both',
   )
   ok('poll broadcasts results:update live, while voting is still open')
+
+  // Re-showing a poll that is still OPEN has to hand the room the votes already in. slide:show
+  // carries no aggregate and every listener clears its chart on it, so without a republished
+  // tally the projector would sit empty until the next vote happened to arrive.
+  const beforeReshow = countOf(EVENTS.RESULTS_UPDATE, poll.id)
+  const reshown = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
+  assert.equal(reshown.body.status, 'active', 'an unrevealed poll re-opens, it was never closed')
+  assert.equal(reshown.body.aggregate.total, 1, 're-showing an open poll returns the votes so far')
+  assert.ok(
+    await waitFor(() => countOf(EVENTS.RESULTS_UPDATE, poll.id) > beforeReshow),
+    're-showing an open poll must rebroadcast the tally, not just return it to the host',
+  )
+  ok('re-showing an open poll republishes its votes to the room')
 
   const pollClose = await json(await call(`${code}/reveal`, { token: hostToken }))
   assert.equal(pollClose.status, 200)

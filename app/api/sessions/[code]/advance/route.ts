@@ -74,6 +74,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       aggregate,
       explanation,
     })
+  } else if (aggregate && aggregate.total > 0) {
+    // An open poll with votes already in: slide:show carries no aggregate and every listener
+    // clears its chart on it, so without this the room sits on an empty chart until the next
+    // vote happens to arrive. Only reachable on an unscored slide — a live quiz's aggregate is
+    // null above, which is what keeps its tally off the wire.
+    await broadcast(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
   }
 
   // The host gets the slide back rather than waiting on its own broadcast — the console
