@@ -12,7 +12,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { config } from 'dotenv'
 import postgres from 'postgres'
 import { createClient } from '@supabase/supabase-js'
-import { openSessionChannel } from '../lib/realtime/channels'
+import { openHostChannel, openSessionChannel } from '../lib/realtime/channels'
 import { EVENTS, type AnsweredCountPayload, type ResultsUpdatePayload } from '../lib/realtime/events'
 import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 
@@ -74,17 +74,28 @@ async function json(res: Response) {
   return { status: res.status, text, body: text ? JSON.parse(text) : null }
 }
 
-// Broadcasts observed on the session channel over the anon key — exactly what a participant's
-// phone receives. The rest of the walk is pure HTTP; this is the only place it can check what
-// the room was actually told, which is where the live-viz rules live.
+// Broadcasts observed over the anon key, on BOTH channels, tagged with which one carried
+// them. The rest of the walk is pure HTTP; this is the only place it can check what was
+// actually put on the wire, which is where the live-viz rules live.
+//
+// Two channels because the audiences differ: `room` is what a participant's phone receives,
+// `host` is the projector's private feed. Tagging matters — "the room was never told the
+// tally" and "the tally was published somewhere" are now different assertions, and the whole
+// anti-herding rule lives in the gap between them.
+//
 // Matched on slide as well as event name. Both live counters are addressed to a slide, and a
 // throttled broadcast for the previous slide can land after the next one is up — matching on
 // the name alone would let that stale message satisfy a wait, or fail a "never sent" check
 // the server actually honoured.
-const seen: { event: string; payload: unknown }[] = []
-const forSlide = (event: string, slideId: string) => (s: { event: string; payload: unknown }) =>
-  s.event === event && (s.payload as { slideId?: string })?.slideId === slideId
-const countOf = (event: string, slideId: string) => seen.filter(forSlide(event, slideId)).length
+type Observed = { event: string; payload: unknown; channel: 'room' | 'host' }
+const seen: Observed[] = []
+const forSlide =
+  (event: string, slideId: string, channel?: 'room' | 'host') => (s: Observed) =>
+    s.event === event &&
+    (s.payload as { slideId?: string })?.slideId === slideId &&
+    (!channel || s.channel === channel)
+const countOf = (event: string, slideId: string, channel?: 'room' | 'host') =>
+  seen.filter(forSlide(event, slideId, channel)).length
 
 async function waitFor(fn: () => boolean, ms = 5_000): Promise<boolean> {
   const deadline = Date.now() + ms
@@ -95,9 +106,13 @@ async function waitFor(fn: () => boolean, ms = 5_000): Promise<boolean> {
   return true
 }
 
-async function waitForEvent(event: string, slideId: string): Promise<unknown | null> {
-  await waitFor(() => seen.some(forSlide(event, slideId)))
-  return seen.find(forSlide(event, slideId))?.payload ?? null
+async function waitForEvent(
+  event: string,
+  slideId: string,
+  channel?: 'room' | 'host',
+): Promise<unknown | null> {
+  await waitFor(() => seen.some(forSlide(event, slideId, channel)))
+  return seen.find(forSlide(event, slideId, channel))?.payload ?? null
 }
 
 async function main() {
@@ -122,25 +137,44 @@ async function main() {
   room = { code, hostToken }
   console.log(`Session ${code} on fixture deck ${deckId} (quiz · poll · quiz)\n`)
 
-  // Listen in as a participant does. Subscribed before the first answer so the walk can
-  // assert on what was NOT sent as well as what was — a check that only ever waits for an
-  // event can't catch a tally leaking out of a live quiz.
-  const channel = openSessionChannel(supabase, code)
-  for (const event of [EVENTS.ANSWERED_COUNT, EVENTS.RESULTS_UPDATE]) {
-    channel.on('broadcast', { event }, ({ payload }) => seen.push({ event, payload }))
+  // Listen on BOTH channels, over the anon key. The room channel is what a participant's
+  // phone receives; the host channel is the projector's private feed. Subscribed before the
+  // first answer so the walk can assert on what was NOT sent as well as what was — a check
+  // that only ever waits for an event can't catch a tally leaking onto the room channel.
+  //
+  // Subscribing to the host channel with the ANON key is also the security check: migration
+  // 0005 lets anyone receive on `session:%`, which is deliberate (nothing here is secret), so
+  // this proves the split is a cost boundary and not a pretend security boundary. What keeps
+  // a live quiz's tally private is that it is never published at all, not who can hear it.
+  const channels = [
+    { name: 'room' as const, ch: openSessionChannel(supabase, code) },
+    { name: 'host' as const, ch: openHostChannel(supabase, code) },
+  ]
+  for (const { name, ch } of channels) {
+    for (const event of [EVENTS.ANSWERED_COUNT, EVENTS.RESULTS_UPDATE]) {
+      ch.on('broadcast', { event }, ({ payload }) => seen.push({ event, payload, channel: name }))
+    }
   }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('session channel never subscribed')), 10_000)
-    channel.subscribe((s) => {
-      if (s === 'SUBSCRIBED') {
-        clearTimeout(timer)
-        resolve()
-      } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
-        clearTimeout(timer)
-        reject(new Error(`session channel failed to subscribe: ${s}`))
-      }
-    })
-  })
+  await Promise.all(
+    channels.map(
+      ({ name, ch }) =>
+        new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(`${name} channel never subscribed`)),
+            10_000,
+          )
+          ch.subscribe((s) => {
+            if (s === 'SUBSCRIBED') {
+              clearTimeout(timer)
+              resolve()
+            } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
+              clearTimeout(timer)
+              reject(new Error(`${name} channel failed to subscribe: ${s}`))
+            }
+          })
+        }),
+    ),
+  )
 
   // --- Lobby -------------------------------------------------------------------
   const joined = await json(await call(`${code}/join`, { body: { nickname: 'Alice' } }))
@@ -239,7 +273,11 @@ async function main() {
 
   // The anti-herding rule, checked on the wire rather than inferred from the route: a live
   // quiz may broadcast HOW MANY have answered, never WHAT they answered.
-  const counted = (await waitForEvent(EVENTS.ANSWERED_COUNT, slide.id)) as AnsweredCountPayload | null
+  const counted = (await waitForEvent(
+    EVENTS.ANSWERED_COUNT,
+    slide.id,
+    'host',
+  )) as AnsweredCountPayload | null
   assert.ok(counted, 'a quiz answer broadcasts a live answered-count')
   assert.equal(counted.slideId, slide.id)
   assert.equal(counted.answered, 1)
@@ -248,7 +286,15 @@ async function main() {
     0,
     'a live quiz must never broadcast its tally — the room would herd toward the leading answer',
   )
-  ok('quiz answer broadcasts a bare count, never the running distribution')
+  // The cost boundary, asserted as an absence: this counter is for the projector, and putting
+  // it on the room channel would bill one message per phone per second for data no phone
+  // renders. That was the largest line in this app's Realtime spend.
+  assert.equal(
+    countOf(EVENTS.ANSWERED_COUNT, slide.id, 'room'),
+    0,
+    'the answered count is host-only — the room must not be billed for a counter it never draws',
+  )
+  ok('quiz answer counts on the host channel only, never the running distribution')
 
   const mid = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
   assert.equal(mid.body.myOptionId, pick, '/state replays the caller’s own pick for reconnect')
@@ -320,7 +366,11 @@ async function main() {
 
   // The M5 headline, on the wire: a poll publishes the distribution WHILE the window is
   // still open. This is the results:update path M4 left deliberately unused.
-  const live = (await waitForEvent(EVENTS.RESULTS_UPDATE, poll.id)) as ResultsUpdatePayload | null
+  const live = (await waitForEvent(
+    EVENTS.RESULTS_UPDATE,
+    poll.id,
+    'host',
+  )) as ResultsUpdatePayload | null
   assert.ok(live, 'a poll vote broadcasts the live distribution')
   assert.equal(live.slideId, poll.id)
   assert.equal(live.aggregate.total, 1)
@@ -330,20 +380,35 @@ async function main() {
     0,
     'a poll sends the distribution instead of the bare count — not both',
   )
-  ok('poll broadcasts results:update live, while voting is still open')
+  // The cost boundary on the event that fires MOST — a poll republishes its chart on every
+  // vote that wins the throttle, so this is the biggest single line in the Realtime bill.
+  // The phones don't draw the chart (app/play/page.tsx has no handler); the projector does.
+  assert.equal(
+    countOf(EVENTS.RESULTS_UPDATE, poll.id, 'room'),
+    0,
+    'the live poll chart is host-only — the room must not be billed for a chart it never draws',
+  )
+  ok('poll broadcasts results:update live on the host channel, while voting is still open')
 
-  // Re-showing a poll that is still OPEN has to hand the room the votes already in. slide:show
-  // carries no aggregate and every listener clears its chart on it, so without a republished
-  // tally the projector would sit empty until the next vote happened to arrive.
-  const beforeReshow = countOf(EVENTS.RESULTS_UPDATE, poll.id)
+  // Re-showing a poll that is still OPEN has to hand the projector the votes already in.
+  // slide:show carries no aggregate and the host clears its chart on it, so without a
+  // republished tally the projector would sit empty until the next vote happened to arrive.
+  const beforeReshow = countOf(EVENTS.RESULTS_UPDATE, poll.id, 'host')
   const reshown = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
   assert.equal(reshown.body.status, 'active', 'an unrevealed poll re-opens, it was never closed')
   assert.equal(reshown.body.aggregate.total, 1, 're-showing an open poll returns the votes so far')
   assert.ok(
-    await waitFor(() => countOf(EVENTS.RESULTS_UPDATE, poll.id) > beforeReshow),
+    await waitFor(() => countOf(EVENTS.RESULTS_UPDATE, poll.id, 'host') > beforeReshow),
     're-showing an open poll must rebroadcast the tally, not just return it to the host',
   )
-  ok('re-showing an open poll republishes its votes to the room')
+  // Same audience as the live feed it replaces — the re-show path must not be the one place
+  // the chart leaks back onto the room channel.
+  assert.equal(
+    countOf(EVENTS.RESULTS_UPDATE, poll.id, 'room'),
+    0,
+    're-showing an open poll republishes to the host, not to 100 phones',
+  )
+  ok('re-showing an open poll republishes its votes to the projector')
 
   const pollClose = await json(await call(`${code}/reveal`, { token: hostToken }))
   assert.equal(pollClose.status, 200)

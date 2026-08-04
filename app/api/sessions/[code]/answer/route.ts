@@ -1,7 +1,7 @@
 import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { answers, participants, sessions } from '@/lib/db/schema'
-import { broadcast } from '@/lib/realtime/broadcast'
+import { broadcastToHost } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { correctOptionId, isValidOptionId } from '@/lib/mcq'
 import { isScored } from '@/lib/slides'
@@ -118,6 +118,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       ),
     )
     .returning({ id: sessions.id })
+  // Both of these go to the HOST channel, not the room. No participant renders either one
+  // (app/play/page.tsx has no handler for them) — they drive the projector's counter and its
+  // live chart. On the room channel each would cost ~1 message per phone, every second, for
+  // data 100 phones decode and throw away; that was the single largest line in this app's
+  // Realtime bill. See lib/realtime/channels.ts → hostChannel.
   if (won.length > 0) {
     if (correct === null) {
       // Unscored: send the live distribution. This is the `results:update` path M4 left
@@ -125,7 +130,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       // toward whatever is winning, but a poll has no answer to protect, and watching the
       // bars move IS the slide.
       const aggregate = await tallySlideAnswers(session.id, slide.id)
-      await broadcast(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
+      await broadcastToHost(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
     } else {
       const [{ answered }] = await db
         .select({ answered: count() })
@@ -135,7 +140,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         .select({ total: count() })
         .from(participants)
         .where(eq(participants.sessionId, session.id))
-      await broadcast(code, EVENTS.ANSWERED_COUNT, { slideId: slide.id, answered, total })
+      await broadcastToHost(code, EVENTS.ANSWERED_COUNT, { slideId: slide.id, answered, total })
     }
   }
 

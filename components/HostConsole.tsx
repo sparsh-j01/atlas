@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
-import { openSessionChannel } from '@/lib/realtime/channels'
+import { openHostChannel, openSessionChannel } from '@/lib/realtime/channels'
 import { EVENTS } from '@/lib/realtime/events'
 import type {
   AggregateMcq,
@@ -161,8 +161,16 @@ export function HostConsole({
     setLeaderboard(data.fullRanking)
   }
 
-  // One subscription for the whole session: presence drives the lobby roster, the throttled
-  // answered-count drives the live progress readout.
+  // TWO subscriptions, split by audience, not by importance:
+  //
+  //   session:{code}        the room. Slide changes, reveals, leaderboard, end. Every phone
+  //                         is on this one, so each event here costs ~1 message per phone.
+  //   session:{code}:host   this screen only. The answered counter and the live poll chart,
+  //                         which fire every second and which no participant renders. On the
+  //                         room channel they were 100 phones decoding data they discard.
+  //
+  // Presence stays on the room channel: it's the participants' own writes that populate the
+  // roster, so it has to live where the participants are.
   //
   // Every slide-addressed event checks `payload.slideId` against the slide actually on
   // screen — both live counters AND the reveal. Answers land continuously while the host is
@@ -174,9 +182,10 @@ export function HostConsole({
   useEffect(() => {
     const supabase = createClient()
     const channel = openSessionChannel(supabase, code)
+    const host = openHostChannel(supabase, code)
     const isCurrent = (payload: { slideId?: string }) =>
       !slideIdRef.current || payload.slideId === slideIdRef.current
-    channel
+    host
       .on('broadcast', { event: EVENTS.ANSWERED_COUNT }, ({ payload }) => {
         if (isCurrent(payload)) setAnswered(payload.answered)
       })
@@ -187,6 +196,8 @@ export function HostConsole({
         const p = payload as ResultsUpdatePayload
         if (isCurrent(p)) setAggregate(p.aggregate)
       })
+      .subscribe()
+    channel
       // The console also follows the room, not just its own button clicks. Without these it
       // goes stale whenever the session moves by any other route — a second host tab, or
       // the load-test harness driving over HTTP — and would then render one slide while the
@@ -238,6 +249,7 @@ export function HostConsole({
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
+      supabase.removeChannel(host)
     }
   }, [code, showSlide])
 

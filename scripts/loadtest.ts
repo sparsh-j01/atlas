@@ -111,6 +111,10 @@ async function main() {
 
   let joinOk = 0
   let answerOk = 0
+  // Joined over HTTP but never got a realtime connection. The signature of hitting the
+  // project's concurrent-connection cap (200 on Free, 500 on Pro), which is a different
+  // failure from a rejected join and has to be reported as its own number.
+  let subscribeFailed = 0
   const leaderboardLatency: number[] = []
   const gotLeaderboard: Array<() => void> = []
   const clients: SupabaseClient[] = []
@@ -160,6 +164,13 @@ async function main() {
       const channel = openSessionChannel(supabase, code)
       // Every event this phone would receive counts toward the project's messages/second,
       // so count them all, not just the one the assertion waits on.
+      //
+      // ANSWERED_COUNT and RESULTS_UPDATE are on this list even though they now publish to
+      // the host channel and should never arrive here — that is exactly why they stay. They
+      // are the two highest-frequency events in the app, and this harness is the only thing
+      // that measures the room's message rate. Removing the listeners would not stop a
+      // regression from putting them back on the room channel, it would just stop this
+      // number from noticing. Counted here, a regression shows up as the peak/s climbing.
       for (const event of [
         EVENTS.SLIDE_SHOW,
         EVENTS.ANSWERED_COUNT,
@@ -175,23 +186,35 @@ async function main() {
         gotLeaderboard[i]?.()
       })
       let wasSubscribed = false
-      await new Promise<void>((resolve) => {
-        channel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            if (!wasSubscribed) {
-              wasSubscribed = true
-              channel.track({ participantId, nickname, avatarSeed: nickname })
-              resolve()
-            } else {
-              // Back after a drop. Silent today, and it is exactly what exceeding the
-              // messages/second limit looks like from the client side.
-              drops.push(`${nickname} re-SUBSCRIBED`)
+      // Bounded, because the thing this harness exists to find is a CEILING. Past the
+      // project's concurrent-connection limit a subscribe never reaches SUBSCRIBED and never
+      // errors either — it simply doesn't complete. An unbounded await here meant the run
+      // hung forever at exactly the load worth measuring, which is the least useful possible
+      // behaviour for a test whose job is locating the wall.
+      const subscribed = await Promise.race([
+        new Promise<boolean>((resolve) => {
+          channel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              if (!wasSubscribed) {
+                wasSubscribed = true
+                channel.track({ participantId, nickname, avatarSeed: nickname })
+                resolve(true)
+              } else {
+                // Back after a drop. Silent today, and it is exactly what exceeding the
+                // messages/second limit looks like from the client side.
+                drops.push(`${nickname} re-SUBSCRIBED`)
+              }
+            } else if (measuring && wasSubscribed && (status === 'CHANNEL_ERROR' || status === 'CLOSED')) {
+              drops.push(`${nickname} → ${status}`)
             }
-          } else if (measuring && wasSubscribed && (status === 'CHANNEL_ERROR' || status === 'CLOSED')) {
-            drops.push(`${nickname} → ${status}`)
-          }
-        })
-      })
+          })
+        }),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 20_000)),
+      ])
+      if (!subscribed) {
+        subscribeFailed++
+        return // no connection, so no answer either — this client is simply not in the room
+      }
       subscribedIdx.push(i)
 
       // Answer at a human-ish random moment inside the window.
@@ -226,6 +249,7 @@ async function main() {
 
   console.log('\n--- Results ---')
   console.log(`Join success:        ${joinOk}/${N} (${((100 * joinOk) / N).toFixed(1)}%)`)
+  console.log(`Realtime connected:  ${subscribedIdx.length}/${joinOk}${subscribeFailed ? `  (${subscribeFailed} never connected — connection cap?)` : ''}`)
   console.log(`Answers accepted:    ${answerOk}/${joinOk}`)
   console.log(`Leaderboard fan-out: ${leaderboardLatency.length}/${joinOk} clients received`)
   console.log(`  p50: ${pctl(leaderboardLatency, 50)} ms`)

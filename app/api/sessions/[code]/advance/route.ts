@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
 import { correctOptionId } from '@/lib/mcq'
 import { explanationOf, isScored } from '@/lib/slides'
-import { broadcast } from '@/lib/realtime/broadcast'
+import { broadcast, broadcastToHost } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { sanitizeSlide, slideAt, slideCount, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
@@ -75,11 +75,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       explanation,
     })
   } else if (aggregate && aggregate.total > 0) {
-    // An open poll with votes already in: slide:show carries no aggregate and every listener
-    // clears its chart on it, so without this the room sits on an empty chart until the next
+    // An open poll with votes already in: slide:show carries no aggregate and the projector
+    // clears its chart on it, so without this the host sits on an empty chart until the next
     // vote happens to arrive. Only reachable on an unscored slide — a live quiz's aggregate is
-    // null above, which is what keeps its tally off the wire.
-    await broadcast(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
+    // null above, which is what keeps its tally off the wire. Host channel, same as the live
+    // feed it is replacing: this is the chart the projector draws, not something phones read.
+    await broadcastToHost(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
   }
 
   // The host gets the slide back rather than waiting on its own broadcast — the console
