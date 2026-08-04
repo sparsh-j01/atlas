@@ -2,6 +2,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
 import { correctOptionId } from '@/lib/mcq'
+import { explanationOf, isScored } from '@/lib/slides'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { sanitizeSlide, slideAt, slideCount, tallySlideAnswers } from '@/lib/realtime/live-slide'
@@ -58,9 +59,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   }
   await broadcast(code, EVENTS.SLIDE_SHOW, payload)
 
-  const aggregate = alreadyRevealed ? await tallySlideAnswers(session.id, slide.id) : null
+  // Unscored slides show their distribution while the window is still open, so re-showing a
+  // poll has to hand back the votes already in rather than an empty chart that only refills
+  // on the next answer. A live quiz still gets null — its counts wait for the reveal.
+  const aggregate =
+    alreadyRevealed || !isScored(slide.type) ? await tallySlideAnswers(session.id, slide.id) : null
   const correct = alreadyRevealed ? correctOptionId(slide.config) : null
-  const explanation = alreadyRevealed ? slide.config.explanation : undefined
+  const explanation = alreadyRevealed ? explanationOf(slide.config) : undefined
   if (alreadyRevealed) {
     // Re-disclose so the room sees the results it was already shown, not a blank slide.
     await broadcast(code, EVENTS.SLIDE_REVEAL, {
@@ -69,6 +74,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       aggregate,
       explanation,
     })
+  } else if (aggregate && aggregate.total > 0) {
+    // An open poll with votes already in: slide:show carries no aggregate and every listener
+    // clears its chart on it, so without this the room sits on an empty chart until the next
+    // vote happens to arrive. Only reachable on an unscored slide — a live quiz's aggregate is
+    // null above, which is what keeps its tally off the wire.
+    await broadcast(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
   }
 
   // The host gets the slide back rather than waiting on its own broadcast — the console

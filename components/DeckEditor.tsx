@@ -2,7 +2,7 @@
 
 import { useOptimistic, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { SlideCard } from '@/components/SlideCard'
+import { SlideCard, type EditorSlide } from '@/components/SlideCard'
 import { DeleteButton } from '@/components/DeleteButton'
 import {
   addSlideAction,
@@ -11,9 +11,8 @@ import {
   setDeckStatusAction,
   updateDeckAction,
 } from '@/lib/actions'
-import type { McqConfig } from '@/lib/mcq'
+import { isSlideType, SLIDE_TYPE_LABEL, SLIDE_TYPES } from '@/lib/slides'
 
-type EditorSlide = { id: string; type: string; prompt: string; config: McqConfig }
 type EditorDeck = { id: string; title: string; description: string | null; status: string }
 
 const input = 'rounded-md border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900'
@@ -185,6 +184,9 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
                 ↓
               </button>
               <span className="text-sm font-medium text-neutral-500">Slide {i + 1}</span>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                {isSlideType(s.type) ? SLIDE_TYPE_LABEL[s.type] : s.type}
+              </span>
               <span className="ml-auto">
                 <DeleteButton
                   action={deleteSlideAction.bind(null, deck.id, s.id)}
@@ -197,13 +199,20 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
         ))}
       </ul>
 
-      <button
-        type="button"
-        onClick={() => startTransition(() => run(addSlideAction(deck.id), 'Could not add a slide.'))}
-        className="mt-4 w-full rounded-lg border border-dashed border-neutral-300 py-3 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700"
-      >
-        + Add MCQ slide
-      </button>
+      {/* One button per slide type — driven off SLIDE_TYPES so adding a type doesn't need a
+          matching edit here. */}
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {SLIDE_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => startTransition(() => run(addSlideAction(deck.id, t), 'Could not add a slide.'))}
+            className="w-full rounded-lg border border-dashed border-neutral-300 py-3 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700"
+          >
+            + Add {SLIDE_TYPE_LABEL[t].toLowerCase()}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

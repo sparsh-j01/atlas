@@ -7,7 +7,15 @@ import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import * as data from '@/lib/decks'
 import { createSessionFromDeck } from '@/lib/sessions'
-import { blankMcq, toStored, validateMcq, type EditableMcq } from '@/lib/mcq'
+import {
+  blankSlide,
+  isSlideType,
+  toEditable,
+  toStoredSlide,
+  validateSlide,
+  type EditableSlide,
+  type SlideType,
+} from '@/lib/slides'
 
 const editPath = (deckId: string) => `/decks/${deckId}/edit`
 
@@ -36,10 +44,13 @@ export async function updateDeckAction(
   revalidatePath('/dashboard')
 }
 
-export async function addSlideAction(deckId: string) {
+export async function addSlideAction(deckId: string, type: SlideType) {
   const user = await requireUser()
-  const stored = toStored(blankMcq()) // blank MCQ template — filled in, then saved (validated)
-  await data.addSlide(deckId, user.id, { type: 'quiz_mcq', prompt: stored.prompt, config: stored.config })
+  // `type` crosses the client boundary, and it's written straight into a column the live
+  // session engine dispatches on — check it against the known set rather than trusting it.
+  if (!isSlideType(type)) throw new Error('unknown slide type')
+  const stored = toStoredSlide(blankSlide(type)) // blank template — filled in, then saved (validated)
+  await data.addSlide(deckId, user.id, { type, prompt: stored.prompt, config: stored.config })
   revalidatePath(editPath(deckId))
   revalidatePath('/dashboard') // slide count is rendered on the dashboard
 }
@@ -47,12 +58,17 @@ export async function addSlideAction(deckId: string) {
 export async function saveSlideAction(
   deckId: string,
   slideId: string,
-  draft: EditableMcq,
+  draft: EditableSlide,
 ): Promise<{ errors: string[] }> {
   const user = await requireUser()
-  const errors = validateMcq(draft) // server re-validates; never trust the client's gate
+  if (!isSlideType(draft.type)) return { errors: ['Unknown slide type.'] }
+  const errors = validateSlide(draft) // server re-validates; never trust the client's gate
   if (errors.length) return { errors }
-  await data.updateSlide(deckId, slideId, user.id, toStored(draft))
+  // `type` is written alongside `config`, not left as whatever the row already had. Nothing
+  // in the database ties the two together (type is text, config is jsonb), so writing them
+  // in one statement is what keeps them from disagreeing — a draft can't leave a poll config
+  // filed under a quiz type for the session engine to trip over later.
+  await data.updateSlide(deckId, slideId, user.id, { type: draft.type, ...toStoredSlide(draft) })
   revalidatePath(editPath(deckId))
   return { errors: [] }
 }
@@ -81,14 +97,16 @@ export async function setDeckStatusAction(
     const dw = await data.getDeckWithSlides(deckId, user.id)
     if (!dw) return { error: 'Deck not found.' }
     if (dw.slides.length === 0) return { error: 'Add at least one slide first.' }
-    for (const s of dw.slides) {
-      const errs = validateMcq({
-        prompt: s.prompt,
-        options: s.config.options,
-        timeLimitMs: s.config.timeLimitMs,
-        points: s.config.points,
-      })
-      if (errs.length) return { error: `Slide ${s.position + 1} is incomplete: ${errs[0]}` }
+    // Numbered by list position, not by `position` — deleting a slide leaves a gap in the
+    // column (lib/decks.ts doesn't renumber), so `position + 1` could name a slide the
+    // editor labels differently. `dw.slides` is already ordered by position.
+    for (const [i, s] of dw.slides.entries()) {
+      const draft = toEditable(s)
+      // type/config disagree — unreachable through the editor, but this is the gate that
+      // decides what may reach a live room, so it fails closed rather than assuming.
+      if (!draft) return { error: `Slide ${i + 1} has an unrecognised type.` }
+      const errs = validateSlide(draft)
+      if (errs.length) return { error: `Slide ${i + 1} is incomplete: ${errs[0]}` }
     }
   }
   await data.updateDeck(deckId, user.id, { status })

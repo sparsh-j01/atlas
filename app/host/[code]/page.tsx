@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { correctOptionId } from '@/lib/mcq'
+import { explanationOf, isScored } from '@/lib/slides'
 import { currentSlide, sanitizeSlide, slideCount, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { getHostedSession } from '@/lib/sessions'
 import { HostConsole } from '@/components/HostConsole'
@@ -31,9 +32,12 @@ export default async function HostSessionPage({ params }: { params: Promise<{ co
       initialStatus={session.status}
       initialSlide={slide && sanitizeSlide(slide)}
       initialAnswered={tally?.total ?? 0}
-      initialAggregate={revealed ? tally : null}
+      // A live poll shows its distribution while voting is still open, so a mid-slide reload
+      // has to come back with the tally, not a blank chart. A live quiz must not: the counts
+      // stay withheld until the reveal (see isScored).
+      initialAggregate={revealed || (slide && !isScored(slide.type)) ? tally : null}
       initialCorrectId={revealed && slide ? correctOptionId(slide.config) : null}
-      initialExplanation={revealed && slide ? (slide.config.explanation ?? null) : null}
+      initialExplanation={revealed && slide ? (explanationOf(slide.config) ?? null) : null}
       initialServerStartedAt={session.currentSlideStartedAt?.toISOString() ?? null}
       initialTimeLimitMs={slide?.config.timeLimitMs ?? null}
     />

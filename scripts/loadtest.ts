@@ -85,7 +85,7 @@ async function main() {
   await sweepStaleFixtures(sql, async (c, token) =>
     (await post(`/api/sessions/${c}/end`, undefined, token)).ok,
   )
-  const { deckId, ownerId } = await createFixtureDeck(sql, { slides: 1 })
+  const { deckId, ownerId } = await createFixtureDeck(sql, { types: ['quiz_mcq'] })
   fixtureDeckId = deckId
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')

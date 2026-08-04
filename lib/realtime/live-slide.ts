@@ -2,7 +2,8 @@ import 'server-only'
 import { and, asc, count, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { answers, slides } from '@/lib/db/schema'
-import { sanitizeOptions, type McqConfig } from '@/lib/mcq'
+import { sanitizeOptions } from '@/lib/mcq'
+import { pointsOf, type SlideConfig } from '@/lib/slides'
 import { tallyMcq } from './aggregate'
 import type { AggregateMcq, SanitizedSlide } from './events'
 
@@ -11,7 +12,7 @@ import type { AggregateMcq, SanitizedSlide } from './events'
 // `server-only` keeps `is_correct` physically un-importable from a client bundle; clients
 // only ever see what sanitizeSlide() returns, and only until the host reveals.
 
-export type LiveSlide = { id: string; type: string; prompt: string; config: McqConfig }
+export type LiveSlide = { id: string; type: string; prompt: string; config: SlideConfig }
 
 const liveColumns = {
   id: slides.id,
@@ -52,7 +53,9 @@ export async function slideCount(deckId: string): Promise<number> {
 }
 
 /** Count the responses to one slide. Computed on read — no stored counter, so there's no
- *  concurrent-increment race. Shared by reveal and by advance re-showing a revealed slide. */
+ *  concurrent-increment race. Shared by reveal, by advance re-showing a revealed slide, and
+ *  by the live poll feed. Type-agnostic: quiz and poll answers are both `{ optionId }`, so
+ *  one tally serves both. */
 export async function tallySlideAnswers(sessionId: string, slideId: string): Promise<AggregateMcq> {
   const rows = await db
     .select({ response: answers.response })
@@ -68,6 +71,7 @@ export function sanitizeSlide(s: LiveSlide): SanitizedSlide {
     type: s.type,
     prompt: s.prompt,
     options: sanitizeOptions(s.config),
-    points: s.config.points,
+    points: pointsOf(s.config), // 0 on an unscored type — a poll config has no points field
+    ...('chart' in s.config ? { chart: s.config.chart } : {}),
   }
 }

@@ -5,6 +5,7 @@ import { rankLeaderboard } from '@/lib/realtime/aggregate'
 import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { correctOptionId } from '@/lib/mcq'
+import { explanationOf } from '@/lib/slides'
 import { currentSlide, tallySlideAnswers } from '@/lib/realtime/live-slide'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
 import { getHostedSession } from '@/lib/sessions'
@@ -55,6 +56,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .returning({ id: sessions.id })
   if (applied.length === 0) return bad(409, 'session has ended')
 
+  // null on an unscored type — a poll has nothing to disclose, so reveal just closes voting
+  // and publishes the final tally.
   const correct = correctOptionId(slide.config)
   // The explanation ships only here and in the re-show path — it names the answer, so it
   // must never ride slide:show for a live question.
@@ -62,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     slideId: slide.id,
     correctOptionId: correct ?? undefined,
     aggregate,
-    explanation: slide.config.explanation,
+    explanation: explanationOf(slide.config),
   }
   await broadcast(code, EVENTS.SLIDE_REVEAL, reveal)
   await broadcast(code, EVENTS.LEADERBOARD_UPDATE, { top })

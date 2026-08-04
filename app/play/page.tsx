@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
 import { Podium } from '@/components/Podium'
 import { openSessionChannel } from '@/lib/realtime/channels'
+import { isScored } from '@/lib/slides'
 import { EVENTS } from '@/lib/realtime/events'
 import type { LeaderboardEntry, SanitizedSlide, SlideRevealPayload } from '@/lib/realtime/events'
 
@@ -306,7 +307,12 @@ export default function PlayPage() {
 
   const secondsLeft =
     status === 'active' && deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
-  const myResult = status === 'revealed' && picked ? (picked === correctId ? 'correct' : 'wrong') : null
+  const scored = isScored(slide.type)
+  // Only a scored slide has a right answer to be judged against. Without the `scored` gate a
+  // poll would compare the pick to a null correctId, fail, and tell every voter "Not this
+  // time." for answering a question that had no wrong answer.
+  const myResult =
+    status === 'revealed' && picked && scored ? (picked === correctId ? 'correct' : 'wrong') : null
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-8">
@@ -348,7 +354,9 @@ export default function PlayPage() {
       </div>
 
       {status === 'active' && picked && (
-        <p className="text-center text-neutral-500">Answer locked in — hang tight.</p>
+        <p className="text-center text-neutral-500">
+          {scored ? 'Answer locked in — hang tight.' : 'Vote locked in — watch the screen.'}
+        </p>
       )}
       {notice && <p className="text-center text-sm text-red-600">{notice}</p>}
       {status === 'revealed' && explanation && (
@@ -366,10 +374,20 @@ export default function PlayPage() {
                 : 'text-neutral-500'
           }`}
         >
-          {myResult === 'correct' ? 'Correct!' : myResult === 'wrong' ? 'Not this time.' : 'No answer in.'}
+          {scored
+            ? myResult === 'correct'
+              ? 'Correct!'
+              : myResult === 'wrong'
+                ? 'Not this time.'
+                : 'No answer in.'
+            : picked
+              ? 'Vote counted — results are on the screen.'
+              : 'No vote in.'}
           {/* Rank shows for the broadcast top-N only — a personal score for everyone would mean
-              100 simultaneous /state fetches at every reveal. Full per-player scoring is M4. */}
-          {myEntry && ` You’re #${myEntry.rank} with ${myEntry.score}.`}
+              100 simultaneous /state fetches at every reveal. Full per-player scoring is M4.
+              Withheld after a poll: nothing about the standings changed, so quoting a rank
+              there implies the vote scored. */}
+          {myEntry && scored && ` You’re #${myEntry.rank} with ${myEntry.score}.`}
         </p>
       )}
     </main>
