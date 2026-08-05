@@ -6,6 +6,8 @@ import { EVENTS } from '@/lib/realtime/events'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
 import { getHostedSession } from '@/lib/sessions'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // Host-only: remove a participant from the live room.
 //
 // This is the other half of the nickname filter (lib/nickname.ts). Any wordlist is beatable
@@ -26,8 +28,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   if (!session) return bad(404, 'session not found')
 
   const body = await req.json().catch(() => null)
-  const participantId = typeof body?.participantId === 'string' ? body.participantId : ''
-  if (!participantId) return bad(400, 'participantId is required')
+  // Shape-checked, not just non-empty: `participants.id` is a uuid column, so a malformed
+  // string reaches Postgres as a cast error and surfaces as an unhandled 500 on a request
+  // that is simply malformed. A valid host is the only caller, but "authenticated" is not
+  // "well-formed" — this is still a trust boundary.
+  const participantId =
+    typeof body?.participantId === 'string' && UUID_RE.test(body.participantId)
+      ? body.participantId
+      : ''
+  if (!participantId) return bad(400, 'a valid participantId is required')
 
   // Scoped to THIS session, so a host can't delete a participant out of someone else's room
   // by holding a valid token for their own. Delete rather than flag: their answers cascade

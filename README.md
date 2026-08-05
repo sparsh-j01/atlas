@@ -28,7 +28,7 @@ Three things at once that nothing else combines:
 
 - **Two ways in** — host a live class, or join one with a room code + nickname (no signup to play).
 - **AI generation** — topic prompt or lecture PDF → a full, editable deck.
-- **Built for scale** — designed for 100+ concurrent students per room, proven by a
+- **Built for scale** — designed for 100+ concurrent students per room, and exercised by a
   load-test harness that drives real Realtime connections rather than simulated ones.
 - **Real-time everything** — synced questions, live-animating charts, a live leaderboard.
 - **Slide types** — MCQ quiz (scored, with leaderboard) and poll (more to come).

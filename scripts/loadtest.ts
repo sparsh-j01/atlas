@@ -139,6 +139,9 @@ async function main() {
   // A client that drops mid-session and reconnects inside the 10s fan-out wait still
   // receives the leaderboard, so the old pass/fail could not see it. Record it instead.
   const drops: string[] = []
+  // Host-only events seen on the ROOM channel. Any nonzero value means the channel split
+  // regressed, whatever the latency numbers say.
+  let hostOnlyOnRoom = 0
   // Closed only counts as a drop while the run is still measuring: teardown closes all N
   // channels deliberately, and without this gate a clean run reports N disconnects.
   let measuring = true
@@ -164,21 +167,20 @@ async function main() {
       const channel = openSessionChannel(supabase, code)
       // Every event this phone would receive counts toward the project's messages/second,
       // so count them all, not just the one the assertion waits on.
-      //
-      // ANSWERED_COUNT and RESULTS_UPDATE are on this list even though they now publish to
-      // the host channel and should never arrive here — that is exactly why they stay. They
-      // are the two highest-frequency events in the app, and this harness is the only thing
-      // that measures the room's message rate. Removing the listeners would not stop a
-      // regression from putting them back on the room channel, it would just stop this
-      // number from noticing. Counted here, a regression shows up as the peak/s climbing.
-      for (const event of [
-        EVENTS.SLIDE_SHOW,
-        EVENTS.ANSWERED_COUNT,
-        EVENTS.RESULTS_UPDATE,
-        EVENTS.SLIDE_REVEAL,
-        EVENTS.SESSION_ENDED,
-      ]) {
+      for (const event of [EVENTS.SLIDE_SHOW, EVENTS.SLIDE_REVEAL, EVENTS.SESSION_ENDED]) {
         channel.on('broadcast', { event }, countMessage)
+      }
+      // ANSWERED_COUNT and RESULTS_UPDATE publish to the host channel and must never arrive
+      // here. They stay subscribed because they are the two highest-frequency events in the
+      // app and this harness is the only thing measuring the room's message rate — but
+      // COUNTING a regression is not FAILING on one. Routed back onto the room channel they
+      // could stay under the rate limit, disconnect nobody, and exit 0 with the whole point
+      // of the split silently undone. Recorded separately, they fail the run outright.
+      for (const event of [EVENTS.ANSWERED_COUNT, EVENTS.RESULTS_UPDATE]) {
+        channel.on('broadcast', { event }, () => {
+          countMessage()
+          hostOnlyOnRoom++
+        })
       }
       channel.on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, () => {
         countMessage()
@@ -282,8 +284,16 @@ async function main() {
   // A run where clients dropped is not a pass, however good the latency numbers look — the
   // fan-out wait is 10s, which is long enough for a dropped client to reconnect and receive
   // the leaderboard anyway. That is what made this failure invisible before.
-  if (drops.length) {
-    console.error(`\nFAILED: ${drops.length} client(s) left the channel mid-session.`)
+  if (drops.length || hostOnlyOnRoom) {
+    if (drops.length) {
+      console.error(`\nFAILED: ${drops.length} client(s) left the channel mid-session.`)
+    }
+    if (hostOnlyOnRoom) {
+      console.error(
+        `\nFAILED: ${hostOnlyOnRoom} host-only message(s) reached the room channel — ` +
+          `answered:count / results:update are billed per phone, and the split regressed.`,
+      )
+    }
     process.exit(1)
   }
   process.exit(0)

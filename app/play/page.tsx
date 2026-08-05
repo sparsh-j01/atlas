@@ -113,7 +113,8 @@ export default function PlayPage() {
         code: joinCode,
         clientToken: data.clientToken,
         participantId: data.participantId,
-        nickname: nick,
+        // The server's sanitized nickname, not the raw input — this one goes on the projector.
+        nickname: data.nickname ?? nick,
         avatarSeed: data.avatarSeed,
       }
       // Server-issued token, stored so a reload or a dropped connection rejoins the same seat.
@@ -249,6 +250,13 @@ export default function PlayPage() {
       .on('broadcast', { event: EVENTS.PARTICIPANT_KICKED }, ({ payload }) => {
         if ((payload as ParticipantKickedPayload).participantId !== me.participantId) return
         localStorage.removeItem(STORE_KEY)
+        // Drop the answer history with the seat. This page returns to the join form without
+        // unmounting, so the refs survive — and rejoining the SAME room means the same slide
+        // uuids, which slide:show would use to restore the removed participant's pick and
+        // leave the new one unable to answer.
+        picksRef.current = {}
+        pickedRef.current = null
+        setPicked(null)
         setMe(null)
         setSlide(null)
         setStatus('lobby')

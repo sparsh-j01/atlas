@@ -208,6 +208,12 @@ async function main() {
   )
   assert.equal((await call(`${code}/kick`, { body: {}, token: hostToken })).status, 400)
   assert.equal(
+    (await call(`${code}/kick`, { body: { participantId: 'not-a-uuid' }, token: hostToken }))
+      .status,
+    400,
+    'a malformed id is a bad request, not a uuid cast error surfacing as a 500',
+  )
+  assert.equal(
     (await call(`${code}/kick`, { body: { participantId: randomUUID() }, token: hostToken })).status,
     404,
     'kicking someone who is not in this room is a miss, not a silent success',

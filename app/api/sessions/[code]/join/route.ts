@@ -34,6 +34,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   return Response.json({
     clientToken,
     participantId: p.id,
+    // Returned so the client tracks the SANITIZED name into presence. sanitizeNickname
+    // strips zero-width and directional marks rather than rejecting them, so the string the
+    // player typed and the string that passed the filter are not always the same one — and
+    // presence is what the projector renders.
+    nickname,
     avatarSeed,
     status: session.status,
     index: session.currentSlideIndex,

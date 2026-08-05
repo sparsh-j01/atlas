@@ -49,20 +49,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     return Response.json({ accepted: false, reason: 'late' })
   }
 
-  // Unscored types (poll) record the response and award nothing. `isCorrect` stays null —
-  // there is no correct answer to record — and the streak is carried through untouched
-  // rather than recomputed: a poll dropped between two quiz questions must not break a
-  // player's run. Branching on `correct === null` rather than on `scored` separately keeps
-  // the two from drifting: there is exactly one way to reach scoreAnswer.
+  // Whether they were right doesn't depend on any mutable participant state, so it's settled
+  // out here. What it's WORTH does depend on the streak, and that is read under a lock below.
   const correct = isScored(slide.type) ? optionId === correctOptionId(slide.config) : null
-  const { points, newStreak } =
-    correct === null
-      ? { points: 0, newStreak: p.streak }
-      : scoreAnswer({ correct, responseMs, timeLimitMs, priorStreak: p.streak })
 
   // Insert the answer and bump the participant in one transaction. A unique conflict
   // (session, slide, participant) means they already answered → idempotent, no re-score.
   const applied = await db.transaction(async (tx) => {
+    // Lock the participant row before reading the streak the score derives from. The unique
+    // index stops one player scoring one SLIDE twice, but it does not stop two answers for
+    // DIFFERENT slides being in flight at once: a tap on the previous question can still be
+    // travelling when the host advances and the player answers the next one. Both would
+    // otherwise score off the same pre-transaction streak and the later write would clobber
+    // the earlier one's bonus. Locking serialises the pair, so each reads the other's result.
+    const [locked] = await tx
+      .select({ streak: participants.streak })
+      .from(participants)
+      .where(eq(participants.id, p.id))
+      .for('update')
+    if (!locked) return false
+
+    // Unscored types (poll) record the response and award nothing. `isCorrect` stays null —
+    // there is no correct answer to record — and the streak is carried through untouched
+    // rather than recomputed: a poll dropped between two quiz questions must not break a
+    // player's run. Branching on `correct === null` rather than on `scored` separately keeps
+    // the two from drifting: there is exactly one way to reach scoreAnswer.
+    const { points, newStreak } =
+      correct === null
+        ? { points: 0, newStreak: locked.streak }
+        : scoreAnswer({ correct, responseMs, timeLimitMs, priorStreak: locked.streak })
+
     const inserted = await tx
       .insert(answers)
       .values({
@@ -77,13 +93,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       .onConflictDoNothing()
       .returning({ id: answers.id })
     if (inserted.length === 0) return false
-    // Increment in SQL rather than writing back `p.score + points` computed in JS. The
-    // unique index above already stops the same player scoring one slide twice, so today
-    // the read-modify-write is safe — but only as a side effect of that index, and only
-    // while one answer per player can be in flight. Let the database do the addition and
-    // the score is correct because of how it's written, not because of what else happens
-    // to be true. `streak` can't be an increment (it resets on a wrong answer), so it
-    // stays last-writer-wins.
+    // Increment in SQL rather than writing back a score computed in JS: let the database do
+    // the addition and the total is correct because of how it's written, not because of what
+    // else happens to be true. `streak` can't be an increment (it resets on a wrong answer),
+    // so it's a plain write — safe only because of the lock above, which is what makes it
+    // last-writer-wins over a value nobody else can still be holding.
     await tx
       .update(participants)
       .set({
