@@ -52,11 +52,19 @@ export function foldForMatch(s: string): string {
 // 'niger'). Folding both sides is the only way the two stay in step — and it's why the list
 // avoids words whose folded form collides with an ordinary one ('boob' folds to 'bob', which
 // would reject every Bob in the room; 'spic' sits inside 'spice').
+// Audited against the rule above, which the list itself used to break: 'rape' rejected
+// Grape and trapeze, 'dick' rejected Dickens, 'cock' rejected Hancock, Cockburn and peacock,
+// 'penis' rejected Penistone, 'pedo' rejected pedometer. All five are gone. A filter that
+// stops a student called Hancock from joining fails worse than one that misses a word the
+// host can kick in a click — this list was only ever meant to catch the lazy attempt.
+//
+// 'shit' and 'cunt' stay: their collisions are a loanword and a town (shiitake, Scunthorpe),
+// not ordinary words, and they are the two highest-value entries here. Known residual, named
+// rather than pretended away — the Scunthorpe problem is not fully solved, it is bounded.
 const BLOCKED = [
   'fuck', 'shit', 'cunt', 'bitch', 'whore', 'slut', 'wank', 'bastard',
   'nigger', 'nigga', 'faggot', 'retard', 'tranny', 'chink', 'kike',
-  'rape', 'nazi', 'hitler', 'penis', 'vagina', 'dick', 'cock',
-  'pedo', 'kys',
+  'nazi', 'hitler', 'vagina', 'kys',
 ].map(foldForMatch)
 
 /** True when the nickname folds onto something in the blocklist. */

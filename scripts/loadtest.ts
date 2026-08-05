@@ -115,6 +115,7 @@ async function main() {
   // project's concurrent-connection cap (200 on Free, 500 on Pro), which is a different
   // failure from a rejected join and has to be reported as its own number.
   let subscribeFailed = 0
+  let presenceFailed = 0 // subscribed, but channel.track() came back non-'ok'
   const leaderboardLatency: number[] = []
   const gotLeaderboard: Array<() => void> = []
   const clients: SupabaseClient[] = []
@@ -188,6 +189,7 @@ async function main() {
         gotLeaderboard[i]?.()
       })
       let wasSubscribed = false
+      let trackStatus: string | null = null
       // Bounded, because the thing this harness exists to find is a CEILING. Past the
       // project's concurrent-connection limit a subscribe never reaches SUBSCRIBED and never
       // errors either — it simply doesn't complete. An unbounded await here meant the run
@@ -199,8 +201,22 @@ async function main() {
             if (status === 'SUBSCRIBED') {
               if (!wasSubscribed) {
                 wasSubscribed = true
-                channel.track({ participantId, nickname, avatarSeed: nickname })
-                resolve(true)
+                // track() RESOLVES with 'ok' | 'timed out' | 'error'. Firing it and resolving
+                // in the same breath counted a client as present whose presence never
+                // registered — and nothing else would have noticed, because the channel is
+                // subscribed either way and broadcasts keep arriving. Presence is what the
+                // lobby roster is built from, so an unmeasured failure here is a hole in the
+                // one harness that exists to find this app's ceiling.
+                channel
+                  .track({ participantId, nickname, avatarSeed: nickname })
+                  .then((s) => {
+                    trackStatus = s
+                    resolve(s === 'ok')
+                  })
+                  .catch(() => {
+                    trackStatus = 'error'
+                    resolve(false)
+                  })
               } else {
                 // Back after a drop. Silent today, and it is exactly what exceeding the
                 // messages/second limit looks like from the client side.
@@ -214,8 +230,12 @@ async function main() {
         new Promise<boolean>((r) => setTimeout(() => r(false), 20_000)),
       ])
       if (!subscribed) {
-        subscribeFailed++
-        return // no connection, so no answer either — this client is simply not in the room
+        // Split the two, because they mean different things about the ceiling: never reaching
+        // SUBSCRIBED points at the connection cap, a non-'ok' track points at the Presence
+        // limit. Reported, not failed on — locating those caps is what this harness is for.
+        if (trackStatus && trackStatus !== 'ok') presenceFailed++
+        else subscribeFailed++
+        return // not in the room, so no answer either
       }
       subscribedIdx.push(i)
 
@@ -251,7 +271,11 @@ async function main() {
 
   console.log('\n--- Results ---')
   console.log(`Join success:        ${joinOk}/${N} (${((100 * joinOk) / N).toFixed(1)}%)`)
-  console.log(`Realtime connected:  ${subscribedIdx.length}/${joinOk}${subscribeFailed ? `  (${subscribeFailed} never connected — connection cap?)` : ''}`)
+  console.log(
+    `Realtime connected:  ${subscribedIdx.length}/${joinOk}` +
+      `${subscribeFailed ? `  (${subscribeFailed} never connected — connection cap?)` : ''}` +
+      `${presenceFailed ? `  (${presenceFailed} connected but Presence track failed — Presence limit?)` : ''}`,
+  )
   console.log(`Answers accepted:    ${answerOk}/${joinOk}`)
   console.log(`Leaderboard fan-out: ${leaderboardLatency.length}/${joinOk} clients received`)
   console.log(`  p50: ${pctl(leaderboardLatency, 50)} ms`)

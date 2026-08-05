@@ -36,6 +36,22 @@ describe('isBlockedNickname', () => {
       expect(isBlockedNickname(ok)).toBe(false)
     }
   })
+
+  // Every one of these was rejected by the blocklist before the entries that caused it were
+  // removed. Substring matching is what makes the list evasion-resistant, so the cost is
+  // paid here instead: each new entry has to be checked against ordinary words and names.
+  it('does not reject ordinary words and surnames that contain a slur', () => {
+    for (const ok of ['Grape', 'Dickens', 'Hancock', 'Cockburn', 'Penistone', 'pedometer']) {
+      expect(isBlockedNickname(ok)).toBe(false)
+    }
+  })
+
+  // The two entries whose collisions were judged rare enough to keep. Asserted so the
+  // trade-off is visible in the test output rather than only in a comment.
+  it('still rejects Scunthorpe and shiitake — known, accepted false positives', () => {
+    expect(isBlockedNickname('Scunthorpe')).toBe(true)
+    expect(isBlockedNickname('shiitake')).toBe(true)
+  })
 })
 
 describe('sanitizeNickname', () => {
