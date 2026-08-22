@@ -10,6 +10,7 @@ export const EVENTS = {
   LEADERBOARD_UPDATE: 'leaderboard:update',
   SESSION_STATE: 'session:state',
   SESSION_ENDED: 'session:ended',
+  PARTICIPANT_KICKED: 'participant:kicked',
 } as const
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS]
@@ -88,6 +89,13 @@ export interface SessionStatePayload {
 export interface SessionEndedPayload {
   podium: LeaderboardEntry[]
   fullRanking: LeaderboardEntry[]
+}
+
+// Host removed someone. Sent to the whole room because Broadcast has no per-client
+// addressing; only the phone whose participantId matches acts on it. Carries no reason and
+// no nickname — the removed name is the thing the host was trying to get off the screen.
+export interface ParticipantKickedPayload {
+  participantId: string
 }
 
 // Presence (participant → channel): drives the lobby roster + live count.

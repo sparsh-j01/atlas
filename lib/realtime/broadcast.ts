@@ -2,7 +2,7 @@ import 'server-only'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { SUPABASE_URL } from '@/lib/env'
 import { serverEnv } from '@/lib/env.server'
-import { openSessionChannel } from './channels'
+import { openHostChannel, openSessionChannel } from './channels'
 import type { EventName } from './events'
 
 // Server → clients broadcast over Supabase Realtime via the REST endpoint (`httpSend`),
@@ -31,8 +31,33 @@ function realtimeClient(): SupabaseClient {
 // ponytail: no durable retry in M1. Upgrade path — a transactional outbox drained by a
 // worker — lands with the private-channel hardening in M8/M9 (docs/architecture.md).
 export async function broadcast(code: string, event: EventName, payload: unknown): Promise<void> {
+  return publish(openSessionChannel, code, event, payload)
+}
+
+/**
+ * Publish to the host console alone (see `hostChannel`). For counters no participant renders:
+ * on the room channel each one costs ~1 message per phone, here it costs 1 full stop.
+ *
+ * Separate function rather than a boolean argument, so the call site names its audience and
+ * a reader of `answer/route.ts` can see which events the room is told about without going and
+ * checking what `true` meant.
+ */
+export async function broadcastToHost(
+  code: string,
+  event: EventName,
+  payload: unknown,
+): Promise<void> {
+  return publish(openHostChannel, code, event, payload)
+}
+
+async function publish(
+  open: (c: SupabaseClient, code: string) => ReturnType<typeof openSessionChannel>,
+  code: string,
+  event: EventName,
+  payload: unknown,
+): Promise<void> {
   const supabase = realtimeClient()
-  const channel = openSessionChannel(supabase, code)
+  const channel = open(supabase, code)
   try {
     const res = await channel.httpSend(event, payload as object)
     if (!res.success) {

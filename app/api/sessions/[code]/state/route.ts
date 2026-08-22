@@ -32,22 +32,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
       .from(participants)
       .where(and(eq(participants.sessionId, session.id), eq(participants.clientToken, token)))
       .limit(1)
-    if (p) {
-      score = p.score
-      if (slide) {
-        const [a] = await db
-          .select({ response: answers.response })
-          .from(answers)
-          .where(
-            and(
-              eq(answers.sessionId, session.id),
-              eq(answers.slideId, slide.id),
-              eq(answers.participantId, p.id),
-            ),
-          )
-          .limit(1)
-        myOptionId = a?.response.optionId ?? null
-      }
+    // A token that names nobody in THIS session is not a seat. Codes are reusable once a
+    // session ends (sessions_active_code_idx), so a phone that was offline when the last
+    // game closed still holds a token for a code that now belongs to a different room —
+    // and this used to answer 200 with score 0, so that phone rendered the new game's
+    // slides and only discovered it wasn't playing when its first answer came back 403.
+    // 404, same as a wrong code: never confirm a room exists to someone who isn't in it.
+    if (!p) return bad(404, 'session not found')
+    score = p.score
+    if (slide) {
+      const [a] = await db
+        .select({ response: answers.response })
+        .from(answers)
+        .where(
+          and(
+            eq(answers.sessionId, session.id),
+            eq(answers.slideId, slide.id),
+            eq(answers.participantId, p.id),
+          ),
+        )
+        .limit(1)
+      myOptionId = a?.response.optionId ?? null
     }
   }
 
