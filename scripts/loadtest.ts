@@ -41,6 +41,30 @@ if (!Number.isInteger(N) || N < 1) {
   process.exit(1)
 }
 
+// One websocket per simulated participant, plus the host console if a browser is open. The
+// plan's CONCURRENT CONNECTION ceiling is a hard quota, not a soft one: exceeding it in a
+// billing cycle gets the whole organisation flagged over-quota and its projects restricted.
+// It happened here — a 250-connection peak against a Free limit of 200, recorded in July
+// 2026 and still the reason this guard exists. Two back-to-back runs stack, because a
+// closed socket takes a moment to be reaped server-side.
+//
+// LOADTEST_PLAN names the ceiling; LOADTEST_ALLOW_OVER=1 is the deliberate override for a
+// run you have decided to pay for.
+const PLAN_CONNECTION_LIMIT = { free: 200, pro: 500 } as const
+const PLAN = (process.env.LOADTEST_PLAN ?? 'free') as keyof typeof PLAN_CONNECTION_LIMIT
+const CONNECTION_LIMIT = PLAN_CONNECTION_LIMIT[PLAN] ?? PLAN_CONNECTION_LIMIT.free
+// +1 for the host console you will almost certainly have open while watching the run.
+if (N + 1 > CONNECTION_LIMIT && process.env.LOADTEST_ALLOW_OVER !== '1') {
+  console.error(
+    `${N} clients + 1 host = ${N + 1} concurrent Realtime connections, over the ${PLAN} plan's ` +
+      `limit of ${CONNECTION_LIMIT}.\n` +
+      `Exceeding it puts the ORGANISATION over quota for the billing cycle, which restricts ` +
+      `every project — not just this run.\n` +
+      `Run a smaller N, set LOADTEST_PLAN=pro, or set LOADTEST_ALLOW_OVER=1 to proceed anyway.`,
+  )
+  process.exit(1)
+}
+
 // Module-scoped so any exit path can close the room and drop the fixture deck. A session
 // left live keeps its deck locked for editing (lib/decks.ts), so bailing out early must not
 // strand it.
@@ -297,7 +321,12 @@ async function main() {
   // End the room, then drop the fixture deck this run created.
   const ended = await post(`/api/sessions/${code}/end`, undefined, hostToken)
   room = null
-  clients.forEach((c) => c.removeAllChannels())
+  // AWAITED: removeAllChannels() unsubscribes and then disconnects the socket, and firing it
+  // without waiting meant process.exit ran first. Sockets the server has not seen close yet
+  // still count toward the concurrent-connection peak, so two runs in quick succession
+  // stacked into one number roughly twice the size of either — which is how a 120-client
+  // harness produced a 250-connection peak against a 200 limit.
+  await Promise.all(clients.map((c) => c.removeAllChannels().catch(() => {})))
   if (!ended.ok) {
     console.error(`\nend failed (${ended.status}): ${await ended.text()} — the room is still live.`)
     // teardown leaves the deck alone while that room is open, so the next sweep can retry.
