@@ -40,3 +40,9 @@ pnpm-debug.log*
 !.vscode/extensions.json
 .gstack/
 .mcp.json
+
+# --- Local AI tooling: installed skill packs and their lockfile. Machine-local, not
+#     product code, and .agents/ mirrors .claude/ byte for byte. ---
+.agents/
+.claude/
+skills-lock.json
