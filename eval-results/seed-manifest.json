@@ -1,0 +1,57 @@
+{
+  "seededAt": "2026-08-23T18:06:45.306Z",
+  "ownerId": "0f7e6f43-501b-5732-84e0-053affad2ca4",
+  "corpusVersion": "golden-corpus-v1",
+  "goldenSetVersion": "golden-queries-v1",
+  "goldenQueries": {
+    "total": 50,
+    "gradable": 40,
+    "negative": 10
+  },
+  "embedding": {
+    "provider": "gemini",
+    "model": "gemini-embedding-001",
+    "version": "001",
+    "dimension": 768
+  },
+  "chunking": {
+    "maxTokens": 500,
+    "overlapTokens": 0
+  },
+  "retrieval": {
+    "vectorLimit": 20,
+    "bm25Limit": 20,
+    "rrfK": 60,
+    "productionTopK": 8,
+    "relevanceFloor": 0.5
+  },
+  "documents": [
+    {
+      "corpusId": "openstax-social-psychology",
+      "documentId": "a4787f4a-eb07-545c-b1ba-b81c27bed99e",
+      "pages": 7,
+      "sections": 7,
+      "chunks": 67,
+      "embeddings": 67,
+      "embeddingsComputed": 0
+    },
+    {
+      "corpusId": "openstax-big-bang",
+      "documentId": "25fab18c-8a13-5fa7-81a3-d018aa47a912",
+      "pages": 7,
+      "sections": 7,
+      "chunks": 70,
+      "embeddings": 70,
+      "embeddingsComputed": 0
+    },
+    {
+      "corpusId": "openstax-patent-enforcement",
+      "documentId": "52253c32-2089-50c7-b39d-c1316fac5f3a",
+      "pages": 10,
+      "sections": 10,
+      "chunks": 64,
+      "embeddings": 64,
+      "embeddingsComputed": 0
+    }
+  ]
+}

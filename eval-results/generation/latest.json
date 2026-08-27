@@ -1,0 +1,3030 @@
+{
+  "void": {
+    "status": "VOID",
+    "doNotCite": true,
+    "reason": "Measures the Gemini free-tier rate limiter, not the pipeline. 43/45 regenerations returned HTTP 429; 5 slides produced from 50 queries. Reported rates, including abstention accuracy 1.0, are quota exhaustion and would be identical with no API key.",
+    "see": "VOID-2026-08-23.md"
+  },
+  "runId": "78d34f34",
+  "timestamp": "2026-08-23T19:09:07.574Z",
+  "corpusVersion": "golden-corpus-v1",
+  "goldenSetVersion": "golden-queries-v1",
+  "model": {
+    "id": "gemini-3.7-flash",
+    "provider": "gemini",
+    "generationConfig": {
+      "thinkingBudget": 0,
+      "slideMaxTokens": 1000,
+      "judgeMaxTokens": 300,
+      "concurrency": 1
+    }
+  },
+  "documents": [
+    {
+      "corpusId": "openstax-social-psychology",
+      "documentId": "a4787f4a-eb07-545c-b1ba-b81c27bed99e",
+      "queriesCount": 18,
+      "metrics": {
+        "totalQueries": 18,
+        "answerableQueries": 14,
+        "unanswerableQueries": 4,
+        "schemaValidCount": 4,
+        "schemaValidRate": 1,
+        "schemaErrorDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 26
+        },
+        "groundedCount": 4,
+        "groundedRate": 0.2857142857142857,
+        "correctCount": 4,
+        "correctRate": 0.2857142857142857,
+        "supportedGenerationCount": 4,
+        "correctAbstentionCount": 4,
+        "falseAbstentionCount": 10,
+        "unsupportedGenerationCount": 0,
+        "answerabilityRate": 0.2857142857142857,
+        "abstentionAccuracy": 1,
+        "relevantCount": 4,
+        "relevanceRate": 0.2857142857142857,
+        "exactDuplicateCount": 0,
+        "exactDuplicateRate": 0,
+        "nearDuplicateCount": 0,
+        "nearDuplicateRate": 0,
+        "totalAttempts": 32,
+        "firstPassSuccessCount": 4,
+        "firstPassSuccessRate": 0.2222222222222222,
+        "regenerationCount": 14,
+        "regenerationRate": 0.7777777777777778,
+        "regenerationReasonDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 12,
+          "verification unavailable: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 2
+        },
+        "avgLatencyMs": 5493.333333333333,
+        "p95LatencyMs": 18177
+      }
+    },
+    {
+      "corpusId": "openstax-big-bang",
+      "documentId": "25fab18c-8a13-5fa7-81a3-d018aa47a912",
+      "queriesCount": 16,
+      "metrics": {
+        "totalQueries": 16,
+        "answerableQueries": 13,
+        "unanswerableQueries": 3,
+        "schemaValidCount": 1,
+        "schemaValidRate": 1,
+        "schemaErrorDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 29,
+          "api_error: provider returned 503: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n": 1
+        },
+        "groundedCount": 1,
+        "groundedRate": 0.07692307692307693,
+        "correctCount": 1,
+        "correctRate": 0.07692307692307693,
+        "supportedGenerationCount": 1,
+        "correctAbstentionCount": 3,
+        "falseAbstentionCount": 12,
+        "unsupportedGenerationCount": 0,
+        "answerabilityRate": 0.07692307692307693,
+        "abstentionAccuracy": 1,
+        "relevantCount": 1,
+        "relevanceRate": 0.07692307692307693,
+        "exactDuplicateCount": 0,
+        "exactDuplicateRate": 0,
+        "nearDuplicateCount": 0,
+        "nearDuplicateRate": 0,
+        "totalAttempts": 31,
+        "firstPassSuccessCount": 1,
+        "firstPassSuccessRate": 0.0625,
+        "regenerationCount": 15,
+        "regenerationRate": 0.9375,
+        "regenerationReasonDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 15
+        },
+        "avgLatencyMs": 3754.5,
+        "p95LatencyMs": 9756
+      }
+    },
+    {
+      "corpusId": "openstax-patent-enforcement",
+      "documentId": "52253c32-2089-50c7-b39d-c1316fac5f3a",
+      "queriesCount": 16,
+      "metrics": {
+        "totalQueries": 16,
+        "answerableQueries": 13,
+        "unanswerableQueries": 3,
+        "schemaValidCount": 0,
+        "schemaValidRate": 0,
+        "schemaErrorDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 32
+        },
+        "groundedCount": 0,
+        "groundedRate": 0,
+        "correctCount": 0,
+        "correctRate": 0,
+        "supportedGenerationCount": 0,
+        "correctAbstentionCount": 3,
+        "falseAbstentionCount": 13,
+        "unsupportedGenerationCount": 0,
+        "answerabilityRate": 0,
+        "abstentionAccuracy": 1,
+        "relevantCount": 0,
+        "relevanceRate": 0,
+        "exactDuplicateCount": 0,
+        "exactDuplicateRate": 0,
+        "nearDuplicateCount": 0,
+        "nearDuplicateRate": 0,
+        "totalAttempts": 32,
+        "firstPassSuccessCount": 0,
+        "firstPassSuccessRate": 0,
+        "regenerationCount": 16,
+        "regenerationRate": 1,
+        "regenerationReasonDistribution": {
+          "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 16
+        },
+        "avgLatencyMs": 2675.125,
+        "p95LatencyMs": 2946
+      }
+    }
+  ],
+  "pooledMetrics": {
+    "totalQueries": 50,
+    "answerableQueries": 40,
+    "unanswerableQueries": 10,
+    "schemaValidCount": 5,
+    "schemaValidRate": 1,
+    "schemaErrorDistribution": {
+      "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 87,
+      "api_error: provider returned 503: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n": 1
+    },
+    "groundedCount": 5,
+    "groundedRate": 0.125,
+    "correctCount": 5,
+    "correctRate": 0.125,
+    "supportedGenerationCount": 5,
+    "correctAbstentionCount": 10,
+    "falseAbstentionCount": 35,
+    "unsupportedGenerationCount": 0,
+    "answerabilityRate": 0.125,
+    "abstentionAccuracy": 1,
+    "relevantCount": 5,
+    "relevanceRate": 0.125,
+    "exactDuplicateCount": 0,
+    "exactDuplicateRate": 0,
+    "nearDuplicateCount": 0,
+    "nearDuplicateRate": 0,
+    "totalAttempts": 95,
+    "firstPassSuccessCount": 5,
+    "firstPassSuccessRate": 0.1,
+    "regenerationCount": 45,
+    "regenerationRate": 0.9,
+    "regenerationReasonDistribution": {
+      "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 43,
+      "verification unavailable: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex": 2
+    },
+    "avgLatencyMs": 4035.08,
+    "p95LatencyMs": 9756
+  },
+  "outcomes": [
+    {
+      "query": {
+        "id": "sp-d1",
+        "documentId": "openstax-social-psychology",
+        "query": "What percentage of Asch\u2019s participants conformed to group pressure at least once?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "Asch (1955) found that 76% of participants conformed to group pressure at least once"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "prompt": "In Solomon Asch's line judgment study, what percentage of participants conformed to group pressure at least once?",
+            "explanation": "In Asch's line judgment study, 76% of participants conformed to the incorrect group answer at least once.",
+            "points": 1000,
+            "time_limit_ms": 20000,
+            "options": [
+              {
+                "text": "48%",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "65%"
+              },
+              {
+                "is_correct": true,
+                "text": "76%"
+              },
+              {
+                "is_correct": false,
+                "text": "85%"
+              }
+            ]
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "In Solomon Asch's line judgment study, what percentage of participants conformed to group pressure at least once?",
+            "options": [
+              {
+                "id": "280d70bd-08d5-4d53-8d1d-68ecf5370809",
+                "text": "48%",
+                "is_correct": false
+              },
+              {
+                "id": "7fb53d59-b42e-4c2d-af63-0a5a63955747",
+                "text": "65%",
+                "is_correct": false
+              },
+              {
+                "id": "67de6b08-f1aa-4062-80b7-4ae35137356d",
+                "text": "76%",
+                "is_correct": true
+              },
+              {
+                "id": "a63aa684-98f7-4289-8a5e-256dc601c046",
+                "text": "85%",
+                "is_correct": false
+              }
+            ],
+            "explanation": "In Asch's line judgment study, 76% of participants conformed to the incorrect group answer at least once.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": true,
+            "failures": []
+          },
+          "latencyMs": 5956,
+          "success": true
+        }
+      ],
+      "finalSlide": {
+        "type": "quiz_mcq",
+        "prompt": "In Solomon Asch's line judgment study, what percentage of participants conformed to group pressure at least once?",
+        "options": [
+          {
+            "id": "280d70bd-08d5-4d53-8d1d-68ecf5370809",
+            "text": "48%",
+            "is_correct": false
+          },
+          {
+            "id": "7fb53d59-b42e-4c2d-af63-0a5a63955747",
+            "text": "65%",
+            "is_correct": false
+          },
+          {
+            "id": "67de6b08-f1aa-4062-80b7-4ae35137356d",
+            "text": "76%",
+            "is_correct": true
+          },
+          {
+            "id": "a63aa684-98f7-4289-8a5e-256dc601c046",
+            "text": "85%",
+            "is_correct": false
+          }
+        ],
+        "explanation": "In Asch's line judgment study, 76% of participants conformed to the incorrect group answer at least once.",
+        "points": 1000,
+        "timeLimitMs": 20000
+      },
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": true,
+      "correct": true,
+      "answerable": true,
+      "relevant": true,
+      "abstentionClass": "supported_generation",
+      "totalLatencyMs": 8517
+    },
+    {
+      "query": {
+        "id": "sp-d2",
+        "documentId": "openstax-social-psychology",
+        "query": "Where did Stanley Milgram work when he designed his obedience experiment?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "Stanley Milgram was a social psychology professor at Yale"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "prompt": "At which institution was Stanley Milgram a social psychology professor when he designed his obedience experiment?",
+            "options": [
+              {
+                "text": "Yale University",
+                "is_correct": true
+              },
+              {
+                "text": "Stanford University",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "Harvard University"
+              },
+              {
+                "is_correct": false,
+                "text": "Princeton University"
+              }
+            ],
+            "explanation": "Stanley Milgram was a social psychology professor at Yale University when he designed his study on obedience to authority.",
+            "points": 1000,
+            "time_limit_ms": 20000
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "At which institution was Stanley Milgram a social psychology professor when he designed his obedience experiment?",
+            "options": [
+              {
+                "id": "e03f6cc5-67f1-4899-b3c2-79f9a7e1ea66",
+                "text": "Yale University",
+                "is_correct": true
+              },
+              {
+                "id": "5d0e1b5c-ef7e-4242-9cb9-1084485681a1",
+                "text": "Stanford University",
+                "is_correct": false
+              },
+              {
+                "id": "f6299bc0-3a21-4b2c-bc38-e9ed1cf85211",
+                "text": "Harvard University",
+                "is_correct": false
+              },
+              {
+                "id": "8319e494-301b-47be-9b24-ff2fb39cf739",
+                "text": "Princeton University",
+                "is_correct": false
+              }
+            ],
+            "explanation": "Stanley Milgram was a social psychology professor at Yale University when he designed his study on obedience to authority.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": true,
+            "failures": []
+          },
+          "latencyMs": 1520,
+          "success": true
+        }
+      ],
+      "finalSlide": {
+        "type": "quiz_mcq",
+        "prompt": "At which institution was Stanley Milgram a social psychology professor when he designed his obedience experiment?",
+        "options": [
+          {
+            "id": "e03f6cc5-67f1-4899-b3c2-79f9a7e1ea66",
+            "text": "Yale University",
+            "is_correct": true
+          },
+          {
+            "id": "5d0e1b5c-ef7e-4242-9cb9-1084485681a1",
+            "text": "Stanford University",
+            "is_correct": false
+          },
+          {
+            "id": "f6299bc0-3a21-4b2c-bc38-e9ed1cf85211",
+            "text": "Harvard University",
+            "is_correct": false
+          },
+          {
+            "id": "8319e494-301b-47be-9b24-ff2fb39cf739",
+            "text": "Princeton University",
+            "is_correct": false
+          }
+        ],
+        "explanation": "Stanley Milgram was a social psychology professor at Yale University when he designed his study on obedience to authority.",
+        "points": 1000,
+        "timeLimitMs": 20000
+      },
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": true,
+      "correct": true,
+      "answerable": true,
+      "relevant": true,
+      "abstentionClass": "supported_generation",
+      "totalLatencyMs": 18177
+    },
+    {
+      "query": {
+        "id": "sp-d3",
+        "documentId": "openstax-social-psychology",
+        "query": "What is diffusion of responsibility?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "Diffusion of responsibility is the tendency for no one in a group to help because the responsibility to help is spread throughout the group"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 4541,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1365,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 5906,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-k1",
+        "documentId": "openstax-social-psychology",
+        "query": "What is scapegoating?",
+        "category": "keyword_heavy",
+        "keyTerm": "scapegoating",
+        "evidenceSpans": [
+          "Scapegoating is the act of blaming an out-group when the in-group experiences frustration or is blocked from obtaining a goal"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1413,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1341,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2754,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-k2",
+        "documentId": "openstax-social-psychology",
+        "query": "What is situationism?",
+        "category": "keyword_heavy",
+        "keyTerm": "situationism",
+        "evidenceSpans": [
+          "Situationism is the view that our behavior and actions are determined by our immediate environment and surroundings"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1411,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1349,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2760,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-k3",
+        "documentId": "openstax-social-psychology",
+        "query": "What was the quizmaster study?",
+        "category": "keyword_heavy",
+        "keyTerm": "quizmaster",
+        "evidenceSpans": [
+          "a series of experiments known as the quizmaster study"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1440,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1420,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2860,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-p1",
+        "documentId": "openstax-social-psychology",
+        "query": "Why would an ordinary person keep following an instruction to harm a stranger?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "the participants obediently and repeatedly shocked them"
+        ],
+        "note": "BM25-only ranks a different chunk first; the answer requires knowing this describes obedience to authority."
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1335,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1376,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2711,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-p2",
+        "documentId": "openstax-social-psychology",
+        "query": "Why does a crowd of onlookers often fail to assist someone in danger?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "The bystander effect is a phenomenon in which a witness or bystander does not volunteer to help a victim or person in distress"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1416,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1346,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2762,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-p3",
+        "documentId": "openstax-social-psychology",
+        "query": "Why does acting against your own beliefs create mental discomfort?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "defined cognitive dissonance as psychological discomfort arising from holding two or more inconsistent attitudes, behaviors, or cognitions"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1354,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1324,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2678,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-c1",
+        "documentId": "openstax-social-psychology",
+        "query": "What is racism, and why are its modern forms hard to detect?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "Racism is prejudice and discrimination against an individual based solely on one\u2019s membership in a specific racial group",
+          "One reason modern forms of racism, and prejudice in general, are hard to detect is related to the dual attitudes model"
+        ],
+        "note": "CROSS-CHUNK. The required intervals sit two chunks apart, so retrieving the definition satisfies any-evidence recall while leaving the query unanswerable. Every contextual query originally had both intervals inside ONE chunk, which made all-evidence recall a duplicate column of any-evidence recall across the entire dataset."
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1309,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1373,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2682,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-c2",
+        "documentId": "openstax-social-psychology",
+        "query": "What group conditions make groupthink more likely to occur?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "When the group is highly cohesive, or has a strong sense of connection, maintaining group harmony may become more important to the group than making sound decisions",
+          "If the group leader is directive and makes his opinions known, this may discourage group members from disagreeing with the leader"
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "explanation": "Groupthink is more likely when a cohesive group is isolated from alternative viewpoints and led by a directive leader who makes opinions known.",
+            "options": [
+              {
+                "text": "Isolation from alternative views and a directive leader",
+                "is_correct": true
+              },
+              {
+                "text": "Seeking outside opinions and voting via private ballot",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "Low cohesion among members and an open leadership style"
+              },
+              {
+                "text": "Developing contingency plans and researching all views",
+                "is_correct": false
+              }
+            ],
+            "prompt": "Which group conditions make groupthink more likely to occur?"
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "Which group conditions make groupthink more likely to occur?",
+            "options": [
+              {
+                "id": "b45fb3d2-fb21-41e8-aaef-45149183ff4b",
+                "text": "Isolation from alternative views and a directive leader",
+                "is_correct": true
+              },
+              {
+                "id": "98b9b9bc-6fa2-4d7a-ac50-e981984a6442",
+                "text": "Seeking outside opinions and voting via private ballot",
+                "is_correct": false
+              },
+              {
+                "id": "e491c155-4783-48af-ac42-4a7077e657e5",
+                "text": "Low cohesion among members and an open leadership style",
+                "is_correct": false
+              },
+              {
+                "id": "6b9af2f2-5167-40b8-bdfa-f1924a5d3dbf",
+                "text": "Developing contingency plans and researching all views",
+                "is_correct": false
+              }
+            ],
+            "explanation": "Groupthink is more likely when a cohesive group is isolated from alternative viewpoints and led by a directive leader who makes opinions known.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": true,
+            "failures": []
+          },
+          "latencyMs": 5955,
+          "success": true
+        }
+      ],
+      "finalSlide": {
+        "type": "quiz_mcq",
+        "prompt": "Which group conditions make groupthink more likely to occur?",
+        "options": [
+          {
+            "id": "b45fb3d2-fb21-41e8-aaef-45149183ff4b",
+            "text": "Isolation from alternative views and a directive leader",
+            "is_correct": true
+          },
+          {
+            "id": "98b9b9bc-6fa2-4d7a-ac50-e981984a6442",
+            "text": "Seeking outside opinions and voting via private ballot",
+            "is_correct": false
+          },
+          {
+            "id": "e491c155-4783-48af-ac42-4a7077e657e5",
+            "text": "Low cohesion among members and an open leadership style",
+            "is_correct": false
+          },
+          {
+            "id": "6b9af2f2-5167-40b8-bdfa-f1924a5d3dbf",
+            "text": "Developing contingency plans and researching all views",
+            "is_correct": false
+          }
+        ],
+        "explanation": "Groupthink is more likely when a cohesive group is isolated from alternative viewpoints and led by a directive leader who makes opinions known.",
+        "points": 1000,
+        "timeLimitMs": 20000
+      },
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": true,
+      "correct": true,
+      "answerable": true,
+      "relevant": true,
+      "abstentionClass": "supported_generation",
+      "totalLatencyMs": 7596
+    },
+    {
+      "query": {
+        "id": "sp-b1",
+        "documentId": "openstax-social-psychology",
+        "query": "Besides the credibility of the messenger, what features of the message itself affect persuasion?",
+        "category": "boundary",
+        "evidenceSpans": [
+          "the credibility of the messenger (Kumkale & Albarrac\u00edn, 2004).\n\nFeatures of the message itself that affect persuasion include subtlety"
+        ],
+        "note": "Evidence straddles a chunk cut. Unscoreable under substring grading."
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "prompt": "According to the Yale attitude change approach, which features of the message itself influence persuasion?",
+            "explanation": "According to the Yale attitude change approach, message features affecting persuasion include subtlety, sidedness, and timing.",
+            "options": [
+              {
+                "text": "Subtlety, sidedness, and timing",
+                "is_correct": true
+              },
+              {
+                "text": "Speaker attractiveness and prestige",
+                "is_correct": false
+              },
+              {
+                "text": "Audience intelligence and self-esteem",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "Audience age and attention level"
+              }
+            ]
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "According to the Yale attitude change approach, which features of the message itself influence persuasion?",
+            "options": [
+              {
+                "id": "e055b2a8-d4d9-4f61-ab14-54c12a508e63",
+                "text": "Subtlety, sidedness, and timing",
+                "is_correct": true
+              },
+              {
+                "id": "b14b1f29-bc90-4790-80b9-602b427a70e5",
+                "text": "Speaker attractiveness and prestige",
+                "is_correct": false
+              },
+              {
+                "id": "afc010bc-0a53-4477-9069-06e2a6a080a2",
+                "text": "Audience intelligence and self-esteem",
+                "is_correct": false
+              },
+              {
+                "id": "fa71dc27-eb19-4b2e-b7c1-8f7f4c15016c",
+                "text": "Audience age and attention level",
+                "is_correct": false
+              }
+            ],
+            "explanation": "According to the Yale attitude change approach, message features affecting persuasion include subtlety, sidedness, and timing.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": true,
+            "failures": []
+          },
+          "latencyMs": 7331,
+          "success": true
+        }
+      ],
+      "finalSlide": {
+        "type": "quiz_mcq",
+        "prompt": "According to the Yale attitude change approach, which features of the message itself influence persuasion?",
+        "options": [
+          {
+            "id": "e055b2a8-d4d9-4f61-ab14-54c12a508e63",
+            "text": "Subtlety, sidedness, and timing",
+            "is_correct": true
+          },
+          {
+            "id": "b14b1f29-bc90-4790-80b9-602b427a70e5",
+            "text": "Speaker attractiveness and prestige",
+            "is_correct": false
+          },
+          {
+            "id": "afc010bc-0a53-4477-9069-06e2a6a080a2",
+            "text": "Audience intelligence and self-esteem",
+            "is_correct": false
+          },
+          {
+            "id": "fa71dc27-eb19-4b2e-b7c1-8f7f4c15016c",
+            "text": "Audience age and attention level",
+            "is_correct": false
+          }
+        ],
+        "explanation": "According to the Yale attitude change approach, message features affecting persuasion include subtlety, sidedness, and timing.",
+        "points": 1000,
+        "timeLimitMs": 20000
+      },
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": true,
+      "correct": true,
+      "answerable": true,
+      "relevant": true,
+      "abstentionClass": "supported_generation",
+      "totalLatencyMs": 15403
+    },
+    {
+      "query": {
+        "id": "sp-b2",
+        "documentId": "openstax-social-psychology",
+        "query": "How does bullying differ between boys and girls, and which parties does bullying involve?",
+        "category": "boundary",
+        "evidenceSpans": [
+          "why do you think boys and girls display different types of bullying behavior?\n\nBullying involves three parties: the bully, the victim, and witnesses or bystanders."
+        ]
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "options": [
+              {
+                "text": "Girls engage in indirect, social aggression; boys use direct, physical harm",
+                "is_correct": true
+              },
+              {
+                "is_correct": false,
+                "text": "Boys engage in indirect, social aggression; girls use direct, physical harm"
+              },
+              {
+                "is_correct": false,
+                "text": "Both boys and girls exclusively use direct physical attacks on victims"
+              },
+              {
+                "is_correct": false,
+                "text": "Boys rely primarily on cyberbullying, while girls rely on physical attacks"
+              }
+            ],
+            "explanation": "Research shows boys tend to use direct, physical aggression, while girls tend to engage in indirect, social forms like spreading rumors or isolating others.",
+            "prompt": "According to research on bullying, how do aggression patterns typically differ between boys and girls?"
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "According to research on bullying, how do aggression patterns typically differ between boys and girls?",
+            "options": [
+              {
+                "id": "6baa18d6-38f6-49df-9dac-00db90ca0319",
+                "text": "Girls engage in indirect, social aggression; boys use direct, physical harm",
+                "is_correct": true
+              },
+              {
+                "id": "d1ee35ab-adfa-4dc8-a217-b80eab3090fe",
+                "text": "Boys engage in indirect, social aggression; girls use direct, physical harm",
+                "is_correct": false
+              },
+              {
+                "id": "e2b63797-7787-425e-b00c-32958403b073",
+                "text": "Both boys and girls exclusively use direct physical attacks on victims",
+                "is_correct": false
+              },
+              {
+                "id": "e0d404b8-8570-4efd-a249-b43dbce26bd7",
+                "text": "Boys rely primarily on cyberbullying, while girls rely on physical attacks",
+                "is_correct": false
+              }
+            ],
+            "explanation": "Research shows boys tend to use direct, physical aggression, while girls tend to engage in indirect, social forms like spreading rumors or isolating others.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": false,
+            "failures": [
+              "verification unavailable: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+            ]
+          },
+          "latencyMs": 4831,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1417,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 7612,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-x1",
+        "documentId": "openstax-social-psychology",
+        "query": "What is the Asch effect?",
+        "category": "distractor",
+        "evidenceSpans": [
+          "The Asch effect is the influence of the group majority on an individual\u2019s judgment"
+        ],
+        "note": "BM25-only ranks a chunk that merely discusses Asch above the one that defines the effect."
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "options": [
+              {
+                "text": "The influence of the group majority on an individual's judgment",
+                "is_correct": true
+              },
+              {
+                "text": "The tendency for bystanders to avoid helping someone in distress",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "The change in behavior to comply with direct demands from an authority figure"
+              },
+              {
+                "text": "The discomfort felt when holding two conflicting beliefs or attitudes",
+                "is_correct": false
+              }
+            ],
+            "prompt": "In social psychology, what is the Asch effect?",
+            "explanation": "The Asch effect is defined as the influence of the group majority on an individual's judgment."
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "In social psychology, what is the Asch effect?",
+            "options": [
+              {
+                "id": "8faf264a-dec1-410e-af7d-93800602b1cc",
+                "text": "The influence of the group majority on an individual's judgment",
+                "is_correct": true
+              },
+              {
+                "id": "f533ea60-92cd-4aa5-90e9-c535eef1cdbc",
+                "text": "The tendency for bystanders to avoid helping someone in distress",
+                "is_correct": false
+              },
+              {
+                "id": "5caa0058-753b-4463-8a1c-c78b7383bcd9",
+                "text": "The change in behavior to comply with direct demands from an authority figure",
+                "is_correct": false
+              },
+              {
+                "id": "bcef2651-d8e1-43ef-96bd-f0ef9e57a750",
+                "text": "The discomfort felt when holding two conflicting beliefs or attitudes",
+                "is_correct": false
+              }
+            ],
+            "explanation": "The Asch effect is defined as the influence of the group majority on an individual's judgment.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": false,
+            "failures": [
+              "verification unavailable: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+            ]
+          },
+          "latencyMs": 2957,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1427,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 5711,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-u1",
+        "documentId": "openstax-social-psychology",
+        "query": "Which brain regions show increased activity during social exclusion?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1355,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1456,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2811,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-u2",
+        "documentId": "openstax-social-psychology",
+        "query": "What replication rate did large-scale replications of social psychology findings report?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1331,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1355,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2687,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-u3",
+        "documentId": "openstax-social-psychology",
+        "query": "Which medication is most effective for treating social anxiety disorder?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1298,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1321,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2619,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "sp-u4",
+        "documentId": "openstax-social-psychology",
+        "query": "How much money does the average household donate to charity each year?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-social-psychology",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1340,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1294,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2634,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-d1",
+        "documentId": "openstax-big-bang",
+        "query": "What term did Einstein add to his equations so the universe could stay still?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "he changed his equations by introducing an arbitrary new term (we might call it a fudge factor) called the cosmological constant"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1322,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1304,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2626,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-d2",
+        "documentId": "openstax-big-bang",
+        "query": "What is the explosion at the beginning of time called?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "The explosion of that concentrated universe at the beginning of time is called the Big Bang"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1355,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1407,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2762,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-d3",
+        "documentId": "openstax-big-bang",
+        "query": "What did Penzias and Wilson find roosting inside their antenna?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "some pigeons had roosted inside the big horn-shaped antenna"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1305,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 503: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 8451,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 9756,
+      "failureReason": "api_error: provider returned 503: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n"
+    },
+    {
+      "query": {
+        "id": "bb-k1",
+        "documentId": "openstax-big-bang",
+        "query": "What limit must a white dwarf exceed before it collapses and explodes as a type Ia supernova?",
+        "category": "keyword_heavy",
+        "keyTerm": "Chandrasekhar",
+        "evidenceSpans": [
+          "exceed the Chandrasekhar limit"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": {
+            "options": [
+              {
+                "text": "Chandrasekhar limit",
+                "is_correct": true
+              },
+              {
+                "text": "Hubble limit",
+                "is_correct": false
+              },
+              {
+                "text": "Critical density limit",
+                "is_correct": false
+              },
+              {
+                "is_correct": false,
+                "text": "Schwarzschild limit"
+              }
+            ],
+            "explanation": "A type Ia supernova occurs when an accreting white dwarf exceeds the Chandrasekhar limit, causing it to collapse and explode.",
+            "prompt": "What limit must a white dwarf exceed by accreting material before it collapses and explodes as a type Ia supernova?"
+          },
+          "slide": {
+            "type": "quiz_mcq",
+            "prompt": "What limit must a white dwarf exceed by accreting material before it collapses and explodes as a type Ia supernova?",
+            "options": [
+              {
+                "id": "79d39a57-08b9-4cff-9e66-dc0548772684",
+                "text": "Chandrasekhar limit",
+                "is_correct": true
+              },
+              {
+                "id": "e62dd54c-2632-4015-9532-aba4043bdb51",
+                "text": "Hubble limit",
+                "is_correct": false
+              },
+              {
+                "id": "895ebafe-bd01-4094-aca2-b8b9aa6108a5",
+                "text": "Critical density limit",
+                "is_correct": false
+              },
+              {
+                "id": "af94dfa3-bee5-4169-b010-aff019f1d04a",
+                "text": "Schwarzschild limit",
+                "is_correct": false
+              }
+            ],
+            "explanation": "A type Ia supernova occurs when an accreting white dwarf exceeds the Chandrasekhar limit, causing it to collapse and explode.",
+            "points": 1000,
+            "timeLimitMs": 20000
+          },
+          "schemaErrors": [],
+          "judgeVerdict": {
+            "ok": true,
+            "failures": []
+          },
+          "latencyMs": 2314,
+          "success": true
+        }
+      ],
+      "finalSlide": {
+        "type": "quiz_mcq",
+        "prompt": "What limit must a white dwarf exceed by accreting material before it collapses and explodes as a type Ia supernova?",
+        "options": [
+          {
+            "id": "79d39a57-08b9-4cff-9e66-dc0548772684",
+            "text": "Chandrasekhar limit",
+            "is_correct": true
+          },
+          {
+            "id": "e62dd54c-2632-4015-9532-aba4043bdb51",
+            "text": "Hubble limit",
+            "is_correct": false
+          },
+          {
+            "id": "895ebafe-bd01-4094-aca2-b8b9aa6108a5",
+            "text": "Critical density limit",
+            "is_correct": false
+          },
+          {
+            "id": "af94dfa3-bee5-4169-b010-aff019f1d04a",
+            "text": "Schwarzschild limit",
+            "is_correct": false
+          }
+        ],
+        "explanation": "A type Ia supernova occurs when an accreting white dwarf exceeds the Chandrasekhar limit, causing it to collapse and explode.",
+        "points": 1000,
+        "timeLimitMs": 20000
+      },
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": true,
+      "grounded": true,
+      "correct": true,
+      "answerable": true,
+      "relevant": true,
+      "abstentionClass": "supported_generation",
+      "totalLatencyMs": 9639
+    },
+    {
+      "query": {
+        "id": "bb-k2",
+        "documentId": "openstax-big-bang",
+        "query": "In which New Jersey town was the microwave antenna that found the background radiation built?",
+        "category": "keyword_heavy",
+        "keyTerm": "Holmdel",
+        "evidenceSpans": [
+          "In the mid-1960s, in Holmdel, New Jersey, Arno Penzias and Robert Wilson of AT&T\u2019s Bell Laboratories had built a delicate microwave antenna"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 4515,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1346,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 5861,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-k3",
+        "documentId": "openstax-big-bang",
+        "query": "At which observatory did Edwin Hubble work?",
+        "category": "keyword_heavy",
+        "keyTerm": "Mt. Wilson",
+        "evidenceSpans": [
+          "Edwin Hubble at work in the Mt. Wilson Observatory"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1303,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1337,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2640,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-p1",
+        "documentId": "openstax-big-bang",
+        "query": "What did the researchers first suspect was producing the mysterious hum in their equipment?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "Penzias and Wilson at first thought that any radiation appearing to come from all directions must originate from inside their telescope"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1310,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1347,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2657,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-p2",
+        "documentId": "openstax-big-bang",
+        "query": "If you played a recording of cosmic history in reverse, where would all matter end up?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "The galaxies, instead of moving apart, would move together in our movie\u2014getting closer and closer all the time"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1321,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1368,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2689,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-p3",
+        "documentId": "openstax-big-bang",
+        "query": "What might the emptiness of space itself be storing that pushes everything apart?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "One possibility is that it is the cosmological constant, which is an energy associated with the vacuum of \u201cempty\u201d space itself"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1291,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1360,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2651,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-c1",
+        "documentId": "openstax-big-bang",
+        "query": "Why does Hubble\u2019s law alone fail for very distant galaxies, and what densities does the standard model assume?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "Once we get to large distances, we are looking so far into the past that we must take into account changes in the rate of the expansion of the universe",
+          "we have estimated the mass density of ordinary matter plus dark matter as roughly 0.3 times the critical density, and the mass equivalent of dark energy as roughly 0.7 times the critical density"
+        ],
+        "note": "CROSS-CHUNK: the reason and the numbers land in adjacent chunks."
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1307,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1362,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2669,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-c2",
+        "documentId": "openstax-big-bang",
+        "query": "What is one proposed source of dark energy, and how have attempts to calculate its size gone?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "the source of this vacuum energy might be tiny elementary particles that flicker in and out of existence everywhere throughout the universe",
+          "Various attempts have been made to calculate how big the effects of this vacuum energy should be, but so far these attempts have been unsuccessful"
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1295,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1353,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2648,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-b1",
+        "documentId": "openstax-big-bang",
+        "query": "What is a flat universe, and what determines the overall geometry of space?",
+        "category": "boundary",
+        "evidenceSpans": [
+          "We refer to this as a flat universe, and the kind of Euclidean geometry you learned in high school applies in this type of universe.\n\nPicturing Space Curvature for the Entire Universe.\n\nThe density of matter and energy determines the overall geometry of space."
+        ]
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1300,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1317,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2617,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-x1",
+        "documentId": "openstax-big-bang",
+        "query": "How old is the universe?",
+        "category": "distractor",
+        "evidenceSpans": [
+          "the universe is 13.8 billion years old with an uncertainty of only about 100 million years"
+        ],
+        "note": "\"13.8 billion\" appears in four chunks; BM25 ranks one that mentions the figure above the one that states the measurement."
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1286,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1646,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2933,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-u1",
+        "documentId": "openstax-big-bang",
+        "query": "What is the measured mass of the lightest neutrino species?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1327,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1306,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2633,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-u2",
+        "documentId": "openstax-big-bang",
+        "query": "How many galaxies has the James Webb Space Telescope catalogued beyond redshift 10?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1331,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1313,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2645,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "bb-u3",
+        "documentId": "openstax-big-bang",
+        "query": "What is the surface temperature of a typical white dwarf star?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-big-bang",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1351,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1295,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2646,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-d1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "Does the USPTO enforce the patents it issues?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "The USPTO is responsible only for examining and issuing patents\u2014it does not enforce them"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1297,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1398,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2696,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-d2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What kinds of monetary damages can a successful patentee recover?",
+        "category": "direct_fact",
+        "evidenceSpans": [
+          "successful patentees can reap huge monetary damages for another\u2019s patent infringement, including lost profits"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1304,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1381,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2685,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-k1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "Which legal rule covers elements that are equivalent but not literally within a claim?",
+        "category": "keyword_heavy",
+        "keyTerm": "doctrine of equivalents",
+        "evidenceSpans": [
+          "the legal rule called the \u201cdoctrine of equivalents.\u201d"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1311,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1361,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2672,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-k2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What are treble damages?",
+        "category": "keyword_heavy",
+        "keyTerm": "treble",
+        "evidenceSpans": [
+          "treble damages (i.e., triple the amount of money damages found)"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1355,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1306,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2661,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-p1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "Can a competitor escape liability by swapping one component for something that works the same way?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "If the accused device or process performs substantially the same function in substantially the same way and yields substantially the same result, infringement exists"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1292,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1333,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2625,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-p2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What happens if a rights holder sits on a complaint for years before finally suing?",
+        "category": "semantic_paraphrase",
+        "evidenceSpans": [
+          "the accused infringer is arguing that you waited too long to bring your infringement claim"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1305,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1323,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2628,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-c1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "How long after the complaint do pretrial proceedings begin, and what are the first steps once they do?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "Once these initial pleadings are filed, which usually takes about 60 days from when the initial complaint is filed, the case is considered \u201cat issue\u201d and the pretrial proceedings commence",
+          "The first steps in the pretrial procedure are the filing by the parties of their \u201cinitial disclosures\u201d and the holding of the preliminary pretrial conference"
+        ],
+        "note": "CROSS-CHUNK: the timing closes one section, the first steps open the next."
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1298,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1317,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2615,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-c2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What gives rise to claim construction disputes, and who decides the meaning of the language?",
+        "category": "contextual",
+        "evidenceSpans": [
+          "In virtually every patent case, a dispute arises over the meaning of certain language used in the asserted claims of the patents at issue",
+          "after the name of the case that established that the judge, and not the jury, must decide the proper meaning of disputed claim language"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1514,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1432,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2946,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-b1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What exception to but-for materiality did the court recognise, and what happened to inequitable conduct defences afterwards?",
+        "category": "boundary",
+        "evidenceSpans": [
+          "the misconduct is material.\u201d\n\nThe number of successful inequitable conduct defenses asserted has plummeted"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1375,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1287,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2662,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-b2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "How soon should a patent lawsuit be filed, and what is the outer time limit before a defence arises?",
+        "category": "boundary",
+        "evidenceSpans": [
+          "lawsuits should usually be filed as soon after the infringing activity\nis discovered as possible, given the need to investigate and prepare before filing a complaint.\n\nAt the outside, any suit filed more than six years after the infringement began"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1371,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1303,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2674,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-x1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "When can a court award enhanced damages for willful infringement?",
+        "category": "distractor",
+        "evidenceSpans": [
+          "This further restricts the opportunity for a patentee to prove that a defendant\u2019s infringement was willful"
+        ],
+        "note": "\"willful\" appears in 7 chunks; BM25 ranks one of the others first."
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1372,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1306,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2678,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-x2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "Who can be sued for patent infringement?",
+        "category": "distractor",
+        "evidenceSpans": [
+          "If someone makes, uses, offers for sale, sells, or imports what is covered by a claim of a valid patent, that person is an infringer"
+        ]
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1329,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1285,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2614,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-x3",
+        "documentId": "openstax-patent-enforcement",
+        "query": "How often are claim construction rulings overturned on appeal?",
+        "category": "distractor",
+        "evidenceSpans": [
+          "the Federal Circuit reverses claim construction decisions at a rate nearly twice as high as decisions without claim construction issues (32 percent vs. 18 percent)"
+        ],
+        "note": "\"Federal Circuit\" is in 12 chunks and \"claim construction\" in several more: maximum lexical saturation, and BM25 ranks a neighbouring chunk above the one carrying the figure."
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1343,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1294,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "false_abstention",
+      "totalLatencyMs": 2637,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-u1",
+        "documentId": "openstax-patent-enforcement",
+        "query": "What is the filing fee for a provisional patent application?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1391,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1300,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2691,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-u2",
+        "documentId": "openstax-patent-enforcement",
+        "query": "How many patent applications did the USPTO grant last year?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1308,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1298,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2606,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    },
+    {
+      "query": {
+        "id": "pt-u3",
+        "documentId": "openstax-patent-enforcement",
+        "query": "How many years does a design patent remain in force?",
+        "category": "unanswerable",
+        "evidenceSpans": []
+      },
+      "documentId": "openstax-patent-enforcement",
+      "relevancePassed": true,
+      "attempts": [
+        {
+          "attemptIndex": 1,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1383,
+          "success": false
+        },
+        {
+          "attemptIndex": 2,
+          "rawOutput": null,
+          "slide": null,
+          "schemaErrors": [
+            "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+          ],
+          "judgeVerdict": null,
+          "latencyMs": 1329,
+          "success": false
+        }
+      ],
+      "finalSlide": null,
+      "isDuplicate": false,
+      "isNearDuplicate": false,
+      "schemaValid": false,
+      "grounded": false,
+      "correct": false,
+      "answerable": false,
+      "relevant": false,
+      "abstentionClass": "correct_abstention_judge",
+      "totalLatencyMs": 2712,
+      "failureReason": "api_error: provider returned 429: {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota ex"
+    }
+  ]
+}

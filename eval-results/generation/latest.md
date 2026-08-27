@@ -1,0 +1,290 @@
+> # ⚠ VOID — DO NOT CITE
+>
+> This run measures the Gemini free-tier rate limiter, not the Atlas pipeline. 43 of its 45
+> regenerations returned HTTP 429 and only 5 slides were produced from 50 queries. The
+> headline rates below — including "Abstention Accuracy 100.0%" — are artifacts of quota
+> exhaustion and would read identically with the API key removed.
+>
+> Full withdrawal note: [`VOID-2026-08-23.md`](./VOID-2026-08-23.md)
+
+# Atlas M7 Phase 2B Generation Evaluation Benchmark
+
+**Run ID**: `78d34f34`  
+**Timestamp**: `2026-08-23T19:09:07.574Z`  
+**Corpus Version**: `golden-corpus-v1`  
+**Golden Set Version**: `golden-queries-v1`  
+**Generation Model**: `gemini-3.7-flash` (Provider: `gemini`)  
+**Evaluator/Judge**: `gemini-3.7-flash` (Production `verifySlide`)  
+**Configuration**: `thinkingBudget: 0`, `slideMaxTokens: 1000`, `judgeMaxTokens: 300`  
+
+## 1. Executive Summary: Core Generation Metrics
+
+| Metric | Measured Value | Passed / Total | Notes |
+|---|---|---|---|
+| **Schema Validity** | **100.0%** | 5 / 40 | Generated slides strictly compliant with `validateSlide` schema |
+| **Groundedness** | **12.5%** | 5 / 40 | Provenance overlap with gold source + judge verified key |
+| **Correctness** | **12.5%** | 5 / 40 | `verifySlide` confirms exactly one correct option supported |
+| **Answerability** | **12.5%** | 5 / 40 | Supported generations on answerable queries |
+| **Abstention Accuracy** | **100.0%** | 10 / 10 | In-domain unanswerable queries correctly refused (floor/judge) |
+| **Relevance** | **12.5%** | 5 / 40 | Generated slide directly addresses requested subtopic |
+| **Exact Duplicate Rate** | **0.0%** | 0 / 5 | Collapsed normalized prompt match |
+| **Near-Duplicate Rate** | **0.0%** | 0 / 5 | Jaccard token similarity ≥ 0.85 |
+| **First-Pass Success** | **10.0%** | 5 / 50 | Accepted on attempt 1 without retry |
+| **Regeneration Rate** | **90.0%** | 45 / 50 | Attempt 2 triggered due to validation/judge failure |
+| **Average Latency** | **4035ms** | - | Full generation + validation + judge loop (P95: 9756ms) |
+
+## 2. Abstention & Refusal Classification Breakdown
+
+| Category | Count | Share | Description |
+|---|---|---|---|
+| **Supported Generation** | 5 | 10.0% | Answerable query correctly generated and grounded |
+| **Correct Abstention (Refusal)** | 10 | 20.0% | Unanswerable query correctly refused (relevance floor / judge) |
+| **False Abstention** | 35 | 70.0% | Answerable query erroneously refused or dropped |
+| **Unsupported Generation** | 0 | 0.0% | Unanswerable query hallucinatory / generated despite lack of evidence |
+
+## 3. Per-Document Performance Breakdown
+
+### Document: `openstax-social-psychology` (n=18 queries)
+
+| Metric | Rate | Count |
+|---|---|---|
+| Schema Validity | 100.0% | 4 |
+| Groundedness | 28.6% | 4 / 14 |
+| Correctness | 28.6% | 4 / 14 |
+| Answerability | 28.6% | 4 / 14 |
+| Abstention Accuracy | 100.0% | 4 / 4 |
+| First-Pass Success | 22.2% | 4 / 18 |
+| Regeneration Rate | 77.8% | 14 / 18 |
+| Avg Latency | 5493ms | (P95: 18177ms) |
+
+### Document: `openstax-big-bang` (n=16 queries)
+
+| Metric | Rate | Count |
+|---|---|---|
+| Schema Validity | 100.0% | 1 |
+| Groundedness | 7.7% | 1 / 13 |
+| Correctness | 7.7% | 1 / 13 |
+| Answerability | 7.7% | 1 / 13 |
+| Abstention Accuracy | 100.0% | 3 / 3 |
+| First-Pass Success | 6.3% | 1 / 16 |
+| Regeneration Rate | 93.8% | 15 / 16 |
+| Avg Latency | 3755ms | (P95: 9756ms) |
+
+### Document: `openstax-patent-enforcement` (n=16 queries)
+
+| Metric | Rate | Count |
+|---|---|---|
+| Schema Validity | 0.0% | 0 |
+| Groundedness | 0.0% | 0 / 13 |
+| Correctness | 0.0% | 0 / 13 |
+| Answerability | 0.0% | 0 / 13 |
+| Abstention Accuracy | 100.0% | 3 / 3 |
+| First-Pass Success | 0.0% | 0 / 16 |
+| Regeneration Rate | 100.0% | 16 / 16 |
+| Avg Latency | 2675ms | (P95: 2946ms) |
+
+## 4. Failure & Regeneration Analysis
+
+### Regeneration Reasons (Attempt 1 Failures Triggering Retry)
+
+| Reason | Count |
+|---|---|
+| `api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex` | 43 |
+| `verification unavailable: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex` | 2 |
+
+### Per-Query Issues / Exceptions
+
+| Query ID | Category | Query | Abstention Class | Details |
+|---|---|---|---|---|
+| `sp-d3` | direct_fact | What is diffusion of responsibility? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-k1` | keyword_heavy | What is scapegoating? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-k2` | keyword_heavy | What is situationism? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-k3` | keyword_heavy | What was the quizmaster study? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-p1` | semantic_paraphrase | Why would an ordinary person keep following an instruction to harm a stranger? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-p2` | semantic_paraphrase | Why does a crowd of onlookers often fail to assist someone in danger? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-p3` | semantic_paraphrase | Why does acting against your own beliefs create mental discomfort? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-c1` | contextual | What is racism, and why are its modern forms hard to detect? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-b2` | boundary | How does bullying differ between boys and girls, and which parties does bullying involve? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-x1` | distractor | What is the Asch effect? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-u1` | unanswerable | Which brain regions show increased activity during social exclusion? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-u2` | unanswerable | What replication rate did large-scale replications of social psychology findings report? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-u3` | unanswerable | Which medication is most effective for treating social anxiety disorder? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `sp-u4` | unanswerable | How much money does the average household donate to charity each year? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-d1` | direct_fact | What term did Einstein add to his equations so the universe could stay still? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-d2` | direct_fact | What is the explosion at the beginning of time called? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-d3` | direct_fact | What did Penzias and Wilson find roosting inside their antenna? | `false_abstention` | api_error: provider returned 503: {
+  "error": {
+    "code": 503,
+    "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+ |
+| `bb-k2` | keyword_heavy | In which New Jersey town was the microwave antenna that found the background radiation built? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-k3` | keyword_heavy | At which observatory did Edwin Hubble work? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-p1` | semantic_paraphrase | What did the researchers first suspect was producing the mysterious hum in their equipment? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-p2` | semantic_paraphrase | If you played a recording of cosmic history in reverse, where would all matter end up? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-p3` | semantic_paraphrase | What might the emptiness of space itself be storing that pushes everything apart? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-c1` | contextual | Why does Hubble’s law alone fail for very distant galaxies, and what densities does the standard model assume? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-c2` | contextual | What is one proposed source of dark energy, and how have attempts to calculate its size gone? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-b1` | boundary | What is a flat universe, and what determines the overall geometry of space? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-x1` | distractor | How old is the universe? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-u1` | unanswerable | What is the measured mass of the lightest neutrino species? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-u2` | unanswerable | How many galaxies has the James Webb Space Telescope catalogued beyond redshift 10? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `bb-u3` | unanswerable | What is the surface temperature of a typical white dwarf star? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-d1` | direct_fact | Does the USPTO enforce the patents it issues? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-d2` | direct_fact | What kinds of monetary damages can a successful patentee recover? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-k1` | keyword_heavy | Which legal rule covers elements that are equivalent but not literally within a claim? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-k2` | keyword_heavy | What are treble damages? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-p1` | semantic_paraphrase | Can a competitor escape liability by swapping one component for something that works the same way? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-p2` | semantic_paraphrase | What happens if a rights holder sits on a complaint for years before finally suing? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-c1` | contextual | How long after the complaint do pretrial proceedings begin, and what are the first steps once they do? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-c2` | contextual | What gives rise to claim construction disputes, and who decides the meaning of the language? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-b1` | boundary | What exception to but-for materiality did the court recognise, and what happened to inequitable conduct defences afterwards? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-b2` | boundary | How soon should a patent lawsuit be filed, and what is the outer time limit before a defence arises? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-x1` | distractor | When can a court award enhanced damages for willful infringement? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-x2` | distractor | Who can be sued for patent infringement? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-x3` | distractor | How often are claim construction rulings overturned on appeal? | `false_abstention` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-u1` | unanswerable | What is the filing fee for a provisional patent application? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-u2` | unanswerable | How many patent applications did the USPTO grant last year? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+| `pt-u3` | unanswerable | How many years does a design patent remain in force? | `correct_abstention_judge` | api_error: provider returned 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota ex |
+
+
