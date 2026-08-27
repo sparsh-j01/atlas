@@ -16,4 +16,9 @@ export const serverEnv = {
   get directUrl() {
     return required('DIRECT_URL')
   },
+  // M6 generation provider (Gemini by default; see lib/ai/generate.ts for the swap point).
+  // Read lazily so a missing key only fails an actual generation call.
+  get geminiKey() {
+    return required('GEMINI_API_KEY')
+  },
 }
