@@ -18,7 +18,8 @@
     "eval": "tsx --conditions=react-server evals/run.ts",
     "eval:seed": "tsx --conditions=react-server evals/seed.ts",
     "eval:benchmark": "tsx --conditions=react-server evals/benchmark.ts",
-    "eval:generation": "tsx --conditions=react-server evals/generation/benchmark.ts"
+    "eval:generation": "tsx --conditions=react-server evals/generation/benchmark.ts",
+    "eval:isolation": "tsx --conditions=react-server evals/security/tenant-isolation.ts"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -26,7 +27,7 @@
     "@supabase/supabase-js": "^2.110.7",
     "drizzle-orm": "^0.45.2",
     "motion": "^13.1.1",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -41,7 +42,7 @@
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5",
