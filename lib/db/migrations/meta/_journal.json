@@ -50,6 +50,13 @@
       "when": 1785046574270,
       "tag": "0006_reveal_tracking_and_one_session_per_deck",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787457444216,
+      "tag": "0007_busy_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }
