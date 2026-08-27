@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
               // wss:// is listed explicitly. Supabase Realtime connects over a WebSocket, and
               // Chrome does not accept it under the https:// source expression alone, so
               // without this every live room silently fails to subscribe.
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
