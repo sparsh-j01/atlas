@@ -40,6 +40,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     .limit(1)
   if (!p) return bad(403, 'unknown participant')
 
+  // No per-participant rate limit here on purpose. This route is already bounded twice by
+  // things that are true across every serverless instance: the answer window is closed by
+  // the SERVER clock, and a re-submit is idempotent on (participant, slide). A counter in
+  // process memory would add nothing those two don't already cover, while a false 429
+  // mid-question — a lambda that happens to hold a stale count — silently costs a student
+  // their answer. Correctness beats a guard that can only misfire.
   const { timeLimitMs } = slide.config
   const responseMs = Date.now() - session.currentSlideStartedAt.getTime()
   // Late answers are rejected by the server clock — never a client-sent timestamp — but with
