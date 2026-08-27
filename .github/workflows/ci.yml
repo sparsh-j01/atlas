@@ -24,4 +24,19 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+
+      # The whole suite, including the PR-safe half of the M7 evaluation layer. Everything
+      # here is deterministic and needs no API key and no database: corpus and golden-set
+      # invariants, source-coordinate grading, retrieval metric maths, the generation
+      # metric classifier, prompt-injection detection, tenant-isolation scoping, reliability
+      # scoring and the regression checker.
+      #
+      # Deliberately NOT here, because they cost real model calls and are run manually or on
+      # a schedule (master doc section 15):
+      #   npm run eval:benchmark    three-arm retrieval, needs embeddings + a seeded DB
+      #   npm run eval:generation   judge-backed generation quality
+      #   npm run eval:injection    end-to-end prompt injection
+      #   npm run eval:reliability  repeated runs
+      #   npm run eval:baseline     baseline vs RAG
+      #   npm run eval:isolation    tenant isolation, Path A (needs a seeded DB)
       - run: npm test

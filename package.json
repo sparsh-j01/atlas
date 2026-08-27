@@ -19,7 +19,11 @@
     "eval:seed": "tsx --conditions=react-server evals/seed.ts",
     "eval:benchmark": "tsx --conditions=react-server evals/benchmark.ts",
     "eval:generation": "tsx --conditions=react-server evals/generation/benchmark.ts",
-    "eval:isolation": "tsx --conditions=react-server evals/security/tenant-isolation.ts"
+    "eval:isolation": "tsx --conditions=react-server evals/security/tenant-isolation.ts",
+    "eval:injection": "tsx --conditions=react-server evals/security/injection.ts",
+    "eval:reliability": "tsx --conditions=react-server evals/reliability/benchmark.ts",
+    "eval:baseline": "tsx --conditions=react-server evals/baseline/benchmark.ts",
+    "eval:regression": "tsx --conditions=react-server evals/regression/check.ts"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
