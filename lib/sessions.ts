@@ -4,6 +4,14 @@ import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
 import { getDeckWithSlides } from '@/lib/decks'
 import { isUniqueViolation, newCode, newToken } from '@/lib/realtime/session-util'
+import { timingSafeEqual } from 'node:crypto'
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  if (bufA.length !== bufB.length) return false
+  return timingSafeEqual(bufA, bufB)
+}
 
 /** Why a deck can't go live yet, or null if it can. A `ready` deck is already all-valid
  *  (setDeckStatusAction gates that), so this is the belt-and-suspenders launch gate. */
@@ -72,7 +80,12 @@ export async function getHostedSession(code: string, hostToken: string) {
   const [row] = await db
     .select()
     .from(sessions)
-    .where(and(eq(sessions.code, code), eq(sessions.hostToken, hostToken), ne(sessions.status, 'ended')))
+    .where(and(eq(sessions.code, code), ne(sessions.status, 'ended')))
     .limit(1)
-  return row ?? null
+  if (!row) return null
+  
+  // Constant-time comparison to prevent timing attacks
+  if (!constantTimeEqual(row.hostToken, hostToken)) return null
+  
+  return row
 }

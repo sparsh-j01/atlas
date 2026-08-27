@@ -20,6 +20,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // upgrade path is the join rate limiting already scheduled for M8, which is where
 // per-IP state has to be solved anyway. A kick still wins the moment it is used for: the
 // name is off the screen, and the score that carried it is gone from the leaderboard.
+// CSRF is covered by the SameSite=Lax host-token cookie — see the advance route.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   // Wrong/missing token 404s exactly like a wrong code — same rule as advance/reveal/end:

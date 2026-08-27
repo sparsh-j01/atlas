@@ -10,6 +10,8 @@ import { getHostedSession } from '@/lib/sessions'
 // Host-only: close the room. Ending frees the 6-digit code for reuse (the unique index is
 // partial on status <> 'ended') and unlocks the deck for editing again (lib/decks.ts).
 // The podium UI is M4; what lands here is the final ranking every client needs to render it.
+//
+// CSRF is covered by the SameSite=Lax host-token cookie — see the advance route.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   const session = await getHostedSession(code, await hostTokenFrom(req, code))

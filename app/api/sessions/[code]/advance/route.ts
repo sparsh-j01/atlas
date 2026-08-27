@@ -12,6 +12,11 @@ import { getHostedSession } from '@/lib/sessions'
 // Host-only: move the room to a slide and start its clock. One endpoint covers start
 // (index 0), next, back and skip — the caller names the TARGET index, so a double-click
 // or a retried request lands on the same slide instead of skipping one.
+//
+// CSRF: the credential here is the `htk_<code>` cookie, set SameSite=Lax in
+// lib/actions.ts. Browsers do not attach a Lax cookie to a cross-site POST, and this
+// route is POST-only, so a forged submission arrives with no host token and 404s like
+// any other bad token. That IS the CSRF control — don't add a token layer on top of it.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   // A wrong/missing token 404s exactly like a wrong code: never confirm a session exists

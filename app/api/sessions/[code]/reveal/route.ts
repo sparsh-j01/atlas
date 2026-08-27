@@ -13,6 +13,8 @@ import { getHostedSession } from '@/lib/sessions'
 // Host-only: disclose the correct answer and broadcast the re-ranked leaderboard. The
 // re-rank happens HERE (not per answer) — that IS the animated reorder, and it's what
 // keeps the hot path flat at 100.
+//
+// CSRF is covered by the SameSite=Lax host-token cookie — see the advance route.
 export async function POST(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   const session = await getHostedSession(code, await hostTokenFrom(req, code))

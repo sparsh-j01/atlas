@@ -26,13 +26,15 @@ export async function findLiveSession(code: string) {
 }
 
 /** The host's capability token for `code`, as the control routes (advance/reveal/end)
- *  receive it. Normally the httpOnly cookie the launch set — the browser attaches it
+ *  receive it. The httpOnly cookie the launch set — the browser attaches it
  *  automatically, so the token never touches client JS, and `SameSite=Lax` keeps a
- *  cross-site POST from carrying it (no CSRF token needed). The `Authorization: Bearer`
- *  fallback is for non-browser hosts: the load-test harness drives a room over HTTP. */
+ *  cross-site POST from carrying it (no CSRF token needed). */
 export async function hostTokenFrom(req: Request, code: string): Promise<string> {
-  const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
-  if (bearer) return bearer
+  // In production, only accept the httpOnly cookie. Bearer token fallback is only for tests.
+  if (process.env.NODE_ENV !== 'production') {
+    const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+    if (bearer) return bearer
+  }
   return (await cookies()).get(`htk_${code}`)?.value ?? ''
 }
 
