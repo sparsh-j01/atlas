@@ -526,6 +526,18 @@ export async function runIngestion(
 
   if (doc.status === 'ready') return { status: 'ready', done: true, paused: false }
 
+  // A retry re-enters at the stage that FAILED, but the row still carries `failed_<stage>`.
+  // Move it onto that stage before running anything, because every stage finishes by calling
+  // advanceDocument(expected: state), whose WHERE pins the current status — against a row
+  // still reading `failed_ocr` that matches nothing, and the stage's work is thrown away
+  // with "document is no longer in state ocr" after it has already been done.
+  //
+  // Conditional on the failed value, so it stays the same claim-the-work lock the rest of
+  // the pipeline uses: two concurrent retries cannot both take it.
+  if (state !== doc.status) {
+    doc = await advanceDocument(doc.id, doc.status as IngestionState, state, job.id)
+  }
+
   while (state !== 'ready') {
     const stage = stages.find((s) => s.from === state)
     if (!stage) {

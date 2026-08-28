@@ -23,7 +23,8 @@
     "eval:injection": "tsx --conditions=react-server evals/security/injection.ts",
     "eval:reliability": "tsx --conditions=react-server evals/reliability/benchmark.ts",
     "eval:baseline": "tsx --conditions=react-server evals/baseline/benchmark.ts",
-    "eval:regression": "tsx --conditions=react-server evals/regression/check.ts"
+    "eval:regression": "tsx --conditions=react-server evals/regression/check.ts",
+    "ingest:smoke": "tsx scripts/ingest-smoke.ts"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

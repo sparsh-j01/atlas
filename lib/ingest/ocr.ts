@@ -1,4 +1,4 @@
-import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 // Text recovery from images embedded in a slide deck.
@@ -59,7 +59,30 @@ export interface OcrEngine {
   close: () => Promise<void>
 }
 
-const require = createRequire(import.meta.url)
+/**
+ * An installed package's directory, as a real path on disk.
+ *
+ * Built by joining strings rather than by module resolution, because module resolution does
+ * not survive the bundler: `require.resolve(...)` gets rewritten to a bundler-internal
+ * specifier (`[externals]/tesseract.js/...`) that Node's worker loader rejects for not being
+ * an absolute path, and giving it a computed argument makes the bundler try to resolve the
+ * dependency at build time and fail outright. A plain join is invisible to it.
+ *
+ * Both failures were found by running a real .pptx through the real route. Neither is
+ * reachable from a unit test, because no bundler is involved outside the app.
+ */
+function packageDir(pkg: string): string {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', pkg),
+    // Vercel puts the function's code under its own root; node_modules sits beside it.
+    path.join(process.cwd(), '..', 'node_modules', pkg),
+  ]
+  const found = candidates.find((c) => existsSync(path.join(c, 'package.json')))
+  // Loud rather than silent: without this the worker spawn fails deep inside tesseract with
+  // a message that does not name the cause.
+  if (!found) throw new Error(`OCR cannot find the installed "${pkg}" package`)
+  return found
+}
 
 /** Where the bundled language data lives. tesseract.js appends "<lang>.traineddata.gz". */
 export function tessdataPath(): string {
@@ -71,7 +94,13 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
   const worker = await createWorker('eng', undefined, {
     // Both point at files on disk. Nothing is fetched at runtime.
     langPath: tessdataPath(),
-    corePath: path.dirname(require.resolve('tesseract.js-core/package.json')),
+    corePath: packageDir('tesseract.js-core'),
+    // Resolved from the installed package rather than left to tesseract's own guess. Its
+    // guess is derived from __dirname, which a bundler rewrites — and when the resulting
+    // path is wrong the worker spawn fails as an uncaughtException that no await can catch,
+    // so the stage hangs for the whole request budget instead of failing. next.config.ts
+    // also marks the package external; this is the half that does not depend on that.
+    workerPath: path.join(packageDir('tesseract.js'), 'src', 'worker-script', 'node', 'index.js'),
     gzip: true,
   })
 

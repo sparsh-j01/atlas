@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // tesseract.js spawns a Node worker by resolving a path inside its own package. Bundling
+  // rewrites that path to "/ROOT/node_modules/tesseract.js/src/worker-script/node/index.js",
+  // which does not exist, and the spawn failure surfaces as an uncaughtException from the
+  // worker rather than a rejected promise — so the OCR stage hung for the full request
+  // budget instead of failing. Left external, Next resolves it with a native require and the
+  // worker path is correct. Found by running a real .pptx through the real route; no unit
+  // test could have seen it, because the bundler is not involved outside the app.
+  serverExternalPackages: ['tesseract.js'],
+
   async headers() {
     return [
       {
