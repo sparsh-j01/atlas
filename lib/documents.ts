@@ -200,11 +200,17 @@ export async function staleDocuments(staleMs: number): Promise<Document[]> {
  * half screenshots would otherwise see a clean "ready" and questions drawn from half the
  * material, with nothing anywhere to say so.
  */
-export async function documentCoverage(documentId: string): Promise<CoverageReport> {
+export async function documentCoverage(documentId: string, ownerId: string): Promise<CoverageReport> {
   const rows = await db
     .select({ pageNumber: documentPages.pageNumber, unreadReason: documentPages.unreadReason })
     .from(documentPages)
-    .where(eq(documentPages.documentId, documentId))
+    // Joined to the owner rather than trusting the caller to have checked, which is what
+    // every other accessor here does (getDocument, getDocumentByHash, deleteDocument). Both
+    // current callers DO check first, so this closes nothing that is open today — it stops
+    // the next caller from being the one that forgets, on a function whose only argument
+    // was an id the client supplies.
+    .innerJoin(documents, eq(documents.id, documentPages.documentId))
+    .where(and(eq(documentPages.documentId, documentId), eq(documents.ownerId, ownerId)))
     .orderBy(documentPages.pageNumber)
 
   const unread = rows

@@ -88,6 +88,16 @@ export function readZipEntries(
   if (declared > maxInflated)
     throw new ZipLimitError(`archive declares ${declared} uncompressed bytes, limit is ${maxInflated}`)
 
+  // Two entries with the same name is a PARSER DIFFERENTIAL, and it is refused rather than
+  // resolved. Readers disagree about which one wins — some take the first, some the last —
+  // so an archive containing both is a file whose contents depend on who is reading it. A
+  // deck could show one thing in PowerPoint and ingest another here, and the extra entry
+  // also shifts every slide number after it, which is what citations point at.
+  //
+  // Nothing legitimate is lost: OPC forbids duplicate part names, so a real .pptx has none.
+  const duplicate = findDuplicatePath(central)
+  if (duplicate) throw new Error(`archive contains "${duplicate}" more than once`)
+
   const entries: ZipEntry[] = []
   let total = 0
   for (const e of central) {
@@ -101,6 +111,17 @@ export function readZipEntries(
     entries.push({ path: e.path, bytes })
   }
   return entries
+}
+
+/** The first path that appears twice, or undefined. Compared case-sensitively, which is how
+ *  zip entry names are defined; a case-only collision is a different archive, not this one. */
+function findDuplicatePath(central: CentralEntry[]): string | undefined {
+  const seen = new Set<string>()
+  for (const e of central) {
+    if (seen.has(e.path)) return e.path
+    seen.add(e.path)
+  }
+  return undefined
 }
 
 function inflateEntry(data: Uint8Array, entry: CentralEntry, budget: number): Uint8Array {

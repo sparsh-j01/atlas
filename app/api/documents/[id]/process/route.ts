@@ -87,7 +87,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     error: failureMessage(errorCode),
     // Only once, at the end: mid-run the numbers are still moving, and a page the OCR stage
     // has not reached yet would be reported as unread when it is about to be rescued.
-    coverage: outcome.done ? await documentCoverage(id) : undefined,
+    coverage: outcome.done ? await documentCoverage(id, user.id) : undefined,
   })
 }
 
@@ -107,6 +107,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     pageCount: doc.pageCount,
     attempt: job?.attempt ?? 0,
     error: failureMessage(job?.errorCode),
-    coverage: doc.status === 'ready' ? await documentCoverage(id) : undefined,
+    coverage: doc.status === 'ready' ? await documentCoverage(id, user.id) : undefined,
   })
 }

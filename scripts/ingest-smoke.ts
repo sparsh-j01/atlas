@@ -20,6 +20,7 @@
  *   npx tsx scripts/ingest-smoke.ts <file.pptx|file.pdf>
  */
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { config } from 'dotenv'
@@ -38,7 +39,15 @@ const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 // Its own account, so a failed run can never leave rows on a real creator's documents.
 const EMAIL = 'ingest-smoke@test.local'
-const PASSWORD = 'ingest-smoke-Aa1!xyz'
+
+// The password is GENERATED PER RUN and never written down.
+//
+// A literal here would be a working login to the real project committed in plaintext: the
+// Supabase URL and anon key are NEXT_PUBLIC_ and ship in the browser bundle, so email +
+// password is the whole credential. Anyone who could read this file could sign in and spend
+// the project's Gemini quota. Rotating on every run means there is nothing to steal and no
+// long-lived account left behind with a known password.
+const PASSWORD = `smoke-${randomUUID()}-Aa1!`
 
 const PAGE_SEPARATOR = '\n\n'
 
@@ -54,7 +63,13 @@ function mimeFor(file: string): string {
 async function authCookie(): Promise<string> {
   const admin = createClient(SUPABASE_URL!, SERVICE!, { auth: { persistSession: false } })
   const { data: list } = await admin.auth.admin.listUsers()
-  if (!list.users.find((u) => u.email === EMAIL)) {
+  const existing = list.users.find((u) => u.email === EMAIL)
+  if (existing) {
+    // Reset to this run's password, so a previous run's secret stops working the moment
+    // this one starts.
+    const { error } = await admin.auth.admin.updateUserById(existing.id, { password: PASSWORD })
+    assert.ok(!error, `updateUser: ${error?.message}`)
+  } else {
     const { error } = await admin.auth.admin.createUser({
       email: EMAIL,
       password: PASSWORD,

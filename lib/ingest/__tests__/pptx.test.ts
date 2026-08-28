@@ -207,6 +207,18 @@ describe('unreadable and empty slides', () => {
     expect(extractPptx(deck([textShape('Content')])).pages[0].unreadReason).toBeUndefined()
   })
 
+  it('does not let a duplicate entry substitute a slide or shift numbering', () => {
+    // Before the zip reader refused duplicates, this produced THREE pages from a two-slide
+    // deck, and "REAL slide one" was replaced by the second copy on both of them: PowerPoint
+    // shows the uploader one deck, Atlas generates questions from another.
+    const zip = buildZip([
+      { path: 'ppt/slides/slide1.xml', data: slideXml(textShape('REAL slide one')) },
+      { path: 'ppt/slides/slide1.xml', data: slideXml(textShape('SHADOW overwrite')) },
+      { path: 'ppt/slides/slide2.xml', data: slideXml(textShape('Slide two')) },
+    ])
+    expect(() => extractPptx(zip)).toThrow(/more than once/)
+  })
+
   it('rejects an archive with no slides at all', () => {
     expect(() => extractPptx(buildZip([{ path: 'ppt/media/image1.png', data: 'x' }]))).toThrow(/no slides/)
   })

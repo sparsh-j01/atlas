@@ -120,6 +120,47 @@ describe('decompression limits', () => {
   })
 })
 
+describe('duplicate entry names', () => {
+  it('refuses an archive that names the same entry twice', () => {
+    // A parser differential, not a corrupt file: some readers take the first entry, some
+    // the last, so the archive's contents depend on who opens it.
+    const zip = buildZip([
+      { path: 'ppt/slides/slide1.xml', data: 'FIRST' },
+      { path: 'ppt/slides/slide1.xml', data: 'SECOND' },
+    ])
+    expect(() => readZipEntries(zip)).toThrow(/more than once/)
+  })
+
+  it('refuses even when the duplicate is a media part', () => {
+    const zip = buildZip([
+      { path: 'ppt/slides/slide1.xml', data: 'x' },
+      { path: 'ppt/media/image1.png', data: 'A' },
+      { path: 'ppt/media/image1.png', data: 'B' },
+    ])
+    expect(() => readZipEntries(zip)).toThrow(/more than once/)
+  })
+
+  it('refuses a duplicate the prefix filter would have skipped', () => {
+    // Checked across the whole central directory, before filtering: a reader that opens the
+    // other copy is still reading a different archive from this one.
+    const zip = buildZip([
+      { path: 'ppt/slides/slide1.xml', data: 'x' },
+      { path: 'docProps/app.xml', data: 'A' },
+      { path: 'docProps/app.xml', data: 'B' },
+    ])
+    expect(() => readZipEntries(zip)).toThrow(/more than once/)
+  })
+
+  it('allows distinct names that differ only by case', () => {
+    // Zip names are case-sensitive; these are two entries, not one written twice.
+    const zip = buildZip([
+      { path: 'ppt/media/Image1.png', data: 'A' },
+      { path: 'ppt/media/image1.png', data: 'B' },
+    ])
+    expect(readZipEntries(zip)).toHaveLength(2)
+  })
+})
+
 describe('central directory reading', () => {
   it('lists names without inflating', () => {
     const zip = buildZip([
