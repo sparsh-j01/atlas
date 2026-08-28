@@ -46,3 +46,9 @@ pnpm-debug.log*
 .agents/
 .claude/
 skills-lock.json
+
+# tesseract.js decompresses its language data into the working directory at runtime.
+# The committed copy is the .gz in lib/ingest/tessdata/; this is the cache it expands to.
+/eng.traineddata
+*.traineddata
+!lib/ingest/tessdata/*.traineddata.gz
