@@ -10,25 +10,33 @@ import {
   getDocumentByHash,
   getLatestJob,
 } from '@/lib/documents'
+import { acceptedLabels, formatForMime, matchesMagic } from '@/lib/ingest/formats'
 
-// Upload a PDF and queue it for ingestion (M7 phase 1).
+// Upload a source document and queue it for ingestion (M7 phase 1; PPTX added in M7.5).
 //
 // An uploaded file is hostile input from an unauthenticated-shaped source, so the checks
 // run CHEAPEST-FIRST and each one gates the next:
 //
-//   Content-Length ─> declared type ─> read bytes ─> size ─> magic bytes ─> parse ─> pages
+//   Content-Length ─> declared type ─> read bytes ─> size ─> magic bytes ─> probe ─> pages
 //
 // Order matters as much as the checks do. Previously the 25MB limit was enforced AFTER
 // `file.arrayBuffer()` had buffered the whole upload and unpdf had parsed it, so a 500MB
 // file was fully read into a serverless function's memory and handed to the parser before
 // anything objected — the limit protected storage, not the process.
 //
+// What each rung compares against now comes from lib/ingest/formats.ts rather than from
+// constants inlined here, so adding a format cannot leave one rung behind. The ladder
+// itself is unchanged.
+//
+// The magic-byte rung is weaker for PPTX than for PDF and that is expected: every OOXML
+// file begins with the same four zip bytes, so a .docx renamed to .pptx gets past it. The
+// probe is what refuses it, on having no slides — which is the same shape of check as
+// "this PDF has no text layer", just one rung later.
+//
 // CSRF: the credential is the Supabase auth cookie (SameSite=Lax) and this route is
 // POST-only, so a cross-site submission carries no session and 401s.
 
 export const maxDuration = 60
-
-const PDF_MAGIC = '%PDF-'
 
 function bad(status: number, error: string) {
   return NextResponse.json({ error }, { status })
@@ -51,7 +59,10 @@ export async function POST(req: Request) {
     return bad(400, 'Expected a multipart form upload.')
   }
   if (!file) return bad(400, 'No file provided.')
-  if (file.type !== 'application/pdf') return bad(415, 'Only application/pdf is accepted.')
+
+  const format = formatForMime(file.type)
+  if (!format) return bad(415, `Only ${acceptedLabels()} uploads are accepted.`)
+
   // File.size is known without reading the body, so this catches a lying Content-Length.
   if (file.size > UPLOAD_LIMITS.maxFileSize)
     return bad(413, `File too large. Maximum ${UPLOAD_LIMITS.maxFileSize / 1024 / 1024}MB.`)
@@ -62,10 +73,12 @@ export async function POST(req: Request) {
   if (buffer.length > UPLOAD_LIMITS.maxFileSize)
     return bad(413, `File too large. Maximum ${UPLOAD_LIMITS.maxFileSize / 1024 / 1024}MB.`)
   // Content sniffing, because a declared Content-Type is just a string the caller chose.
-  if (buffer.subarray(0, 5).toString('latin1') !== PDF_MAGIC)
-    return bad(415, 'That file is not a PDF.')
+  if (!matchesMagic(format, buffer)) return bad(415, `That file is not a ${format.label}.`)
 
-  const check = await inspectPdf(buffer)
+  // Parse far enough to know the file is usable, and no further. For a .pptx this also
+  // walks the archive under the decompression limits, so a zip bomb is refused here rather
+  // than inside the ingestion pipeline.
+  const check = await format.probe(buffer, UPLOAD_LIMITS.maxPages)
   if (!check.ok) return bad(422, check.error)
 
   const contentHash = await sha256(buffer)
@@ -85,13 +98,17 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient()
-  const storagePath = `${user.id}/${contentHash}.pdf`
+  const storagePath = `${user.id}/${contentHash}.${format.extension}`
   const { error: uploadError } = await admin.storage
     .from('documents')
-    .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: false })
+    .upload(storagePath, buffer, { contentType: format.mimeType, upsert: false })
   // The Supabase error text names the bucket and the storage backend. Keep it in the log.
   if (uploadError) {
-    logger.error('pdf upload failed', { ownerId: user.id, reason: uploadError.message })
+    logger.error('document upload failed', {
+      ownerId: user.id,
+      format: format.id,
+      reason: uploadError.message,
+    })
     return bad(502, 'Could not store the upload. Try again.')
   }
 
@@ -101,7 +118,7 @@ export async function POST(req: Request) {
     const doc = await createDocument({
       ownerId: user.id,
       filename: file.name.slice(0, 255),
-      sourceType: 'pdf',
+      sourceType: format.id,
       fileSize: buffer.length,
       pageCount: check.pageCount,
       contentHash,
@@ -118,48 +135,5 @@ export async function POST(req: Request) {
   } catch (e) {
     await admin.storage.from('documents').remove([storagePath]).catch(() => {})
     throw e
-  }
-}
-
-/**
- * Parse far enough to know the file is a usable text PDF, and no further.
- *
- * Encrypted and image-only PDFs are rejected here rather than three stages later, because
- * "your scanned worksheet has no text layer" is only useful to a teacher at the moment
- * they upload it.
- */
-async function inspectPdf(
-  buffer: Buffer,
-): Promise<{ ok: true; pageCount: number } | { ok: false; error: string }> {
-  try {
-    const { getDocumentProxy } = await import('unpdf')
-    const doc = await getDocumentProxy(new Uint8Array(buffer))
-    const pageCount = doc.numPages
-
-    if (pageCount === 0) return { ok: false, error: 'That PDF has no pages.' }
-    if (pageCount > UPLOAD_LIMITS.maxPages)
-      return { ok: false, error: `Too many pages. Maximum ${UPLOAD_LIMITS.maxPages}.` }
-
-    // Sample rather than scan: a text PDF shows a text layer within its first few pages,
-    // and parsing 200 pages here would duplicate the extraction stage's work inside the
-    // upload request.
-    for (let i = 1; i <= Math.min(pageCount, 5); i++) {
-      const content = await (await doc.getPage(i)).getTextContent()
-      const hasText = content.items.some(
-        (item) => 'str' in item && typeof item.str === 'string' && item.str.trim().length > 0,
-      )
-      if (hasText) return { ok: true, pageCount }
-    }
-    return {
-      ok: false,
-      error: 'That PDF has no selectable text. Scanned or image-only files are not supported yet.',
-    }
-  } catch (error) {
-    // Covers encrypted files, truncated files and malformed xref tables alike: the parser
-    // refused it, so we refuse it, without leaking parser internals to the caller.
-    const message = error instanceof Error ? error.message : ''
-    if (/password|encrypt/i.test(message))
-      return { ok: false, error: 'That PDF is password-protected. Remove the password and try again.' }
-    return { ok: false, error: 'That PDF could not be read. It may be corrupted.' }
   }
 }

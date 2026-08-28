@@ -1,10 +1,11 @@
 import 'server-only'
 
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { db } from '@/lib/db'
 import {
   chunks,
+  documentAssets,
   documentPages,
   documentSections,
   documents,
@@ -19,14 +20,33 @@ import { detectSections, type SourcePage } from '@/lib/ai/structure'
 import { embedBatch, embeddingConfig } from '@/lib/ai/embed'
 import { geminiGenerate } from '@/lib/ai/gemini'
 import { logger } from '@/lib/logger'
+import { extractPptx } from '@/lib/ingest/pptx'
+import { deriveSlideSections } from '@/lib/ingest/sections'
+import { isTextPoor } from '@/lib/ingest/coverage'
+import { canOcr, createTesseractEngine, isUsableOcrText, type OcrEngine } from '@/lib/ingest/ocr'
+import { readZipEntries } from '@/lib/ingest/zip'
 
-// Document ingestion pipeline (M7 phases 1-5).
+// Document ingestion pipeline (M7 phases 1-5, extended for PPTX + OCR in M7.5).
 //
-//   uploaded ──> extracting ──> structuring ──> chunking ──> embedding ──> ready
-//       │            │              │              │             │
-//       └────────────┴──────────────┴──────────────┴─────────────┴──> failed_<stage>
-//                                                                          │
-//                                                        retry re-enters at that stage
+// The state names below are the ones in INGESTION_STATES; a document's status column IS
+// the stage it is about to run.
+//
+//   uploaded ──> ocr ──> structuring ──> chunking ──> embedding ──> ready
+//       │         │           │             │             │
+//       └─────────┴───────────┴─────────────┴─────────────┴──> failed_<stage>
+//                                                                    │
+//                                                  retry re-enters at that stage
+//
+// Two formats share every stage after extraction:
+//
+//   PDF   unpdf text layer ──┐
+//                            ├──> document_pages ──> ocr ──> sections ──> chunks ──> vectors
+//   PPTX  slide XML ─────────┘
+//
+// One slide is one page, so `document_pages` carries both without a second document model,
+// and chunking, embedding and retrieval never learn a format exists. Where they DO differ:
+// PDF asks Gemini where its sections are, PPTX derives them from slide boundaries, and
+// only PPTX has embedded images for the ocr stage to read.
 //
 // runIngestion() DRIVES the pipeline to completion instead of executing one stage and
 // returning. The previous version advanced a single step per call and had no caller at
@@ -42,6 +62,10 @@ const STRUCTURE_TIMEOUT_MS = 60_000
 // A stage is only STARTED with at least this much budget left; otherwise the run parks and
 // the next call resumes. Better to stop cleanly between stages than to be killed mid-stage.
 const MIN_STAGE_BUDGET_MS = 5_000
+// One image is only STARTED with this much budget left. Recognition runs 1-3s for a slide
+// screenshot, so this leaves room to finish it and commit before the function is killed.
+const OCR_IMAGE_BUDGET_MS = 12_000
+const OCR_IMAGE_TIMEOUT_MS = 20_000
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
@@ -52,6 +76,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     }),
   ])
 }
+
+/** What a stage reports back. `done: false` means it ran out of budget partway and
+ *  committed what it finished — the driver parks WITHOUT advancing, and the next call
+ *  re-enters the same stage to pick up the rest. Returning nothing means "finished",
+ *  which is what every stage that cannot park does. */
+type StageResult = { done: boolean } | void
 
 export interface IngestionOutcome {
   status: IngestionState
@@ -84,9 +114,23 @@ async function loadJob(jobId: string): Promise<Job | null> {
  *  `fullText` used at chunking time or every offset shifts. */
 const PAGE_SEPARATOR = '\n\n'
 
+/** Digital text first, then anything OCR recovered from that page's images.
+ *
+ *  When `ocr_text` is NULL — which is every page of every PDF — this returns exactly what
+ *  the PDF-only version returned, byte for byte, including the offsets. That is the
+ *  property the whole PDF regression rests on, and it is asserted directly in the tests. */
+export function pageText(rawText: string, ocrText: string | null): string {
+  if (!ocrText) return rawText
+  return rawText.trim().length > 0 ? `${rawText}\n${ocrText}` : ocrText
+}
+
 async function readPages(documentId: string): Promise<{ fullText: string; pages: SourcePage[] }> {
   const rows = await db
-    .select({ pageNumber: documentPages.pageNumber, rawText: documentPages.rawText })
+    .select({
+      pageNumber: documentPages.pageNumber,
+      rawText: documentPages.rawText,
+      ocrText: documentPages.ocrText,
+    })
     .from(documentPages)
     .where(eq(documentPages.documentId, documentId))
     .orderBy(documentPages.pageNumber)
@@ -94,20 +138,31 @@ async function readPages(documentId: string): Promise<{ fullText: string; pages:
   const pages: SourcePage[] = []
   let offset = 0
   for (const r of rows) {
-    pages.push({ pageNumber: r.pageNumber, text: r.rawText, offset })
-    offset += r.rawText.length + PAGE_SEPARATOR.length
+    const text = pageText(r.rawText, r.ocrText)
+    pages.push({ pageNumber: r.pageNumber, text, offset })
+    offset += text.length + PAGE_SEPARATOR.length
   }
-  return { fullText: rows.map((r) => r.rawText).join(PAGE_SEPARATOR), pages }
+  return { fullText: pages.map((p) => p.text).join(PAGE_SEPARATOR), pages }
 }
 
 // --- Stages ------------------------------------------------------------------
 
-async function extract(doc: Document): Promise<void> {
+/** The stored source bytes. Every stage that needs the original file goes through here. */
+async function download(doc: Document): Promise<Buffer> {
   const admin = createAdminClient()
   const { data, error } = await admin.storage.from('documents').download(doc.storagePath)
   if (error || !data) throw new Error(`download failed: ${error?.message ?? 'no data'}`)
+  return Buffer.from(await data.arrayBuffer())
+}
 
-  const buffer = Buffer.from(await data.arrayBuffer())
+/** What extraction produced, before it is written. Assets are PPTX-only and stay empty for
+ *  a PDF, which is what makes the PDF path through this function byte-identical. */
+interface ExtractedPages {
+  pages: { pageNumber: number; rawText: string; unreadReason?: string }[]
+  assets: { pageNumber: number; assetIndex: number; entryPath: string; mimeType: string }[]
+}
+
+async function extractPdf(buffer: Buffer): Promise<ExtractedPages> {
   const { extractText } = await import('unpdf')
   const { text, totalPages } = await withTimeout(
     extractText(new Uint8Array(buffer), { mergePages: false }),
@@ -115,34 +170,225 @@ async function extract(doc: Document): Promise<void> {
     'PDF text extraction',
   )
 
+  return {
+    pages: Array.from({ length: totalPages }, (_, i) => ({
+      pageNumber: i + 1,
+      rawText: text[i] ?? '',
+    })),
+    assets: [],
+  }
+}
+
+function extractPptxPages(buffer: Buffer): ExtractedPages {
+  const { pages, assets } = extractPptx(new Uint8Array(buffer))
+  return {
+    pages: pages.map((p) => ({
+      pageNumber: p.pageNumber,
+      rawText: p.text,
+      unreadReason: p.unreadReason,
+    })),
+    assets,
+  }
+}
+
+async function extract(doc: Document): Promise<void> {
+  const buffer = await download(doc)
+  const extracted =
+    doc.sourceType === 'pptx' ? extractPptxPages(buffer) : await extractPdf(buffer)
+
   await db.transaction(async (tx) => {
     // Re-entrant: a retry replaces what the previous attempt wrote rather than colliding
     // with the (document_id, page_number) unique index.
     await tx.delete(documentPages).where(eq(documentPages.documentId, doc.id))
-    const rows = Array.from({ length: totalPages }, (_, i) => ({
-      documentId: doc.id,
-      pageNumber: i + 1,
-      rawText: text[i] ?? '',
-    }))
-    if (rows.length > 0) await tx.insert(documentPages).values(rows)
-    await tx.update(documents).set({ pageCount: totalPages, updatedAt: new Date() }).where(eq(documents.id, doc.id))
+    await tx.delete(documentAssets).where(eq(documentAssets.documentId, doc.id))
+    if (extracted.pages.length > 0)
+      await tx.insert(documentPages).values(
+        extracted.pages.map((p) => ({
+          documentId: doc.id,
+          pageNumber: p.pageNumber,
+          rawText: p.rawText,
+          unreadReason: p.unreadReason ?? null,
+        })),
+      )
+    if (extracted.assets.length > 0)
+      await tx.insert(documentAssets).values(
+        extracted.assets.map((a) => ({ documentId: doc.id, ...a })),
+      )
+    await tx
+      .update(documents)
+      .set({ pageCount: extracted.pages.length, updatedAt: new Date() })
+      .where(eq(documents.id, doc.id))
   })
 
-  const extracted = text.join('').trim()
-  if (extracted.length === 0)
+  // PDF only, and AFTER the write — which is the order the PDF-only pipeline used, so a
+  // failed image-only PDF still leaves the same rows behind as it always did.
+  //
+  // Image-only PDFs are still rejected rather than sent to OCR: recovering them needs a
+  // page rasterizer this project does not have. A PPTX reaching the same condition is NOT
+  // rejected, because its images are already image files and the ocr stage can read them.
+  if (doc.sourceType !== 'pptx' && extracted.pages.every((p) => p.rawText.trim().length === 0))
     throw new Error('No extractable text. Image-only or scanned PDFs are not supported.')
 }
 
+/**
+ * Recover text from embedded images, for the pages that need it.
+ *
+ * Budget-aware and resumable at the level of a single image: each recognised image is
+ * committed on its own, so running out of time is a pause rather than a loss, and the next
+ * call skips everything already marked done. A 40-slide deck at 1-3 seconds an image does
+ * not fit in one 60-second invocation, which is why this stage can park mid-way and the
+ * others cannot.
+ *
+ * A no-op for every PDF: nothing is text-poor because nothing has assets, so the loop
+ * finds no work and the stage advances immediately.
+ */
+async function ocrPass(doc: Document, deadline: number): Promise<StageResult> {
+  const pending = await db
+    .select()
+    .from(documentAssets)
+    .where(and(eq(documentAssets.documentId, doc.id), eq(documentAssets.ocrStatus, 'pending')))
+    .orderBy(documentAssets.pageNumber, documentAssets.assetIndex)
+  if (pending.length === 0) return { done: true }
+
+  // Only images on pages that are actually short of text. A slide with a full paragraph
+  // and a decorative logo does not need its logo read.
+  const pages = await db
+    .select({ pageNumber: documentPages.pageNumber, rawText: documentPages.rawText })
+    .from(documentPages)
+    .where(eq(documentPages.documentId, doc.id))
+  const textByPage = new Map(pages.map((p) => [p.pageNumber, p.rawText]))
+  const assetsByPage = new Map<number, number>()
+  for (const a of pending) assetsByPage.set(a.pageNumber, (assetsByPage.get(a.pageNumber) ?? 0) + 1)
+
+  const wanted = pending.filter((a) =>
+    isTextPoor(textByPage.get(a.pageNumber) ?? '', assetsByPage.get(a.pageNumber) ?? 0),
+  )
+
+  // Everything else is deliberately not-OCR'd, and says so rather than staying `pending`
+  // forever and re-querying on every resume.
+  const skipped = pending.filter((a) => !wanted.includes(a))
+  for (const a of skipped) await setAssetOcr(a.id, 'skipped', null)
+  if (wanted.length === 0) return { done: true }
+
+  const readable = wanted.filter((a) => canOcr(a.mimeType))
+  for (const a of wanted) if (!canOcr(a.mimeType)) await setAssetOcr(a.id, 'skipped', null)
+  if (readable.length === 0) {
+    await applyOcrToPages(doc.id)
+    return { done: true }
+  }
+
+  const buffer = await download(doc)
+  const entries = new Map(readZipEntries(new Uint8Array(buffer)).map((e) => [e.path, e.bytes]))
+
+  let engine: OcrEngine | null = null
+  try {
+    for (const asset of readable) {
+      // Park BETWEEN images, never mid-recognition: a killed invocation would otherwise
+      // leave the asset `pending` and redo it, which is correct but wasted.
+      if (deadline - Date.now() < OCR_IMAGE_BUDGET_MS) {
+        await applyOcrToPages(doc.id)
+        return { done: false }
+      }
+
+      const bytes = entries.get(asset.entryPath)
+      if (!bytes) {
+        // The extraction stage recorded it, so the archive had it. Missing now means the
+        // stored object changed underneath us — record it rather than failing the deck.
+        await setAssetOcr(asset.id, 'failed', null)
+        continue
+      }
+
+      engine ??= await createTesseractEngine()
+      try {
+        const text = await withTimeout(
+          engine.recognize(bytes, asset.mimeType),
+          OCR_IMAGE_TIMEOUT_MS,
+          `OCR of ${asset.entryPath}`,
+        )
+        const usable = isUsableOcrText(text)
+        await setAssetOcr(asset.id, 'done', usable ? text : null)
+      } catch (error) {
+        // One unreadable image must not fail an otherwise fine deck. It is recorded as
+        // failed, which is visible in the coverage report — not silently treated as empty.
+        logger.warn('ocr failed for one image', {
+          documentId: doc.id,
+          entryPath: asset.entryPath,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        await setAssetOcr(asset.id, 'failed', null)
+      }
+    }
+  } finally {
+    await engine?.close().catch(() => {})
+  }
+
+  await applyOcrToPages(doc.id)
+  return { done: true }
+}
+
+async function setAssetOcr(id: string, status: string, text: string | null): Promise<void> {
+  await db.update(documentAssets).set({ ocrStatus: status, ocrText: text }).where(eq(documentAssets.id, id))
+}
+
+/**
+ * Fold finished per-image OCR up onto the pages it belongs to.
+ *
+ * `raw_text` is never touched. The recovered text lands in `ocr_text`, and `text_source`
+ * records that the page is no longer purely digital — so a citation into an OCR'd slide is
+ * distinguishable from one into text the file actually contained.
+ */
+async function applyOcrToPages(documentId: string): Promise<void> {
+  const rows = await db
+    .select({
+      pageNumber: documentAssets.pageNumber,
+      ocrText: documentAssets.ocrText,
+    })
+    .from(documentAssets)
+    .where(and(eq(documentAssets.documentId, documentId), eq(documentAssets.ocrStatus, 'done')))
+    .orderBy(documentAssets.pageNumber, documentAssets.assetIndex)
+
+  const byPage = new Map<number, string[]>()
+  for (const r of rows) {
+    if (!r.ocrText) continue
+    byPage.set(r.pageNumber, [...(byPage.get(r.pageNumber) ?? []), r.ocrText])
+  }
+  if (byPage.size === 0) return
+
+  for (const [pageNumber, texts] of byPage) {
+    await db
+      .update(documentPages)
+      .set({
+        ocrText: texts.join('\n'),
+        textSource: sql`CASE WHEN length(trim(${documentPages.rawText})) > 0 THEN 'mixed' ELSE 'ocr' END`,
+        // The page produced text after all, so it is no longer unread.
+        unreadReason: null,
+      })
+      .where(and(eq(documentPages.documentId, documentId), eq(documentPages.pageNumber, pageNumber)))
+  }
+}
+
+/**
+ * Find where the document's sections begin.
+ *
+ * A PDF asks Gemini, because a PDF is a river of text with no marked boundaries. A slide
+ * deck does not: one slide IS one section, authored that way, so the offsets are exact
+ * arithmetic over boundaries we already have. That makes PPTX ingestion free of generation
+ * calls entirely — and skips the one failure mode the PDF path has to defend against, a
+ * model returning offsets that do not line up with the text.
+ */
 async function structure(doc: Document, deadline: number): Promise<void> {
   const { fullText, pages } = await readPages(doc.id)
   if (pages.length === 0) throw new Error('no extracted pages to analyse')
 
-  const sections = await detectSections(
-    geminiGenerate(),
-    fullText,
-    pages,
-    Math.min(deadline, Date.now() + STRUCTURE_TIMEOUT_MS),
-  )
+  const sections =
+    doc.sourceType === 'pptx'
+      ? deriveSlideSections(pages)
+      : await detectSections(
+          geminiGenerate(),
+          fullText,
+          pages,
+          Math.min(deadline, Date.now() + STRUCTURE_TIMEOUT_MS),
+        )
   if (sections.length === 0) throw new Error('no sections detected')
 
   await db.transaction(async (tx) => {
@@ -228,23 +474,32 @@ async function embedAll(doc: Document): Promise<void> {
     })
 }
 
-const STAGES: { from: IngestionState; to: IngestionState; run: (doc: Document, deadline: number) => Promise<void> }[] = [
-  { from: 'uploaded', to: 'structuring', run: (doc) => extract(doc) },
+export interface Stage {
+  from: IngestionState
+  to: IngestionState
+  run: (doc: Document, deadline: number) => Promise<StageResult>
+}
+
+export const STAGES: Stage[] = [
+  { from: 'uploaded', to: 'ocr', run: (doc) => extract(doc) },
+  { from: 'ocr', to: 'structuring', run: (doc, d) => ocrPass(doc, d) },
   { from: 'structuring', to: 'chunking', run: (doc, d) => structure(doc, d) },
   { from: 'chunking', to: 'embedding', run: (doc) => chunk(doc) },
   { from: 'embedding', to: 'ready', run: (doc) => embedAll(doc) },
 ]
 
 /** A failed state resumes at the stage that failed. */
-const RESUME_AT: Partial<Record<IngestionState, IngestionState>> = {
+export const RESUME_AT: Partial<Record<IngestionState, IngestionState>> = {
   failed_extraction: 'uploaded',
+  failed_ocr: 'ocr',
   failed_structuring: 'structuring',
   failed_chunking: 'chunking',
   failed_embedding: 'embedding',
 }
 
-const FAILURE_OF: Record<string, { state: IngestionState; code: string }> = {
+export const FAILURE_OF: Record<string, { state: IngestionState; code: string }> = {
   uploaded: { state: 'failed_extraction', code: 'EXTRACTION_FAILED' },
+  ocr: { state: 'failed_ocr', code: 'OCR_FAILED' },
   structuring: { state: 'failed_structuring', code: 'STRUCTURE_DETECTION_FAILED' },
   chunking: { state: 'failed_chunking', code: 'CHUNKING_FAILED' },
   embedding: { state: 'failed_embedding', code: 'EMBEDDING_FAILED' },
@@ -255,7 +510,13 @@ const FAILURE_OF: Record<string, { state: IngestionState; code: string }> = {
  * that broke. Returns rather than throws: the caller is an HTTP route that needs to report
  * status, not a crash.
  */
-export async function runIngestion(jobId: string, deadline: number): Promise<IngestionOutcome> {
+export async function runIngestion(
+  jobId: string,
+  deadline: number,
+  // Injected the same way detectSections() takes its client: so the driver's transition and
+  // resume behaviour can be tested without standing up storage, Gemini and a database.
+  stages: Stage[] = STAGES,
+): Promise<IngestionOutcome> {
   const loaded = await loadJob(jobId)
   if (!loaded) return { status: 'failed_extraction', done: false, paused: false, errorCode: 'JOB_NOT_FOUND' }
 
@@ -266,7 +527,7 @@ export async function runIngestion(jobId: string, deadline: number): Promise<Ing
   if (doc.status === 'ready') return { status: 'ready', done: true, paused: false }
 
   while (state !== 'ready') {
-    const stage = STAGES.find((s) => s.from === state)
+    const stage = stages.find((s) => s.from === state)
     if (!stage) {
       // An internal invariant, not a user-actionable failure: the state name is a detail of
       // the pipeline, so it goes to the log rather than into the response.
@@ -279,7 +540,20 @@ export async function runIngestion(jobId: string, deadline: number): Promise<Ing
 
     const startedAt = Date.now()
     try {
-      await stage.run(doc, deadline)
+      const result = await stage.run(doc, deadline)
+      // A stage that ran out of budget partway has COMMITTED what it finished and asks to
+      // be re-entered. Park without advancing: the document keeps this state, and the next
+      // call resumes the same stage and skips the work already done. Only the ocr stage
+      // uses this — the others are all-or-nothing and return nothing.
+      if (result && result.done === false) {
+        logger.info('ingestion stage paused mid-way', {
+          documentId: doc.id,
+          jobId: job.id,
+          stage: state,
+          durationMs: Date.now() - startedAt,
+        })
+        return { status: state, done: false, paused: true }
+      }
       // Conditional on the state we started from, so this doubles as the stage lock: if a
       // concurrent driver already advanced past it, no row comes back and we stop rather
       // than marching a document through a stage twice. Every stage deletes what it is

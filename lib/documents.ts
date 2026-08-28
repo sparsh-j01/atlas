@@ -3,6 +3,7 @@ import 'server-only'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from './db'
 import { documents, ingestionJobs, type Document, type IngestionJob } from './db/schema'
+import { ACCEPTED_MIME_TYPES } from './ingest/formats'
 
 export type { Document, IngestionJob }
 
@@ -14,11 +15,15 @@ export type { Document, IngestionJob }
 
 export const INGESTION_STATES = [
   'uploaded',
+  // Text recovery from embedded images. A no-op for documents whose pages already carry
+  // text, which is every PDF today — the stage runs, finds nothing text-poor, and advances.
+  'ocr',
   'structuring',
   'chunking',
   'embedding',
   'ready',
   'failed_extraction',
+  'failed_ocr',
   'failed_structuring',
   'failed_chunking',
   'failed_embedding',
@@ -28,6 +33,7 @@ export type IngestionState = (typeof INGESTION_STATES)[number]
 
 export const FAILED_STATES: IngestionState[] = [
   'failed_extraction',
+  'failed_ocr',
   'failed_structuring',
   'failed_chunking',
   'failed_embedding',
@@ -181,12 +187,15 @@ export async function staleDocuments(staleMs: number): Promise<Document[]> {
   const rows = await db
     .select()
     .from(documents)
-    .where(inArray(documents.status, ['uploaded', 'structuring', 'chunking', 'embedding']))
+    .where(inArray(documents.status, ['uploaded', 'ocr', 'structuring', 'chunking', 'embedding']))
   return rows.filter((d) => d.updatedAt < cutoff)
 }
 
 export const UPLOAD_LIMITS = {
   maxFileSize: 25 * 1024 * 1024, // 25MB
   maxPages: 200,
-  allowedMimeTypes: ['application/pdf'] as const,
+  // Read from the format registry rather than restated here. The previous literal was dead
+  // — nothing in the repo read it — so it still said PDF-only long after that stopped being
+  // the whole story, which is exactly how an allowlist drifts out of sync with the bucket.
+  allowedMimeTypes: ACCEPTED_MIME_TYPES,
 } as const

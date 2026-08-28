@@ -38,7 +38,8 @@ function bad(status: number, error: string) {
 // the numeric quota, and a storage failure names the bucket. It stays server-side, on the
 // job row and in the log, where it is still there for debugging.
 const FAILURE_MESSAGE: Record<string, string> = {
-  EXTRACTION_FAILED: 'We could not read text from that PDF. If it is a scan, it needs a text layer.',
+  EXTRACTION_FAILED: 'We could not read text from that file. If it is a scanned PDF, it needs a text layer.',
+  OCR_FAILED: 'We could not read the images in that file. Try again.',
   STRUCTURE_DETECTION_FAILED: 'We could not work out the document structure. Try again.',
   CHUNKING_FAILED: 'We could not split that document into passages. Try again.',
   EMBEDDING_FAILED: 'We could not index that document. Try again in a few minutes.',
