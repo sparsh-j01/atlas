@@ -418,6 +418,17 @@ async function main(): Promise<void> {
         `${p.evaluableQueries} queries.\n  Lower EVAL_RPM or run one document at a time before publishing this run.`,
     )
   }
+
+  // Exit explicitly, because reaching the end of main() is not enough to end the process.
+  // The retriever holds a Postgres pool open, one per document, and those handles keep the
+  // event loop alive after the artifact is already written and correct. Run b1b6e570 sat
+  // there for ten minutes past completion and blocked the next benchmark in a chained
+  // script — the numbers were fine, the process just never returned.
+  //
+  // Zero regardless of the inconclusive warning above: a warning is not a failed run, and
+  // this benchmark has never used its exit code to signal publishability. Whether it should
+  // is a separate decision, not one to smuggle in behind a hang fix.
+  process.exit(0)
 }
 
 main().catch((err) => {
