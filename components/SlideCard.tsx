@@ -10,6 +10,7 @@ import {
   TimeLimitField,
   useSlideDraft,
 } from '@/components/slide-fields'
+import { capCls } from '@/components/ui'
 
 export type EditorSlide = { id: string; type: string; prompt: string; config: SlideConfig }
 
@@ -20,7 +21,7 @@ export function SlideCard({ deckId, slide }: { deckId: string; slide: EditorSlid
   const draft = toEditable(slide)
   if (!draft) {
     return (
-      <p className="text-sm text-amber-600">
+      <p className="text-sm text-wrong">
         This slide is stored in a shape this editor doesn’t recognise ({slide.type}). Delete it
         and add a new one.
       </p>
@@ -78,13 +79,13 @@ function McqCard({ deckId, slideId, initial }: { deckId: string; slideId: string
           onChange={(raw) => patchNumber((n) => ({ timeLimitMs: n * 1000 }), raw)}
         />
         <label className="flex items-center gap-2">
-          <span className="text-neutral-500">Points</span>
+          <span className={capCls}>Points</span>
           <input
             type="number"
             min={0}
             max={5000}
             step={100}
-            className={`${inputClass} w-24`}
+            className={`${inputClass} w-24 font-data`}
             value={m.points}
             onChange={(e) => patchNumber((n) => ({ points: n }), e.target.value)}
           />
@@ -92,13 +93,11 @@ function McqCard({ deckId, slideId, initial }: { deckId: string; slideId: string
       </div>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-neutral-500">
-          Explanation <span className="text-neutral-400">(optional — shown after the reveal)</span>
-        </span>
+        <span className={capCls}>Explanation</span>
         <textarea
           className={`${inputClass} min-h-16 resize-y`}
           maxLength={EXPLANATION_MAX}
-          placeholder="Why this answer is right"
+          placeholder="Why this answer is right. Shown after the reveal."
           value={m.explanation ?? ''}
           onChange={(e) => patch({ explanation: e.target.value })}
         />

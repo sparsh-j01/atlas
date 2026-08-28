@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { btn } from '@/components/ui'
 
 // Confirm-guarded trigger for a bound server action. Used for deck + slide deletes
 // (both cascade), so a stray click can't destroy content. Surfaces pending + failure
@@ -9,8 +10,8 @@ export function DeleteButton({
   action,
   confirmText,
   label = 'Delete',
-  pendingLabel = 'Deleting…',
-  className = 'text-sm text-red-600 hover:underline',
+  pendingLabel = 'Deleting',
+  className = btn('danger', 'md'),
 }: {
   action: () => Promise<void>
   confirmText: string
@@ -26,7 +27,7 @@ export function DeleteButton({
       <button
         type="button"
         disabled={pending}
-        className={`${className} disabled:opacity-40`}
+        className={className}
         onClick={() => {
           if (!confirm(confirmText)) return
           startTransition(async () => {
@@ -41,7 +42,11 @@ export function DeleteButton({
       >
         {pending ? pendingLabel : label}
       </button>
-      {failed && <span className="text-sm text-amber-600">{label} failed — retry.</span>}
+      {failed && (
+        <span role="alert" className="text-sm text-wrong">
+          That did not go through. Try again.
+        </span>
+      )}
     </span>
   )
 }

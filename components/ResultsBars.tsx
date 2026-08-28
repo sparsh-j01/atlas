@@ -40,22 +40,21 @@ export function ResultsBars({
         const isCorrect = o.id === correctId
         return (
           <li key={o.id}>
-            <div className="mb-1 flex items-baseline justify-between gap-3">
-              <span className={`truncate text-xl ${isCorrect ? 'font-semibold' : ''}`}>
-                {isCorrect && <span className="mr-2 text-green-600">✓</span>}
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
+              <span className={`truncate text-xl ${isCorrect ? 'font-semibold text-correct' : ''}`}>
                 {o.text}
                 {o.id === pickedId && (
-                  <span className="ml-2 text-sm font-normal text-indigo-500">your answer</span>
+                  <span className="ml-2 text-sm font-normal text-lamp">your answer</span>
                 )}
               </span>
-              <span className="shrink-0 tabular-nums text-neutral-500">
-                {n} · {pct}%
+              <span className="shrink-0 font-data text-sm tabular-nums text-dim">
+                {n} / {pct}%
               </span>
             </div>
-            <div className="h-8 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+            <div className="h-7 overflow-hidden rounded-plate bg-overlay">
               <div
-                className={`h-full rounded-lg transition-[width] duration-700 ease-out motion-reduce:transition-none ${
-                  isCorrect ? 'bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
+                className={`h-full rounded-plate transition-[width] duration-700 ease-out motion-reduce:transition-none ${
+                  isCorrect ? 'bg-correct' : 'bg-rule-strong'
                 }`}
                 style={{ width: grown ? `${pct}%` : '0%' }}
                 role="img"

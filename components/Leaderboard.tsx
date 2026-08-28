@@ -7,7 +7,8 @@ import type { LeaderboardEntry } from '@/lib/realtime/events'
 // each row keeps its identity and CSS animates it from its old slot to its new one. That's
 // the reorder you want to watch, and it's why the re-rank is coalesced to the reveal
 // (docs/architecture.md): one settling animation per question instead of a per-answer storm.
-const ROW = 56 // px, row height + gap; the container height is derived from it
+const ROW = 60 // px, row height + gap; the container height is derived from it
+const ROW_COMPACT = 48
 
 export function Leaderboard({
   entries,
@@ -21,6 +22,7 @@ export function Leaderboard({
   compact?: boolean
 }) {
   if (entries.length === 0) return null
+  const row = compact ? ROW_COMPACT : ROW
 
   // Slot is the position in THIS list, not the raw rank — so a sliced list (the podium's
   // "everyone else", starting at rank 4) still stacks from the top. Sorted defensively so
@@ -28,24 +30,27 @@ export function Leaderboard({
   const rows = [...entries].sort((a, b) => a.rank - b.rank)
 
   return (
-    <ol className="relative" style={{ height: rows.length * ROW }} aria-label="Leaderboard">
+    <ol className="relative" style={{ height: rows.length * row }} aria-label="Leaderboard">
       {rows.map((e, slot) => {
         const mine = e.participantId === highlightId
+        const lead = e.rank === 1
         return (
           <li
             key={e.participantId}
-            className={`absolute inset-x-0 flex items-center gap-3 rounded-xl border px-4 transition-[transform,background-color,border-color] duration-700 ease-out motion-reduce:transition-none ${
+            className={`absolute inset-x-0 flex items-center gap-3 rounded-plate border px-4 transition-[transform,background-color,border-color] duration-700 ease-out motion-reduce:transition-none ${
               mine
-                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950'
-                : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
+                ? 'border-lamp bg-lamp/10'
+                : lead
+                  ? 'border-lamp/40 bg-raised'
+                  : 'border-rule bg-raised'
             }`}
-            style={{ transform: `translateY(${slot * ROW}px)`, height: ROW - 8 }}
+            style={{ transform: `translateY(${slot * row}px)`, height: row - 8 }}
             data-rank={e.rank}
           >
             <span
-              className={`w-8 shrink-0 text-center font-semibold tabular-nums ${
-                compact ? 'text-base' : 'text-2xl'
-              }`}
+              className={`w-7 shrink-0 text-center font-data tabular-nums ${
+                compact ? 'text-sm' : 'text-xl'
+              } ${lead ? 'text-lamp' : 'text-dim'}`}
             >
               {e.rank}
             </span>
@@ -53,14 +58,18 @@ export function Leaderboard({
             <img
               src={avatarUrl(e.avatarSeed)}
               alt=""
-              className={`shrink-0 rounded-full bg-neutral-100 ${compact ? 'h-8 w-8' : 'h-10 w-10'}`}
+              className={`shrink-0 rounded-full bg-overlay ${compact ? 'h-7 w-7' : 'h-9 w-9'}`}
             />
-            <span className={`flex-1 truncate font-medium ${compact ? 'text-base' : 'text-2xl'}`}>
+            <span className={`flex-1 truncate font-semibold ${compact ? 'text-base' : 'text-2xl'}`}>
               {e.nickname}
-              {mine && <span className="ml-2 text-sm font-normal text-indigo-500">you</span>}
+              {mine && <span className="ml-2 text-sm font-normal text-lamp">you</span>}
             </span>
             <Delta delta={e.delta} />
-            <span className={`tabular-nums ${compact ? 'text-base' : 'text-2xl font-semibold'}`}>
+            <span
+              className={`font-data tabular-nums ${compact ? 'text-base' : 'text-2xl'} ${
+                lead ? 'text-lamp' : 'text-ink'
+              }`}
+            >
               {e.score}
             </span>
           </li>
@@ -73,14 +82,14 @@ export function Leaderboard({
 /** Rank movement since the last broadcast top-N. 0 means new or unchanged, so it stays blank
  *  rather than claiming "no movement" for someone who just appeared. */
 function Delta({ delta }: { delta: number }) {
-  if (delta === 0) return <span className="w-10" aria-hidden />
+  if (delta === 0) return <span className="w-9" aria-hidden />
   const up = delta > 0
   return (
     <span
-      className={`w-10 text-right text-sm tabular-nums ${up ? 'text-green-600' : 'text-neutral-400'}`}
+      className={`w-9 text-right font-data text-sm tabular-nums ${up ? 'text-correct' : 'text-faint'}`}
       title={`${up ? 'Up' : 'Down'} ${Math.abs(delta)} since the last question`}
     >
-      {up ? '▲' : '▼'}
+      {up ? '+' : '-'}
       {Math.abs(delta)}
     </span>
   )

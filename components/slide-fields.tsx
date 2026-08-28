@@ -4,13 +4,13 @@ import { useState, useTransition } from 'react'
 import { saveSlideAction } from '@/lib/actions'
 import { TIME_MAX_MS, TIME_MIN_MS } from '@/lib/mcq'
 import { validateSlide, type EditableSlide } from '@/lib/slides'
+import { btn, capCls, inputCls } from '@/components/ui'
 
 // Pieces every slide editor shares. Lives in its own module so SlideCard can import the
 // per-type editors without them importing it back — the dependency runs one way:
 // slide-fields ← {SlideCard, PollCard}, and SlideCard ← PollCard.
 
-export const inputClass =
-  'w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900'
+export const inputClass = inputCls
 
 /**
  * Local draft state + the save round-trip. The draft carries its own `type`, so the same
@@ -35,7 +35,7 @@ export function useSlideDraft<T extends EditableSlide>(deckId: string, slideId: 
         setServerErrors(res.errors)
         setSaved(res.errors.length === 0)
       } catch {
-        setServerErrors(['Save failed — please retry.'])
+        setServerErrors(['Save failed. Please retry.'])
         setSaved(false)
       }
     })
@@ -69,9 +69,9 @@ export function SlideCardFooter({
   return (
     <>
       {(errors.length > 0 || serverErrors.length > 0) && (
-        <ul className="text-sm text-amber-600">
+        <ul className="flex flex-col gap-1 text-sm text-wrong">
           {[...new Set([...errors, ...serverErrors])].map((e) => (
-            <li key={e}>• {e}</li>
+            <li key={e}>{e}</li>
           ))}
         </ul>
       )}
@@ -81,11 +81,11 @@ export function SlideCardFooter({
           type="button"
           onClick={save}
           disabled={pending || errors.length > 0}
-          className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+          className={btn('primary', 'sm')}
         >
-          {pending ? 'Saving…' : 'Save slide'}
+          {pending ? 'Saving' : 'Save slide'}
         </button>
-        {saved && !pending && <span className="text-sm text-green-600">Saved</span>}
+        {saved && !pending && <span className="text-sm text-correct">Saved</span>}
       </div>
     </>
   )
@@ -102,14 +102,14 @@ export function TimeLimitField({
 }) {
   return (
     <label className="flex items-center gap-2">
-      <span className="text-neutral-500">Time (s)</span>
+      <span className={capCls}>Time (s)</span>
       <input
         type="number"
         // From the same constants validateOptionSlide enforces, in seconds. Hardcoding them
         // meant the input could silently accept a value the save then rejected.
         min={TIME_MIN_MS / 1000}
         max={TIME_MAX_MS / 1000}
-        className={`${inputClass} w-20`}
+        className={`${inputClass} w-20 font-data`}
         value={Math.round(timeLimitMs / 1000)}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -151,7 +151,7 @@ export function OptionRows({
             type="button"
             onClick={() => onRemove(o.id)}
             disabled={options.length <= min}
-            className="px-2 text-neutral-400 hover:text-red-600 disabled:opacity-30"
+            className="rounded-plate px-2.5 py-2 text-faint transition-colors hover:bg-wrong/10 hover:text-wrong disabled:opacity-30"
             aria-label="Remove option"
             title="Remove option"
           >
@@ -163,9 +163,9 @@ export function OptionRows({
         <button
           type="button"
           onClick={onAdd}
-          className="self-start text-sm text-indigo-600 hover:underline"
+          className={`${btn('ghost', 'sm')} self-start -ml-3`}
         >
-          + Add option
+          Add option
         </button>
       )}
     </div>

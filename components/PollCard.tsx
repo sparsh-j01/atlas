@@ -10,6 +10,7 @@ import {
   TimeLimitField,
   useSlideDraft,
 } from '@/components/slide-fields'
+import { capCls } from '@/components/ui'
 
 type PollDraft = Extract<EditableSlide, { type: 'poll' }>
 
@@ -63,7 +64,7 @@ export function PollCard({
         />
         <fieldset className="flex items-center gap-2">
           <legend className="sr-only">Chart type</legend>
-          <span className="text-neutral-500">Chart</span>
+          <span className={capCls}>Chart</span>
           {CHART_KINDS.map((k) => (
             <label key={k} className="flex items-center gap-1">
               <input
@@ -78,8 +79,8 @@ export function PollCard({
         </fieldset>
       </div>
 
-      <p className="text-xs text-neutral-500">
-        Unscored — results appear on the screen live as the room votes.
+      <p className="text-sm text-dim">
+        Unscored. Results appear on the screen live as the room votes.
       </p>
 
       <SlideCardFooter

@@ -1,18 +1,22 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
 import { Podium } from '@/components/Podium'
 import { openSessionChannel } from '@/lib/realtime/channels'
 import { isScored } from '@/lib/slides'
 import { EVENTS } from '@/lib/realtime/events'
+import { btn, capCls, inputCls } from '@/components/ui'
 import type {
   LeaderboardEntry,
   ParticipantKickedPayload,
   SanitizedSlide,
   SlideRevealPayload,
 } from '@/lib/realtime/events'
+
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
 type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 type Joined = {
@@ -27,8 +31,19 @@ type Joined = {
 // the reconnect on mount reads. Cleared when the session is gone or over.
 const STORE_KEY = 'quiz:session'
 
+// useSearchParams needs a Suspense boundary above it, so the room itself is a child.
 export default function PlayPage() {
-  const [code, setCode] = useState('')
+  return (
+    <Suspense>
+      <PlayRoom />
+    </Suspense>
+  )
+}
+
+function PlayRoom() {
+  // The landing page hands the code over as ?code=, so the phone opens with it already typed.
+  const linkedCode = useSearchParams().get('code')
+  const [code, setCode] = useState(() => (linkedCode ?? '').replace(/\D/g, '').slice(0, 6))
   const [nickname, setNickname] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -37,6 +52,9 @@ export default function PlayPage() {
   const [status, setStatus] = useState<Status>('lobby')
   const [slide, setSlide] = useState<SanitizedSlide | null>(null)
   const [deadline, setDeadline] = useState<number | null>(null)
+  // The full window. The drain bar needs the share remaining, which the deadline alone
+  // cannot give it.
+  const [windowMs, setWindowMs] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [picked, setPicked] = useState<string | null>(null)
   const pickedRef = useRef<string | null>(null)
@@ -78,6 +96,7 @@ export default function PlayPage() {
       // so a badly-skewed device sees a wrong number. It's cosmetic — the server rejects late
       // answers by its own clock. Upgrade path if it ever matters: a clock-offset handshake.
       setDeadline(serverStartedAt && timeLimitMs ? Date.parse(serverStartedAt) + timeLimitMs : null)
+      setWindowMs(timeLimitMs)
       setNow(Date.now()) // seed the countdown here, so the first frame isn't a tick stale
       if (s && alreadyPicked) picksRef.current[s.id] = alreadyPicked
       pickedRef.current = alreadyPicked
@@ -123,7 +142,7 @@ export default function PlayPage() {
       showSlide(data.slide, data.serverStartedAt, data.timeLimitMs)
       setMe(joined)
     } catch {
-      setError('Could not join — check your connection.')
+      setError('Could not join. Check your connection.')
     } finally {
       setBusy(false)
     }
@@ -150,8 +169,8 @@ export default function PlayPage() {
         setPicked(null)
         setNotice(
           data?.reason === 'late'
-            ? 'Too slow — the answer window closed.'
-            : 'That didn’t go through — try again.',
+            ? 'Too slow. The answer window closed.'
+            : 'That did not go through. Try again.',
         )
         return
       }
@@ -161,7 +180,7 @@ export default function PlayPage() {
     } catch {
       pickedRef.current = null
       setPicked(null)
-      setNotice('Network error — try again.')
+      setNotice('Network error. Try again.')
     }
   }
 
@@ -285,32 +304,55 @@ export default function PlayPage() {
 
   if (!me) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-8">
-        <h1 className="text-2xl font-semibold">Join the quiz</h1>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          inputMode="numeric"
-          placeholder="6-digit code"
-          aria-label="Session code"
-          className="rounded-lg border border-neutral-300 px-4 py-3 font-mono text-lg tracking-widest dark:border-neutral-700 dark:bg-neutral-900"
-        />
-        <input
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          maxLength={24}
-          placeholder="Nickname"
-          aria-label="Nickname"
-          className="rounded-lg border border-neutral-300 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          onClick={join}
-          disabled={busy}
-          className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white disabled:opacity-50"
-        >
-          {busy ? 'Joining…' : 'Join'}
-        </button>
+      <main className="flex min-h-screen flex-col">
+        <div className="border-b border-rule px-6 py-5">
+          <span className="font-display text-xl">Atlas</span>
+        </div>
+        <div className="flex flex-1 flex-col justify-center gap-6 p-6">
+          <div>
+            <h1 className="font-display text-3xl">Join the room</h1>
+            <p className="mt-2 text-dim">The code is on the screen at the front.</p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="code" className={capCls}>
+              Room code
+            </label>
+            <input
+              id="code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000000"
+              className={`${inputCls} py-4 text-center font-data text-4xl tracking-[0.3em]`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="nickname" className={capCls}>
+              Nickname
+            </label>
+            <input
+              id="nickname"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              maxLength={24}
+              placeholder="Pick anything"
+              className={`${inputCls} py-4 text-xl`}
+            />
+          </div>
+
+          {error && (
+            <p role="alert" className="text-sm text-wrong">
+              {error}
+            </p>
+          )}
+
+          <button onClick={join} disabled={busy} className={`${btn('primary', 'xl')} w-full`}>
+            {busy ? 'Joining' : 'Join'}
+          </button>
+        </div>
       </main>
     )
   }
@@ -319,23 +361,22 @@ export default function PlayPage() {
 
   if (status === 'ended') {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-8 p-6">
+      <main className="flex min-h-screen flex-col justify-center gap-10 p-6">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">That’s a wrap</h1>
+          <h1 className="font-display text-3xl">That is a wrap</h1>
           {myEntry ? (
-            <p className="mt-2 text-lg">
-              You finished <span className="font-semibold">#{myEntry.rank}</span> with{' '}
-              <span className="font-semibold tabular-nums">{myEntry.score}</span> points.
+            <p className="mt-3 text-lg text-dim">
+              You finished{' '}
+              <span className="font-data text-ink">#{myEntry.rank}</span> with{' '}
+              <span className="font-data tabular-nums text-ink">{myEntry.score}</span> points.
             </p>
           ) : (
-            <p className="mt-2 text-neutral-500">Thanks for playing.</p>
+            <p className="mt-3 text-dim">Thanks for playing.</p>
           )}
         </div>
-        {/* The same podium the projector shows, with this player's own row picked out —
+        {/* The same podium the projector shows, with this player's own row picked out.
             session:ended carries the full ranking, so no extra fetch per phone. */}
-        {leaderboard.length > 0 && (
-          <Podium ranking={leaderboard} highlightId={me.participantId} />
-        )}
+        {leaderboard.length > 0 && <Podium ranking={leaderboard} highlightId={me.participantId} />}
       </main>
     )
   }
@@ -343,21 +384,23 @@ export default function PlayPage() {
   // Lobby, or between slides after a reveal with nothing to show yet.
   if (!slide) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-4 p-8 text-center">
+      <main className="flex min-h-screen flex-col items-center justify-center gap-5 p-8 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={avatarUrl(me.avatarSeed)}
           alt=""
-          className="h-20 w-20 rounded-full bg-neutral-100"
+          className="h-24 w-24 rounded-full bg-overlay ring-2 ring-lamp"
         />
-        <h1 className="text-2xl font-semibold">{me.nickname}</h1>
-        <p className="text-neutral-500">You’re in. Waiting for the host to start…</p>
+        <h1 className="font-display text-3xl">{me.nickname}</h1>
+        <p className="text-dim">You are in. Waiting for the host to start.</p>
       </main>
     )
   }
 
-  const secondsLeft =
-    status === 'active' && deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
+  const msLeft = status === 'active' && deadline ? Math.max(0, deadline - now) : null
+  const secondsLeft = msLeft === null ? null : Math.ceil(msLeft / 1000)
+  const fractionLeft = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
+  const urgent = secondsLeft !== null && secondsLeft <= 5
   const scored = isScored(slide.type)
   // Only a scored slide has a right answer to be judged against. Without the `scored` gate a
   // poll would compare the pick to a null correctId, fail, and tell every voter "Not this
@@ -366,81 +409,128 @@ export default function PlayPage() {
     status === 'revealed' && picked && scored ? (picked === correctId ? 'correct' : 'wrong') : null
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-8">
-      <div className="flex items-baseline justify-between gap-4">
-        <h1 className="text-xl font-medium">{slide.prompt}</h1>
-        {secondsLeft !== null && (
-          <span
-            aria-live="off"
-            className={`shrink-0 font-mono text-2xl tabular-nums ${
-              secondsLeft <= 5 ? 'text-red-600' : 'text-neutral-500'
+    <main className="flex min-h-screen flex-col">
+      {/* The same drain the projector shows, so the phone and the room share one clock. */}
+      <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
+        {fractionLeft !== null && (
+          <div
+            className={`h-full transition-[width] duration-200 ease-linear ${
+              urgent ? 'bg-wrong' : 'bg-lamp'
             }`}
-          >
-            {secondsLeft}
-          </span>
+            style={{ width: `${fractionLeft * 100}%` }}
+          />
         )}
       </div>
 
-      <div className="grid gap-3">
-        {slide.options.map((o) => {
-          const isPicked = picked === o.id
-          const isCorrect = status === 'revealed' && o.id === correctId
-          return (
-            <button
-              key={o.id}
-              onClick={() => answer(o.id)}
-              disabled={status !== 'active' || picked !== null}
-              className={`rounded-lg border px-4 py-4 text-left text-lg transition ${
-                isCorrect
-                  ? 'border-green-500 bg-green-50 dark:bg-green-950'
-                  : isPicked
-                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950'
-                    : 'border-neutral-300 dark:border-neutral-700'
-              } ${status === 'active' && !picked ? 'hover:border-indigo-400' : 'cursor-default'}`}
+      <div className="flex flex-1 flex-col gap-6 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-xl font-semibold leading-snug">{slide.prompt}</h1>
+          {secondsLeft !== null && (
+            <span
+              aria-live="off"
+              suppressHydrationWarning
+              className={`shrink-0 font-data text-3xl tabular-nums ${
+                urgent ? 'text-wrong' : 'text-lamp'
+              }`}
             >
-              {o.text}
-            </button>
-          )
-        })}
-      </div>
+              {secondsLeft}
+            </span>
+          )}
+        </div>
 
-      {status === 'active' && picked && (
-        <p className="text-center text-neutral-500">
-          {scored ? 'Answer locked in — hang tight.' : 'Vote locked in — watch the screen.'}
-        </p>
-      )}
-      {notice && <p className="text-center text-sm text-red-600">{notice}</p>}
-      {status === 'revealed' && explanation && (
-        <p className="rounded-lg bg-neutral-100 px-4 py-3 text-sm leading-relaxed dark:bg-neutral-800">
-          {explanation}
-        </p>
-      )}
-      {status === 'revealed' && (
-        <p
-          className={`text-center text-lg font-semibold ${
-            myResult === 'correct'
-              ? 'text-green-600'
-              : myResult === 'wrong'
-                ? 'text-red-600'
-                : 'text-neutral-500'
-          }`}
-        >
-          {scored
-            ? myResult === 'correct'
-              ? 'Correct!'
-              : myResult === 'wrong'
-                ? 'Not this time.'
-                : 'No answer in.'
-            : picked
-              ? 'Vote counted — results are on the screen.'
-              : 'No vote in.'}
-          {/* Rank shows for the broadcast top-N only — a personal score for everyone would mean
-              100 simultaneous /state fetches at every reveal. Full per-player scoring is M4.
-              Withheld after a poll: nothing about the standings changed, so quoting a rank
-              there implies the vote scored. */}
-          {myEntry && scored && ` You’re #${myEntry.rank} with ${myEntry.score}.`}
-        </p>
-      )}
+        <div className="grid flex-1 content-start gap-3">
+          {slide.options.map((o, i) => {
+            const isPicked = picked === o.id
+            const isCorrect = status === 'revealed' && o.id === correctId
+            const live = status === 'active' && !picked
+            // After the reveal, everything that is neither the key nor your own pick fades
+            // back so the two answers that matter are the two you can read.
+            const muted = status === 'revealed' && !isCorrect && !isPicked
+            return (
+              <button
+                key={o.id}
+                onClick={() => answer(o.id)}
+                disabled={status !== 'active' || picked !== null}
+                className={`flex items-center gap-4 rounded-plate border px-4 py-4 text-left transition-colors ${
+                  isCorrect
+                    ? 'border-correct bg-correct/15'
+                    : isPicked
+                      ? status === 'revealed' && scored
+                        ? 'border-wrong bg-wrong/15'
+                        : 'border-lamp bg-lamp/15'
+                      : 'border-rule bg-raised'
+                } ${muted ? 'opacity-45' : ''} ${live ? 'active:border-lamp active:bg-overlay' : 'cursor-default'}`}
+              >
+                <span
+                  aria-hidden
+                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-plate font-data ${
+                    isCorrect
+                      ? 'bg-correct text-lamp-ink'
+                      : isPicked
+                        ? status === 'revealed' && scored
+                          ? 'bg-wrong text-lamp-ink'
+                          : 'bg-lamp text-lamp-ink'
+                        : 'bg-overlay text-dim'
+                  }`}
+                >
+                  {LETTERS[i] ?? i + 1}
+                </span>
+                <span className="text-lg leading-snug">{o.text}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {status === 'active' && picked && (
+          <p className="text-center text-dim">
+            {scored ? 'Answer locked in. Hang tight.' : 'Vote locked in. Watch the screen.'}
+          </p>
+        )}
+        {notice && (
+          <p role="alert" className="text-center text-sm text-wrong">
+            {notice}
+          </p>
+        )}
+
+        {status === 'revealed' && (
+          <div className="flex flex-col gap-4">
+            <p
+              className={`text-center text-2xl font-bold ${
+                myResult === 'correct'
+                  ? 'text-correct'
+                  : myResult === 'wrong'
+                    ? 'text-wrong'
+                    : 'text-dim'
+              }`}
+            >
+              {scored
+                ? myResult === 'correct'
+                  ? 'Correct'
+                  : myResult === 'wrong'
+                    ? 'Not this time'
+                    : 'No answer in'
+                : picked
+                  ? 'Vote counted'
+                  : 'No vote in'}
+            </p>
+            {/* Rank shows for the broadcast top-N only. A personal score for everyone would
+                mean 100 simultaneous /state fetches at every reveal. Withheld after a poll:
+                nothing about the standings changed, so quoting a rank there implies the vote
+                scored. */}
+            {myEntry && scored && (
+              <p className="text-center text-dim">
+                <span className="font-data text-ink">#{myEntry.rank}</span> with{' '}
+                <span className="font-data tabular-nums text-ink">{myEntry.score}</span>
+              </p>
+            )}
+            {explanation && (
+              <p className="rounded-plate border-l-2 border-lamp bg-raised px-4 py-3 text-sm leading-relaxed text-dim">
+                {explanation}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </main>
   )
 }

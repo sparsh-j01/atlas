@@ -1,9 +1,11 @@
 'use client'
 
+import { CaretDown, CaretUp, DotsSixVertical, Plus } from '@phosphor-icons/react/ssr'
 import { useOptimistic, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { SlideCard, type EditorSlide } from '@/components/SlideCard'
 import { DeleteButton } from '@/components/DeleteButton'
+import { btn, capCls, inputCls, panelCls } from '@/components/ui'
 import {
   addSlideAction,
   deleteSlideAction,
@@ -14,8 +16,6 @@ import {
 import { isSlideType, SLIDE_TYPE_LABEL, SLIDE_TYPES } from '@/lib/slides'
 
 type EditorDeck = { id: string; title: string; description: string | null; status: string }
-
-const input = 'rounded-md border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900'
 
 export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorSlide[] }) {
   const [title, setTitle] = useState(deck.title)
@@ -45,7 +45,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
   function persistOrder(next: string[]) {
     startTransition(() => {
       reorderOptimistic(next)
-      run(reorderSlidesAction(deck.id, next), 'Could not save the new order — please retry.')
+      run(reorderSlidesAction(deck.id, next), 'Could not save the new order. Please retry.')
     })
   }
 
@@ -80,58 +80,75 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
     })
   }
 
+  const ready = status === 'ready'
+
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
-        ← All decks
+    <div className="mx-auto max-w-3xl px-6 py-12">
+      <Link href="/dashboard" className="text-sm text-dim transition-colors hover:text-ink">
+        Back to your decks
       </Link>
 
-      <div className="mt-4 flex flex-col gap-3">
+      <div className="mt-6 flex flex-col gap-3">
         <input
-          className={`${input} text-xl font-semibold`}
+          className={`${inputCls} font-display border-transparent bg-transparent px-0 text-3xl hover:border-transparent focus:border-transparent`}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => run(updateDeckAction(deck.id, { title }), 'Could not save the title.')}
-          placeholder="Deck title"
+          placeholder="Untitled deck"
+          aria-label="Deck title"
         />
         <textarea
-          className={input}
+          className={`${inputCls} resize-y border-transparent bg-transparent px-0 text-dim hover:border-transparent focus:border-transparent`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onBlur={() =>
-            run(updateDeckAction(deck.id, { description: description || null }), 'Could not save the description.')
+            run(
+              updateDeckAction(deck.id, { description: description || null }),
+              'Could not save the description.',
+            )
           }
-          placeholder="Description (optional)"
+          placeholder="Add a description"
           rows={2}
+          aria-label="Deck description"
         />
-        <div className="flex items-center gap-3">
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              status === 'ready'
-                ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'
-                : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
-            }`}
-          >
-            {status}
-          </span>
-          <button
-            type="button"
-            onClick={toggleStatus}
-            className="text-sm text-indigo-600 hover:underline"
-          >
-            {status === 'ready' ? 'Back to draft' : 'Mark ready'}
-          </button>
-          {statusError && <span className="text-sm text-amber-600">{statusError}</span>}
-        </div>
       </div>
 
+      {/* The ready gate. It is what unlocks Present, so it gets its own bar rather than a
+          pill lost in the header. */}
+      <div
+        className={`${panelCls} mt-4 flex flex-wrap items-center gap-4 px-5 py-4 ${
+          ready ? 'border-correct/40' : ''
+        }`}
+      >
+        <span
+          aria-hidden
+          className={`h-2 w-2 shrink-0 rounded-full ${ready ? 'bg-correct' : 'bg-faint'}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">{ready ? 'Ready to present' : 'Draft'}</p>
+          <p className="mt-0.5 text-sm text-dim">
+            {ready
+              ? 'This deck can host a live session.'
+              : 'Every slide has to pass validation before this deck can host.'}
+          </p>
+        </div>
+        <button type="button" onClick={toggleStatus} className={btn(ready ? 'ghost' : 'primary', 'md')}>
+          {ready ? 'Back to draft' : 'Mark ready'}
+        </button>
+      </div>
+
+      {statusError && (
+        <p role="alert" className="mt-3 text-sm text-wrong">
+          {statusError}
+        </p>
+      )}
       {actionError && (
-        <p role="alert" className="mt-4 text-sm text-amber-600">
+        <p role="alert" className="mt-3 text-sm text-wrong">
           {actionError}
         </p>
       )}
 
-      <ul className="mt-6 flex flex-col gap-4">
+      <ul className="mt-8 flex flex-col gap-4">
         {ordered.map((s, i) => (
           <li
             key={s.id}
@@ -148,20 +165,20 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
             }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDrop(s.id)}
-            className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+            className={`${panelCls} p-5`}
           >
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-4 flex items-center gap-1 border-b border-rule pb-3">
               <button
                 type="button"
                 aria-label="Drag to reorder"
                 title="Drag to reorder"
-                className="cursor-grab select-none px-1 text-neutral-400"
+                className="cursor-grab rounded-plate p-1.5 text-faint transition-colors hover:text-ink"
                 onMouseDown={() => {
                   const el = liRefs.current[s.id]
                   if (el) el.draggable = true
                 }}
               >
-                ⠿
+                <DotsSixVertical size={18} weight="regular" />
               </button>
               <button
                 type="button"
@@ -169,9 +186,9 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
                 disabled={i === 0}
                 aria-label="Move slide up"
                 title="Move up"
-                className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
+                className="rounded-plate p-1.5 text-faint transition-colors hover:text-ink disabled:opacity-25"
               >
-                ↑
+                <CaretUp size={16} weight="regular" />
               </button>
               <button
                 type="button"
@@ -179,18 +196,19 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
                 disabled={i === ordered.length - 1}
                 aria-label="Move slide down"
                 title="Move down"
-                className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
+                className="rounded-plate p-1.5 text-faint transition-colors hover:text-ink disabled:opacity-25"
               >
-                ↓
+                <CaretDown size={16} weight="regular" />
               </button>
-              <span className="text-sm font-medium text-neutral-500">Slide {i + 1}</span>
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+              <span className="ml-2 font-data text-sm text-dim">{i + 1}</span>
+              <span className={`${capCls} ml-3`}>
                 {isSlideType(s.type) ? SLIDE_TYPE_LABEL[s.type] : s.type}
               </span>
               <span className="ml-auto">
                 <DeleteButton
                   action={deleteSlideAction.bind(null, deck.id, s.id)}
                   confirmText="Delete this slide?"
+                  className={btn('danger', 'sm')}
                 />
               </span>
             </div>
@@ -199,17 +217,26 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
         ))}
       </ul>
 
+      {ordered.length === 0 && (
+        <p className="mt-8 text-center text-dim">
+          No slides yet. Add one below, or generate a deck from a document.
+        </p>
+      )}
+
       {/* One button per slide type — driven off SLIDE_TYPES so adding a type doesn't need a
           matching edit here. */}
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {SLIDE_TYPES.map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => startTransition(() => run(addSlideAction(deck.id, t), 'Could not add a slide.'))}
-            className="w-full rounded-lg border border-dashed border-neutral-300 py-3 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700"
+            onClick={() =>
+              startTransition(() => run(addSlideAction(deck.id, t), 'Could not add a slide.'))
+            }
+            className="flex items-center justify-center gap-2 rounded-plate border border-dashed border-rule-strong py-4 text-sm font-semibold text-dim transition-colors hover:border-lamp hover:bg-lamp/5 hover:text-lamp"
           >
-            + Add {SLIDE_TYPE_LABEL[t].toLowerCase()}
+            <Plus size={16} weight="regular" />
+            Add {SLIDE_TYPE_LABEL[t].toLowerCase()}
           </button>
         ))}
       </div>

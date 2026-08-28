@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { X } from '@phosphor-icons/react/ssr'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
 import { openHostChannel, openSessionChannel } from '@/lib/realtime/channels'
@@ -17,7 +18,9 @@ import { isScored } from '@/lib/slides'
 import { DeleteButton } from '@/components/DeleteButton'
 import { Leaderboard } from '@/components/Leaderboard'
 import { Podium } from '@/components/Podium'
+import { ProjectorSlide } from '@/components/ProjectorSlide'
 import { ResultsChart } from '@/components/ResultsChart'
+import { btn, capCls } from '@/components/ui'
 
 type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 
@@ -89,6 +92,9 @@ export function HostConsole({
       ? Date.parse(initialServerStartedAt) + initialTimeLimitMs
       : null,
   )
+  // The full window, kept so the drain bar knows what fraction is left. Without it the bar
+  // would only know the remaining milliseconds, not the share.
+  const [windowMs, setWindowMs] = useState<number | null>(initialTimeLimitMs)
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -105,12 +111,12 @@ export function HostConsole({
         })
         const data = await res.json().catch(() => null)
         if (!res.ok) {
-          setError(data?.error ?? 'That didn’t go through — try again.')
+          setError(data?.error ?? 'That did not go through. Try again.')
           return null
         }
         return data
       } catch {
-        setError('Network error — try again.')
+        setError('Network error. Try again.')
         return null
       } finally {
         setBusy(false)
@@ -131,6 +137,7 @@ export function HostConsole({
     setCorrectId(data.correctOptionId ?? null)
     setExplanation(data.explanation ?? null)
     setAnswered(0) // live counter for a fresh question; a revealed slide reads its tally instead
+    setWindowMs(data.timeLimitMs ?? null)
     setDeadline(
       data.status === 'active' ? Date.parse(data.serverStartedAt) + data.timeLimitMs : null,
     )
@@ -214,6 +221,7 @@ export function HostConsole({
         setCorrectId(null)
         setAggregate(null)
         setExplanation(null)
+        setWindowMs(payload.timeLimitMs ?? null)
         setDeadline(
           payload.status === 'revealed'
             ? null
@@ -260,8 +268,9 @@ export function HostConsole({
     return () => clearInterval(id)
   }, [status, deadline])
 
-  const secondsLeft =
-    status === 'active' && deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
+  const msLeft = status === 'active' && deadline ? Math.max(0, deadline - now) : null
+  const secondsLeft = msLeft === null ? null : Math.ceil(msLeft / 1000)
+  const fractionLeft = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
   const atLast = index >= total - 1
   // While a question is open the count comes from the leaky-bucket broadcast, which is a
   // throttled estimate — answers landing inside the same 1s window as the last one never
@@ -275,160 +284,169 @@ export function HostConsole({
   // show a chart the server never filled — or withhold one it did.
   const scored = slide ? isScored(slide.type) : true
   const showResults = slide !== null && (status === 'revealed' || !scored)
+  const urgent = secondsLeft !== null && secondsLeft <= 5
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6 sm:p-10">
-      <header className="flex flex-wrap items-start justify-between gap-6">
+    <main className="flex min-h-screen flex-col">
+      {/* The drain. A full-width line at the very top is the one countdown cue that reads
+          from the back of a hall without stealing space from the question. */}
+      <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
+        {fractionLeft !== null && (
+          <div
+            className={`h-full origin-left transition-[width] duration-200 ease-linear ${
+              urgent ? 'bg-wrong' : 'bg-lamp'
+            }`}
+            style={{ width: `${fractionLeft * 100}%` }}
+          />
+        )}
+      </div>
+
+      <header className="flex flex-wrap items-end justify-between gap-8 border-b border-rule px-6 py-6 sm:px-10">
         <div>
-          <div className="text-sm uppercase tracking-wide text-neutral-500">Join at /play</div>
-          <div className="font-mono text-6xl font-bold tracking-widest sm:text-7xl">{code}</div>
+          <div className={capCls} suppressHydrationWarning>
+            Join at {typeof window === 'undefined' ? '' : window.location.host}/play
+          </div>
+          <div className="font-data mt-1 text-5xl leading-none tracking-[0.14em] text-lamp sm:text-6xl">
+            {code}
+          </div>
         </div>
-        <div className="flex items-center gap-8">
-          <Stat value={roster.length} label="in the room" />
+        <div className="flex items-end gap-8 sm:gap-10">
+          <Stat value={roster.length} label={roster.length === 1 ? 'player' : 'players'} />
           {status !== 'lobby' && status !== 'ended' && (
             <>
               <Stat value={answeredCount} label="answered" />
               {secondsLeft !== null && (
-                <Stat
-                  value={secondsLeft}
-                  label="seconds"
-                  tone={secondsLeft <= 5 ? 'text-red-600' : undefined}
-                />
+                <Stat value={secondsLeft} label="seconds" tone={urgent ? 'text-wrong' : 'text-lamp'} suppress />
               )}
             </>
           )}
         </div>
       </header>
 
-      {status === 'lobby' && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-2xl font-medium">Waiting for players</h2>
-          {roster.length === 0 ? (
-            <p className="text-neutral-500">Nobody has joined yet.</p>
-          ) : (
-            <Roster roster={roster} onKick={kick} busy={busy} />
-          )}
-        </section>
-      )}
-
-      {status === 'ended' ? (
-        <section className="flex flex-col gap-6">
-          <h2 className="text-center text-3xl font-semibold">Final results</h2>
-          {leaderboard.length > 0 ? (
-            <Podium ranking={leaderboard} />
-          ) : (
-            <p className="text-center text-neutral-500">Nobody scored — no players joined.</p>
-          )}
-          <p className="text-center text-sm text-neutral-500">
-            Session ended. The code is free for reuse.
-          </p>
-        </section>
-      ) : (
-        <>
-          {slide && (
-            <section className="flex flex-col gap-6">
-              <h2 className="text-3xl font-medium sm:text-4xl">{slide.prompt}</h2>
-              {showResults ? (
-                <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
-              ) : (
-                <ul className="grid gap-4 sm:grid-cols-2">
-                  {slide.options.map((o) => (
-                    <li
-                      key={o.id}
-                      className="rounded-xl border border-neutral-200 px-6 py-5 text-2xl dark:border-neutral-800"
-                    >
-                      {o.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {status === 'revealed' && explanation && (
-                <p className="rounded-xl bg-neutral-100 px-6 py-4 text-lg leading-relaxed dark:bg-neutral-800">
-                  {explanation}
-                </p>
-              )}
-            </section>
-          )}
-
-          {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
-              the last question — putting them up right after one reads as if the poll scored. */}
-          {status === 'revealed' && scored && leaderboard.length > 0 && (
-            <section>
-              <h3 className="mb-4 text-2xl font-medium">Leaderboard</h3>
-              <Leaderboard entries={leaderboard} />
-            </section>
-          )}
-
-          <div className="mt-auto flex flex-wrap items-center gap-3 border-t border-neutral-200 pt-6 dark:border-neutral-800">
-            {status === 'lobby' ? (
-              <button
-                onClick={() => goTo(0)}
-                disabled={busy || total === 0}
-                className="rounded-lg bg-indigo-600 px-8 py-4 text-lg font-medium text-white disabled:opacity-50"
-              >
-                {busy ? 'Starting…' : 'Start'}
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => goTo(index - 1)}
-                  disabled={busy || index <= 0}
-                  className="rounded-lg border border-neutral-300 px-5 py-4 font-medium disabled:opacity-40 dark:border-neutral-700"
-                >
-                  Back
-                </button>
-                {status === 'active' && (
-                  <button
-                    onClick={reveal}
-                    disabled={busy}
-                    className="rounded-lg bg-indigo-600 px-8 py-4 text-lg font-medium text-white disabled:opacity-50"
-                  >
-                    {/* Same endpoint either way — it closes the answer window. On a quiz that
-                        also discloses the key, which is the whole event; on a poll there is
-                        nothing to disclose, so calling it "Reveal" would promise a result the
-                        room has been watching for the last 30 seconds. */}
-                    {scored ? 'Reveal' : 'Close voting'}
-                  </button>
-                )}
-                <button
-                  onClick={() => goTo(index + 1)}
-                  disabled={busy || atLast}
-                  className="rounded-lg border border-neutral-300 px-5 py-4 font-medium disabled:opacity-40 dark:border-neutral-700"
-                >
-                  {status === 'active' ? 'Skip' : 'Next'}
-                </button>
-                <span className="text-sm text-neutral-500">
-                  Slide {index + 1} of {total}
-                </span>
-              </>
-            )}
-            <div className="ml-auto">
-              <DeleteButton
-                action={end}
-                confirmText="End this session for everyone?"
-                label="End session"
-                pendingLabel="Ending…"
-              />
+      <div className="flex flex-1 flex-col gap-10 px-6 py-10 sm:px-10">
+        {status === 'lobby' && (
+          <section className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
+            <div>
+              <h2 className="font-display text-4xl sm:text-5xl">
+                {roster.length === 0 ? 'Waiting for the room' : 'Ready when you are'}
+              </h2>
+              <p className="mt-3 text-lg text-dim">
+                {roster.length === 0
+                  ? 'Students join by entering the code above on their phones.'
+                  : `${roster.length} ${roster.length === 1 ? 'person is' : 'people are'} in.`}
+              </p>
             </div>
-          </div>
+            {roster.length > 0 && <Roster roster={roster} onKick={kick} busy={busy} />}
+          </section>
+        )}
 
-          {/* Mid-game access to the same remove control. A native <details> so there's no
-              open/closed state to hold, and it stays collapsed on the projector until the
-              host actually needs it. Only rendered once the lobby roster is gone. */}
-          {status !== 'lobby' && roster.length > 0 && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-neutral-500">
-                Players ({roster.length})
-              </summary>
-              <div className="pt-3">
-                <Roster roster={roster} onKick={kick} busy={busy} />
-              </div>
-            </details>
+        {status === 'ended' ? (
+          <section className="flex flex-col gap-10">
+            <h2 className="font-display text-center text-4xl sm:text-5xl">
+              Final standings
+            </h2>
+            {leaderboard.length > 0 ? (
+              <Podium ranking={leaderboard} />
+            ) : (
+              <p className="text-center text-dim">Nobody scored. No players joined.</p>
+            )}
+            <p className="text-center text-sm text-dim">
+              Session ended. The code is free for reuse.
+            </p>
+          </section>
+        ) : (
+          <>
+            {slide && (
+              <section className="flex flex-col gap-8">
+                {showResults ? (
+                  <>
+                    <h2 className="font-display max-w-[22ch] text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
+                      {slide.prompt}
+                    </h2>
+                    <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
+                  </>
+                ) : (
+                  <ProjectorSlide prompt={slide.prompt} options={slide.options} />
+                )}
+                {status === 'revealed' && explanation && (
+                  <p className="rounded-plate border-l-2 border-lamp bg-raised px-6 py-5 text-xl leading-relaxed text-dim">
+                    {explanation}
+                  </p>
+                )}
+              </section>
+            )}
+
+            {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
+                the last question — putting them up right after one reads as if the poll scored. */}
+            {status === 'revealed' && scored && leaderboard.length > 0 && (
+              <section>
+                <h3 className={`${capCls} mb-4`}>Leaderboard</h3>
+                <Leaderboard entries={leaderboard} />
+              </section>
+            )}
+
+            {/* Mid-game access to the same remove control. A native <details> so there's no
+                open/closed state to hold, and it stays collapsed on the projector until the
+                host actually needs it. Only rendered once the lobby roster is gone. */}
+            {status !== 'lobby' && roster.length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-dim hover:text-ink">
+                  Players ({roster.length})
+                </summary>
+                <div className="pt-4">
+                  <Roster roster={roster} onKick={kick} busy={busy} />
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+
+      {status !== 'ended' && (
+        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-rule bg-ground/95 px-6 py-4 backdrop-blur sm:px-10">
+          {status === 'lobby' ? (
+            <button onClick={() => goTo(0)} disabled={busy || total === 0} className={btn('primary', 'xl')}>
+              {busy ? 'Starting' : 'Start the session'}
+            </button>
+          ) : (
+            <>
+              <button onClick={() => goTo(index - 1)} disabled={busy || index <= 0} className={btn('secondary', 'lg')}>
+                Back
+              </button>
+              {status === 'active' && (
+                <button onClick={reveal} disabled={busy} className={btn('primary', 'xl')}>
+                  {/* Same endpoint either way — it closes the answer window. On a quiz that
+                      also discloses the key, which is the whole event; on a poll there is
+                      nothing to disclose, so calling it "Reveal" would promise a result the
+                      room has been watching for the last 30 seconds. */}
+                  {scored ? 'Reveal the answer' : 'Close voting'}
+                </button>
+              )}
+              <button onClick={() => goTo(index + 1)} disabled={busy || atLast} className={btn('secondary', 'lg')}>
+                {status === 'active' ? 'Skip' : 'Next'}
+              </button>
+              <span className="font-data text-sm text-dim">
+                {index + 1} / {total}
+              </span>
+            </>
           )}
-        </>
+          <div className="ml-auto">
+            <DeleteButton
+              action={end}
+              confirmText="End this session for everyone?"
+              label="End session"
+              pendingLabel="Ending"
+              className={btn('danger', 'md')}
+            />
+          </div>
+        </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="px-6 pb-4 text-sm text-wrong sm:px-10">
+          {error}
+        </p>
+      )}
     </main>
   )
 }
@@ -446,25 +464,25 @@ function Roster({
   busy: boolean
 }) {
   return (
-    <ul className="flex flex-wrap gap-3">
+    <ul className="flex flex-wrap justify-center gap-2.5">
       {roster.map((p) => (
         <li
           key={p.participantId}
-          className="flex items-center gap-2 rounded-full border border-neutral-200 py-1.5 pl-1.5 pr-2 text-lg dark:border-neutral-800"
+          className="group flex items-center gap-2 rounded-full border border-rule bg-raised py-1.5 pl-1.5 pr-2 text-lg"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={avatarUrl(p.avatarSeed)} alt="" className="h-9 w-9 rounded-full bg-neutral-100" />
-          <span className="font-medium">{p.nickname}</span>
+          <img src={avatarUrl(p.avatarSeed)} alt="" className="h-8 w-8 rounded-full bg-overlay" />
+          <span className="font-semibold">{p.nickname}</span>
           <button
             onClick={() => onKick(p.participantId)}
             disabled={busy}
-            // The nickname is in the label, not just the ×, so a screen reader announces
+            // The nickname is in the label, not just the glyph, so a screen reader announces
             // WHICH player this removes — there is one of these per person on screen.
             aria-label={`Remove ${p.nickname}`}
             title={`Remove ${p.nickname}`}
-            className="rounded-full px-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950"
+            className="rounded-full p-1 text-faint transition-colors hover:bg-wrong/15 hover:text-wrong disabled:opacity-40"
           >
-            ×
+            <X size={14} weight="regular" />
           </button>
         </li>
       ))}
@@ -472,11 +490,27 @@ function Roster({
   )
 }
 
-function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
+function Stat({
+  value,
+  label,
+  tone,
+  suppress,
+}: {
+  value: number
+  label: string
+  tone?: string
+  /** Clock-derived values differ between the server render and the client's first paint. */
+  suppress?: boolean
+}) {
   return (
-    <div className="text-center">
-      <div className={`text-4xl font-semibold tabular-nums ${tone ?? ''}`}>{value}</div>
-      <div className="text-sm text-neutral-500">{label}</div>
+    <div>
+      <div
+        suppressHydrationWarning={suppress}
+        className={`font-data text-4xl leading-none tabular-nums sm:text-5xl ${tone ?? 'text-ink'}`}
+      >
+        {value}
+      </div>
+      <div className={`${capCls} mt-2`}>{label}</div>
     </div>
   )
 }

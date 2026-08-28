@@ -23,7 +23,7 @@ export function ResultsChart(props: {
 // Six fixed hues, one per option slot (MAX_OPTIONS). Assigned by index rather than hashed
 // from the option id, so the same option keeps its colour between the live feed and the
 // final chart instead of jumping as counts change.
-const PALETTE = ['#6366f1', '#f59e0b', '#10b981', '#f43f5e', '#0ea5e9', '#8b5cf6']
+const PALETTE = ['#e0a83a', '#5aa9e6', '#4fbf8b', '#b98be8', '#e8845c', '#7fd1c1']
 
 const SIZE = 200
 const OUTER = 92 // leaves a little room inside the viewBox for the stroke's antialiasing
@@ -95,7 +95,7 @@ function ResultsPie({
           r={r}
           fill="none"
           strokeWidth={stroke}
-          className="stroke-neutral-200 dark:stroke-neutral-800"
+          className="stroke-overlay"
         />
         {segments.map((s) =>
           s.frac > 0 ? (
@@ -125,17 +125,17 @@ function ResultsPie({
           <li key={s.o.id} className="flex items-baseline gap-3">
             <span
               aria-hidden
-              className="h-3 w-3 shrink-0 translate-y-0.5 rounded-sm"
+              className="h-3 w-3 shrink-0 translate-y-0.5 rounded-[2px]"
               style={{ background: s.color }}
             />
             <span className="truncate text-xl">
               {s.o.text}
               {s.o.id === pickedId && (
-                <span className="ml-2 text-sm text-indigo-500">your answer</span>
+                <span className="ml-2 text-sm text-lamp">your answer</span>
               )}
             </span>
-            <span className="ml-auto shrink-0 tabular-nums text-neutral-500">
-              {s.n} · {Math.round(s.frac * 100)}%
+            <span className="ml-auto shrink-0 font-data text-sm tabular-nums text-dim">
+              {s.n} / {Math.round(s.frac * 100)}%
             </span>
           </li>
         ))}

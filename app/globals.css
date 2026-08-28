@@ -1,26 +1,174 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Atlas design system.
+
+   Paper, not dashboard. The surfaces a teacher works on -- landing, sign in,
+   dashboard, the deck editor -- are warm off-white with a book serif for
+   headings, because what they are editing is course material. It should look
+   closer to a syllabus than to an admin panel.
+
+   The one place that stays dark is the live room (`.stage`): the projector is
+   the primary screen in a dimmed lecture hall, and a full-white wall behind a
+   question is a flashbang. Same token names, redefined inside the scope, so
+   every component works on both surfaces without knowing which it is on.
+
+   One accent (lamp) for anything live or primary. Correct/wrong are the only
+   other hues, and they only ever appear on graded answers.
+   Two radii: --radius-plate for surfaces, --radius-pill for controls.
+   Display serif for headings and figures, Geist for body and UI, Geist Mono for
+   numbers read from the back of the room.
+   --------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Warm paper. The tint matters: a neutral grey #f7f7f7 reads as "unstyled",
+     the warm cast reads as stock. */
+  --ground: #f9f7f6;
+  --raised: #fffefd;
+  --overlay: #f1eeec;
+  --rule: #dde1e7;
+  --rule-strong: #c5ccd6;
+
+  --ink: #011121;
+  --dim: #4b5563;
+  --faint: #9b9893;
+
+  /* Deeper than the dark-room gold: #e0a83a on paper fails contrast. */
+  --lamp: #a97a16;
+  --lamp-hi: #8d6410;
+  --lamp-ink: #fdfcfb;
+  --lamp-wash: #f6efdd;
+
+  --correct: #1c7d55;
+  --wrong: #b93a2c;
+
+  /* Warm-brown shadows, never black. Black shadows on warm paper go grey and
+     make cards look like they were pasted on. */
+  --lift: 0 4px 12px -6px rgb(82 66 50 / 0.12), 0 1px 3px 0 rgb(82 66 50 / 0.05);
+  --lift-high: 0 14px 38px -18px rgb(82 66 50 / 0.16), 0 3px 8px 0 rgb(82 66 50 / 0.05);
+
+  color-scheme: light;
+}
+
+/* The live room. Projector, participant phone, and anything mirrored to the
+   wall. Only the values change -- the token names are identical, so
+   ProjectorSlide, Leaderboard and Podium render correctly on either surface. */
+.stage {
+  --ground: #0b0e13;
+  --raised: #12161e;
+  --overlay: #1a2029;
+  --rule: #232b37;
+  --rule-strong: #38424f;
+
+  --ink: #eceae4;
+  --dim: #98a1b0;
+  --faint: #667080;
+
+  --lamp: #e0a83a;
+  --lamp-hi: #eeba52;
+  --lamp-ink: #16120a;
+  --lamp-wash: #211a0d;
+
+  --correct: #4fbf8b;
+  --wrong: #e0605c;
+
+  --lift: 0 4px 12px -6px rgb(0 0 0 / 0.5);
+  --lift-high: 0 14px 38px -18px rgb(0 0 0 / 0.6);
+
+  color-scheme: dark;
+  background: var(--ground);
+  color: var(--ink);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ground: var(--ground);
+  --color-raised: var(--raised);
+  --color-overlay: var(--overlay);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-ink: var(--ink);
+  --color-dim: var(--dim);
+  --color-faint: var(--faint);
+
+  --color-lamp: var(--lamp);
+  --color-lamp-hi: var(--lamp-hi);
+  --color-lamp-ink: var(--lamp-ink);
+  --color-lamp-wash: var(--lamp-wash);
+
+  --color-correct: var(--correct);
+  --color-wrong: var(--wrong);
+
+  --font-sans: var(--font-geist);
+  --font-display: var(--font-gowun);
+  --font-data: var(--font-geist-mono);
+
+  --shadow-lift: var(--lift);
+  --shadow-lift-high: var(--lift-high);
+
+  --radius-plate: 6px;
+  --radius-pill: 8px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+    /* The open tracking on body copy is deliberate and is half of this
+       typographic voice. Tight sans next to a book serif reads as a mismatch. */
+    letter-spacing: 0.035em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* One focus treatment for the whole app. Keyboard users get a visible ring on
+     every control without each component remembering to add one. */
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .stage :focus-visible {
+    outline-color: var(--lamp);
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--ground);
+  }
+
+  ::placeholder {
+    color: var(--faint);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Headings and figures. Normal weight on purpose: this serif at 700 turns
+     into a newspaper masthead, which is the wrong register. Tracking opens very
+     slightly because the face sets a touch tight at display size. */
+  .font-display {
+    font-family: var(--font-gowun), 'Iowan Old Style', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+
+  /* Horizontal rails hide their scrollbar; the overflow is the affordance. */
+  .no-bar {
+    scrollbar-width: none;
+  }
+  .no-bar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
