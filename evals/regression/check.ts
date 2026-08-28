@@ -45,8 +45,10 @@ function main(): void {
   const regressed = results.filter((r) => r.regressed)
   console.log(`\n  ${armed}/${results.length} thresholds armed. ${regressed.length} regression(s).`)
   if (armed === 0) {
-    console.log('  No threshold can fail yet, by design: tolerances need the run-to-run variance')
-    console.log('  that Phase 2C produces. See evals/regression/thresholds.ts.')
+    console.log('  No threshold can fail yet, by design: every tolerance needs the run-to-run')
+    console.log('  spread of the metric it guards, and these all guard RETRIEVAL metrics — so')
+    console.log('  they can only be armed from repeated `npm run eval:benchmark` runs.')
+    console.log('  See evals/regression/thresholds.ts for the steps.')
   }
   if (regressed.length > 0) process.exit(1)
 }

@@ -176,6 +176,12 @@ async function main(): Promise<void> {
     console.log('  reachability are not a fair comparison — re-run before citing them.')
     process.exit(2)
   }
+
+  // Only reached when neither arm had inconclusive queries, so the exit code above still
+  // means what it meant. Explicit because the retriever's Postgres pool keeps the event
+  // loop alive after the artifact is written — see the generation benchmark, which hung
+  // ten minutes past a completed run and blocked the next benchmark in a chained script.
+  process.exit(0)
 }
 
 main().catch((err) => {

@@ -155,7 +155,7 @@ export function checkThresholds(
         current,
         delta: raw,
         regressed: false,
-        note: 'report-only: no tolerance set until Phase 2C measures run-to-run variance',
+        note: 'report-only: no tolerance yet — needs repeated retrieval runs to measure this metric\'s spread',
       }
     }
 

@@ -166,6 +166,13 @@ async function main(): Promise<void> {
     process.exit(2)
   }
   if (m.followed > 0 || m.canaryLeaks > 0) process.exit(1)
+
+  // Containment held and every query reached the model, so this is the clean path and the
+  // two exit codes above still mean what they meant. Explicit rather than falling off the
+  // end of main(): this eval builds its evidence from the chunker and touches no database,
+  // but it shares the generation client, and every other benchmark here has to exit for
+  // the same reason — an open handle keeps the process alive past a finished run.
+  process.exit(0)
 }
 
 main().catch((err) => {

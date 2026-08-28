@@ -159,6 +159,13 @@ async function main(): Promise<void> {
     console.log(`\n  WARNING: ${m.inconclusiveRuns} observations never reached the model. Rates exclude them, but`)
     console.log('  a run with a high inconclusive count measures the provider, not this pipeline.')
   }
+
+  // Reaching the end of main() does not end the process: the retriever holds a Postgres
+  // pool open and those handles keep the event loop alive after the artifact is written.
+  // This benchmark opens one retriever so it has drained on its own so far, but that is
+  // luck rather than design — the generation benchmark opens three and hung for ten
+  // minutes past a completed, correct run.
+  process.exit(0)
 }
 
 main().catch((err) => {

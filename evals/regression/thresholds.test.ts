@@ -25,8 +25,10 @@ describe('readPath', () => {
 describe('shipped thresholds', () => {
   it('are all report-only, because no variance has been measured yet', () => {
     // The guard for the mistake this file was written to avoid. Arming a tolerance without
-    // a Phase 2C spread behind it is guessing, and the previous invented thresholds
-    // (recallAt5 0.85, mrr 0.8) were deleted for exactly that reason.
+    // a measured spread of THAT metric behind it is guessing, and the previous invented
+    // thresholds (recallAt5 0.85, mrr 0.8) were deleted for exactly that reason. These all
+    // guard retrieval metrics, so the spread has to come from repeated retrieval runs —
+    // the reliability benchmark measures the generation path and emits neither recall nor MRR.
     for (const t of RETRIEVAL_THRESHOLDS) {
       expect(t.tolerance, `${t.label} has a tolerance but no measured variance`).toBeNull()
       expect(t.provenance).toBe('')
