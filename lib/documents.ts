@@ -2,7 +2,8 @@ import 'server-only'
 
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from './db'
-import { documents, ingestionJobs, type Document, type IngestionJob } from './db/schema'
+import { documentPages, documents, ingestionJobs, type Document, type IngestionJob } from './db/schema'
+import { buildCoverageReport, type CoverageReport, type UnreadPage } from './ingest/coverage'
 import { ACCEPTED_MIME_TYPES } from './ingest/formats'
 
 export type { Document, IngestionJob }
@@ -189,6 +190,27 @@ export async function staleDocuments(staleMs: number): Promise<Document[]> {
     .from(documents)
     .where(inArray(documents.status, ['uploaded', 'ocr', 'structuring', 'chunking', 'embedding']))
   return rows.filter((d) => d.updatedAt < cutoff)
+}
+
+/**
+ * Which pages of a document produced no text, and why.
+ *
+ * Read from `unread_reason`, which extraction writes and the OCR stage clears for any page
+ * it rescues. Surfacing this is the whole reason the column exists: a teacher whose deck is
+ * half screenshots would otherwise see a clean "ready" and questions drawn from half the
+ * material, with nothing anywhere to say so.
+ */
+export async function documentCoverage(documentId: string): Promise<CoverageReport> {
+  const rows = await db
+    .select({ pageNumber: documentPages.pageNumber, unreadReason: documentPages.unreadReason })
+    .from(documentPages)
+    .where(eq(documentPages.documentId, documentId))
+    .orderBy(documentPages.pageNumber)
+
+  const unread = rows
+    .filter((r) => r.unreadReason)
+    .map((r) => ({ pageNumber: r.pageNumber, reason: r.unreadReason }) as UnreadPage)
+  return buildCoverageReport(rows.length, unread)
 }
 
 export const UPLOAD_LIMITS = {

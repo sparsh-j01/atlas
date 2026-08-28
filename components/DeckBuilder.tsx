@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { DIFFICULTIES } from '@/lib/ai/blueprint'
+import { ACCEPT_ATTRIBUTE } from '@/lib/ingest/formats'
 import { btn, capCls, inputCls, panelCls } from '@/components/ui'
 
 // Both front doors in one place. A document deck and a topic deck differ only in where the
@@ -19,7 +20,25 @@ const MAX_MB = 25
 // the messages cycle on a timer and never claim more precision than we have.
 const STAGES = ['Outlining the deck', 'Writing questions', 'Checking every answer', 'Almost there']
 
-type Doc = { id: string; filename: string; pageCount: number | null; duplicate: boolean }
+// One line per pipeline state, so the uploader sees what is actually happening rather than
+// a spinner. The names are the server's; the sentences are not.
+const INGEST_STATUS: Record<string, string> = {
+  uploaded: 'Reading the document',
+  ocr: 'Reading text in the images',
+  structuring: 'Working out the structure',
+  chunking: 'Splitting it into passages',
+  embedding: 'Indexing passages',
+  ready: 'Ready',
+}
+
+type Coverage = { totalPages: number; readPages: number; message: string }
+type Doc = {
+  id: string
+  filename: string
+  pageCount: number | null
+  duplicate: boolean
+  coverage?: Coverage
+}
 type Result = { deckId: string; made: number; asked: number; dropped: string[] }
 
 export function DeckBuilder() {
@@ -54,7 +73,7 @@ export function DeckBuilder() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/decks/ingest-pdf', { method: 'POST', body: form })
+      const res = await fetch('/api/decks/ingest', { method: 'POST', body: form })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data?.documentId) {
         setError(data?.error ?? `Upload failed (${res.status}).`)
@@ -80,16 +99,19 @@ export function DeckBuilder() {
             filename: file.name,
             pageCount: data.pageCount ?? null,
             duplicate: Boolean(data.duplicate),
+            coverage: s.coverage,
           })
           setIngest(null)
           return
         }
         if (!s.paused) {
-          setError(`Processing stopped at "${s.status}".`)
+          // The server already turned its internal code into a sentence. Prefer that, and
+          // never render a raw state name or anything that could carry a stack trace.
+          setError(s?.error ?? 'The document could not be processed.')
           setIngest(null)
           return
         }
-        setIngest('Indexing passages')
+        setIngest(INGEST_STATUS[s.status] ?? 'Working on it')
       }
       setError('The document is taking longer than expected. Try uploading it again.')
       setIngest(null)
@@ -308,22 +330,36 @@ function DocumentPanel({
   const [over, setOver] = useState(false)
 
   if (doc) {
+    const kind = doc.filename.toLowerCase().endsWith('.pptx') ? 'PPTX' : 'PDF'
+    const unit = kind === 'PPTX' ? 'slides' : 'pages'
     return (
-      <div className={`${panelCls} flex flex-wrap items-center gap-4 p-5`}>
-        <span aria-hidden className="grid h-11 w-11 place-items-center rounded-plate bg-lamp/15 font-data text-xs text-lamp">
-          PDF
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold">{doc.filename}</p>
-          <p className="mt-0.5 text-sm text-dim">
-            Indexed and ready
-            {doc.pageCount ? `, ${doc.pageCount} pages` : ''}
-            {doc.duplicate ? '. You had already uploaded this one.' : '.'}
-          </p>
+      <div className={`${panelCls} flex flex-col gap-4 p-5`}>
+        <div className="flex flex-wrap items-center gap-4">
+          <span aria-hidden className="grid h-11 w-11 place-items-center rounded-plate bg-lamp/15 font-data text-xs text-lamp">
+            {kind}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold">{doc.filename}</p>
+            <p className="mt-0.5 text-sm text-dim">
+              Indexed and ready
+              {doc.pageCount ? `, ${doc.pageCount} ${unit}` : ''}
+              {doc.duplicate ? '. You had already uploaded this one.' : '.'}
+            </p>
+          </div>
+          <button type="button" onClick={onClear} className={btn('ghost', 'sm')}>
+            Use a different file
+          </button>
         </div>
-        <button type="button" onClick={onClear} className={btn('ghost', 'sm')}>
-          Use a different file
-        </button>
+
+        {/* What we could NOT read. Shown on success on purpose: a deck that is half
+            screenshots ingests cleanly and generates from half the material, and this is
+            the only place the teacher would ever find that out. */}
+        {doc.coverage?.message ? (
+          <p className="border-t border-rule pt-4 text-sm text-dim" role="status">
+            {doc.coverage.message}. Questions come from the {doc.coverage.readPages} we could
+            read.
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -351,15 +387,16 @@ function DocumentPanel({
           <>
             <span className="font-display text-xl">{ingest}</span>
             <span className="mt-2 text-sm text-dim">
-              Splitting the text into passages and indexing them. Stay on this page.
+              Reading the file and indexing it. Stay on this page.
             </span>
           </>
         ) : (
           <>
-            <span className="font-display text-xl">Drop a lecture PDF here</span>
+            <span className="font-display text-xl">Drop a lecture PDF or PowerPoint here</span>
             <span className="mt-2 text-sm text-dim">
-              Or click to choose one. Up to {MAX_MB}MB, and it has to contain real text.
-              Scans of paper are rejected.
+              Or click to choose one. Up to {MAX_MB}MB. A PDF has to contain real text —
+              scans of paper are rejected. A PowerPoint can have text in its images; we read
+              those.
             </span>
           </>
         )}
@@ -368,7 +405,7 @@ function DocumentPanel({
         ref={fileRef}
         id="pdf"
         type="file"
-        accept="application/pdf"
+        accept={ACCEPT_ATTRIBUTE}
         className="sr-only"
         disabled={Boolean(ingest)}
         onChange={(e) => {

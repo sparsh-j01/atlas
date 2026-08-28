@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth'
 import {
+  documentCoverage,
   getDocument,
   getLatestJob,
   retryDocument,
@@ -81,7 +82,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // 200 even for a stage failure: the request succeeded, the ingestion did not, and the
   // body says which. A 5xx here would tell the client to retry the HTTP call, which is the
   // wrong remedy for "this PDF has no text layer".
-  return NextResponse.json({ ...publicOutcome, error: failureMessage(errorCode) })
+  return NextResponse.json({
+    ...publicOutcome,
+    error: failureMessage(errorCode),
+    // Only once, at the end: mid-run the numbers are still moving, and a page the OCR stage
+    // has not reached yet would be reported as unread when it is about to be rescued.
+    coverage: outcome.done ? await documentCoverage(id) : undefined,
+  })
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -100,5 +107,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     pageCount: doc.pageCount,
     attempt: job?.attempt ?? 0,
     error: failureMessage(job?.errorCode),
+    coverage: doc.status === 'ready' ? await documentCoverage(id) : undefined,
   })
 }
