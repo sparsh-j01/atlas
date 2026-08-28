@@ -190,8 +190,51 @@ export const documentPages = pgTable(
     // The immutable extracted source. Nothing rewrites this — structure detection returns
     // offsets into it and the chunker slices it. See lib/ai/structure.ts.
     rawText: text('raw_text').notNull(),
+    // Text OCR recovered from this page's images, kept SEPARATE from raw_text rather than
+    // merged into it. raw_text is what the file actually contained; ocr_text is a machine's
+    // reading of a picture, and the two have different reliability. Keeping them apart also
+    // means re-running OCR never rewrites the digital text, and a page with NULL here joins
+    // to byte-identical document text — which is what makes the PDF path provably unchanged.
+    ocrText: text('ocr_text'),
+    // digital | ocr | mixed — where this page's text came from, for the UI and for anyone
+    // reading a citation later.
+    textSource: text('text_source').notNull().default('digital'),
+    // Why this page produced no text: parse_error | empty | image_only. NULL when it did.
+    // Recorded rather than dropped — see lib/ingest/coverage.ts.
+    unreadReason: text('unread_reason'),
   },
   (t) => [uniqueIndex('document_pages_doc_page_idx').on(t.documentId, t.pageNumber)],
+).enableRLS()
+
+// Images embedded in a source document, recorded so the OCR stage knows what to read.
+//
+// The BYTES ARE NOT COPIED HERE. `entry_path` points at the file inside the already-stored
+// .pptx, so there is one object per upload rather than one per image: deletion still
+// cascades from the document row, there is no second storage lifetime to get wrong, and no
+// second place a tenant boundary has to be enforced. Reading an image means opening the
+// .pptx the owner already uploaded, which is a check that already exists.
+export const documentAssets = pgTable(
+  'document_assets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    pageNumber: integer('page_number').notNull(),
+    /** Position within the page, so two images on one slide stay distinguishable. */
+    assetIndex: integer('asset_index').notNull(),
+    /** Path INSIDE the stored source file, e.g. "ppt/media/image3.png". */
+    entryPath: text('entry_path').notNull(),
+    mimeType: text('mime_type').notNull(),
+    /** pending | done | skipped | failed. `skipped` is a format OCR cannot read. */
+    ocrStatus: text('ocr_status').notNull().default('pending'),
+    ocrText: text('ocr_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('document_assets_doc_page_index_idx').on(t.documentId, t.pageNumber, t.assetIndex),
+    index('document_assets_doc_status_idx').on(t.documentId, t.ocrStatus),
+  ],
 ).enableRLS()
 
 export const documentSections = pgTable(
@@ -311,6 +354,7 @@ export const ingestionJobs = pgTable(
 export type Document = InferSelectModel<typeof documents>
 export type IngestionJob = InferSelectModel<typeof ingestionJobs>
 export type DocumentPage = InferSelectModel<typeof documentPages>
+export type DocumentAsset = InferSelectModel<typeof documentAssets>
 export type DocumentSection = InferSelectModel<typeof documentSections>
 export type Chunk = InferSelectModel<typeof chunks>
 export type Embedding = InferSelectModel<typeof embeddings>
