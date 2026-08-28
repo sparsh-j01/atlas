@@ -1,0 +1,96 @@
+{
+  "runId": "3ba9763f",
+  "timestamp": "2026-08-28T13:33:54.855Z",
+  "corpusVersion": "golden-corpus-v1",
+  "documentId": "openstax-social-psychology",
+  "model": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  },
+  "design": {
+    "repetitions": 3,
+    "queries": 5
+  },
+  "metrics": {
+    "repetitions": 3,
+    "queriesPerRepetition": 5,
+    "totalObservations": 15,
+    "successfulRuns": 15,
+    "failedRuns": 0,
+    "inconclusiveRuns": 0,
+    "successRate": 1,
+    "stableQueries": 5,
+    "unstableQueries": 0,
+    "stabilityRate": 1,
+    "regenerationCount": 0,
+    "validationFailureCount": 0,
+    "groundingFailureCount": 0,
+    "meanEndToEndLatencyMs": 16621.466666666667,
+    "p95EndToEndLatencyMs": 17352,
+    "stdDevEndToEndLatencyMs": 494.32694020205275,
+    "failureClassDistribution": {
+      "transient": 0,
+      "systematic": 0,
+      "expected_refusal": 0,
+      "unexpected": 0
+    },
+    "failureReasonDistribution": {},
+    "perQuery": [
+      {
+        "queryId": "sp-d1",
+        "repetitions": 3,
+        "successes": 3,
+        "successRate": 1,
+        "stable": true,
+        "failureClass": null,
+        "failureReasons": {},
+        "meanLatencyMs": 16814,
+        "stdDevLatencyMs": 787.5963433129943
+      },
+      {
+        "queryId": "sp-d2",
+        "repetitions": 3,
+        "successes": 3,
+        "successRate": 1,
+        "stable": true,
+        "failureClass": null,
+        "failureReasons": {},
+        "meanLatencyMs": 16480,
+        "stdDevLatencyMs": 133.13151392514095
+      },
+      {
+        "queryId": "sp-d3",
+        "repetitions": 3,
+        "successes": 3,
+        "successRate": 1,
+        "stable": true,
+        "failureClass": null,
+        "failureReasons": {},
+        "meanLatencyMs": 16681.666666666668,
+        "stdDevLatencyMs": 488.968642484703
+      },
+      {
+        "queryId": "sp-k1",
+        "repetitions": 3,
+        "successes": 3,
+        "successRate": 1,
+        "stable": true,
+        "failureClass": null,
+        "failureReasons": {},
+        "meanLatencyMs": 16737.666666666668,
+        "stdDevLatencyMs": 137.31836488006013
+      },
+      {
+        "queryId": "sp-k2",
+        "repetitions": 3,
+        "successes": 3,
+        "successRate": 1,
+        "stable": true,
+        "failureClass": null,
+        "failureReasons": {},
+        "meanLatencyMs": 16394,
+        "stdDevLatencyMs": 790.9557509747306
+      }
+    ]
+  }
+}
