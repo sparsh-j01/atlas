@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X } from '@phosphor-icons/react/ssr'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
+import { resolveRoster } from '@/lib/realtime/aggregate'
 import { openHostChannel, openSessionChannel } from '@/lib/realtime/channels'
 import { EVENTS } from '@/lib/realtime/events'
 import type {
@@ -79,7 +80,16 @@ export function HostConsole({
     }
     setSlide(s)
   }, [])
-  const [roster, setRoster] = useState<PresenceState[]>([])
+  // The roster is TWO sources, deliberately. Presence says which participant ids are
+  // currently connected; it is client-written, so nothing rendered comes out of it. The
+  // names and avatars come from GET /roster, which reads the participants table the join
+  // endpoint wrote after sanitizeNickname. Rendering the intersection means an id nobody
+  // was issued resolves to no row and never reaches the projector — which is what stops
+  // anyone in the room from tracking presence under an arbitrary nickname and putting it
+  // on the wall past the filter. See app/api/sessions/[code]/roster/route.ts.
+  const [liveIds, setLiveIds] = useState<string[]>([])
+  const [named, setNamed] = useState<Map<string, PresenceState>>(() => new Map())
+  const roster = resolveRoster(liveIds, named)
   const [answered, setAnswered] = useState(initialAnswered)
   const [correctId, setCorrectId] = useState<string | null>(initialCorrectId)
   const [aggregate, setAggregate] = useState<AggregateMcq | null>(initialAggregate)
@@ -157,8 +167,15 @@ export function HostConsole({
 
   async function kick(participantId: string) {
     await call('kick', { participantId })
-    // Presence drops them when their phone leaves the channel, so the roster corrects
-    // itself; no local list surgery to keep in sync with the server.
+    // Take the name off the projector on the click. Presence still lists them until their
+    // phone leaves the channel, and the roster refetch only fires when the id set changes,
+    // so without this the name a host just removed stays on the wall for another round
+    // trip — which is the one moment this control exists for.
+    setNamed((prev) => {
+      const next = new Map(prev)
+      next.delete(participantId)
+      return next
+    })
   }
 
   async function end() {
@@ -252,7 +269,12 @@ export function HostConsole({
       })
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState<PresenceState>()
-        setRoster(Object.values(state).flatMap((entries) => entries.slice(0, 1)))
+        // Ids only. Whatever else the payload carries is a string the client chose.
+        setLiveIds(
+          Object.values(state).flatMap((entries) =>
+            typeof entries[0]?.participantId === 'string' ? [entries[0].participantId] : [],
+          ),
+        )
       })
       .subscribe()
     return () => {
@@ -260,6 +282,37 @@ export function HostConsole({
       supabase.removeChannel(host)
     }
   }, [code, showSlide])
+
+  // Resolve connected ids to server-issued names. Keyed on the id set rather than on "is
+  // there an id I don't know", because an id the server will never return — the forged case
+  // — would make that condition permanently true and refetch forever.
+  // ponytail: one query per change to the set of connected ids, which is one per join or
+  // leave. Fine at 300 (the join route's room cap) with an index on session_id. If a room
+  // ever churns hard enough for that to show, debounce the effect rather than trusting the
+  // presence payload again.
+  const namedFor = useRef('')
+  useEffect(() => {
+    const key = [...liveIds].sort().join(',')
+    if (key === namedFor.current) return
+    namedFor.current = key
+    // Nobody connected: nothing to resolve. The stale map is not cleared because `roster`
+    // is derived from liveIds, so an empty set already renders an empty lobby.
+    if (liveIds.length === 0) return
+    let cancelled = false
+    fetch(`/api/sessions/${code}/roster`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setNamed(new Map((data.roster as PresenceState[]).map((p) => [p.participantId, p])))
+      })
+      .catch(() => {
+        // Best-effort, like every other read here: a failed fetch leaves the last known
+        // roster on screen rather than blanking the lobby mid-class.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [code, liveIds])
 
   // Tick only while a question is open; the countdown is the only thing that needs `now`.
   useEffect(() => {

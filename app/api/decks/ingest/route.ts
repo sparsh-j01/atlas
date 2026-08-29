@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server'
+import { and, eq, gt, sql } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { documents } from '@/lib/db/schema'
 import { getAuthUser } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sha256 } from '@/lib/crypto'
@@ -42,9 +45,35 @@ function bad(status: number, error: string) {
   return NextResponse.json({ error }, { status })
 }
 
+/** Documents one account may upload per hour.
+ *
+ *  Both generation routes already cap themselves at 10/hour against the decks table, but
+ *  ingestion is the more expensive half and had no ceiling at all: every accepted upload
+ *  buys 25MB of storage plus, once processed, one Gemini structure-detection call per 40k
+ *  characters and an embedding call for every chunk. The content-hash dedupe is not a
+ *  limit — it only catches byte-identical re-uploads, and one flipped byte is a new
+ *  document with a fresh MAX_INGESTION_ATTEMPTS budget. So a single signed-in account
+ *  could spend the project's whole provider quota in a loop.
+ *
+ *  20, not 10: uploading is how a teacher gets material in, and they may reasonably load a
+ *  term's worth of slides in one sitting. It is a ceiling on abuse, not a usage budget.
+ *  ponytail: counted per hour against created_at, same shape as GENERATIONS_PER_HOUR and
+ *  correct across serverless instances because the rows are the state. Per-account storage
+ *  totals are the next limit worth adding, once anything actually bills for them. */
+const UPLOADS_PER_HOUR = 20
+
 export async function POST(req: Request) {
   const user = await getAuthUser()
   if (!user) return bad(401, 'Sign in to upload a document.')
+
+  // Before reading the body: a rejected upload should cost nothing to refuse.
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(documents)
+    .where(and(eq(documents.ownerId, user.id), gt(documents.createdAt, hourAgo)))
+  if (n >= UPLOADS_PER_HOUR)
+    return bad(429, `Upload limit reached (${UPLOADS_PER_HOUR}/hour). Try again later.`)
 
   // Reject on the DECLARED length before reading a single byte. Cheap, and it is the only
   // check that can refuse an oversized upload without paying for it first.

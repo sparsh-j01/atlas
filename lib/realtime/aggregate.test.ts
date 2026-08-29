@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tallyMcq, rankLeaderboard } from './aggregate'
+import { tallyMcq, rankLeaderboard, resolveRoster } from './aggregate'
 
 describe('tallyMcq', () => {
   it('counts per option and totals', () => {
@@ -44,5 +44,37 @@ describe('rankLeaderboard', () => {
   it('caps at the limit', () => {
     const many = Array.from({ length: 20 }, (_, i) => p(`p${i}`, i))
     expect(rankLeaderboard(many, null, 10)).toHaveLength(10)
+  })
+})
+
+describe('resolveRoster', () => {
+  const named = new Map([
+    ['real-1', { participantId: 'real-1', nickname: 'Ada', avatarSeed: 'Ada' }],
+    ['real-2', { participantId: 'real-2', nickname: 'Grace', avatarSeed: 'Grace' }],
+  ])
+
+  it('renders server-issued names, in presence order', () => {
+    expect(resolveRoster(['real-2', 'real-1'], named).map((p) => p.nickname)).toEqual([
+      'Grace',
+      'Ada',
+    ])
+  })
+
+  // The reason this function exists. A presence payload is client-written and the RLS
+  // policy on realtime.messages cannot tell a participant from anyone else holding the
+  // public anon key and the projected room code. An id the join endpoint never issued has
+  // no row to resolve against, so it must render nothing at all — otherwise a nickname
+  // that never passed sanitizeNickname lands on a classroom projector, and /kick cannot
+  // remove it because there is no participants row to delete.
+  it('drops ids the server never issued', () => {
+    expect(resolveRoster(['real-1', 'forged'], named).map((p) => p.nickname)).toEqual(['Ada'])
+  })
+
+  it('renders nothing when every id is forged', () => {
+    expect(resolveRoster(['forged-1', 'forged-2'], named)).toEqual([])
+  })
+
+  it('is empty for an empty room', () => {
+    expect(resolveRoster([], named)).toEqual([])
   })
 })
