@@ -20,11 +20,18 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
+              // fonts.googleapis.com serves the stylesheet the landing page @imports
+              // (Caveat, Playfair Display, DM Sans — app/globals.css line 2). Without it
+              // the CSP blocks the import silently and the whole landing page falls back
+              // to system fonts, which is most of what the design is.
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               // api.dicebear.com serves every participant avatar (lib/avatars.ts). Without it
               // here the leaderboard, podium and host roster render broken images.
               "img-src 'self' data: blob: https://api.dicebear.com",
-              "font-src 'self' data:",
+              // The stylesheet above resolves its actual font files from gstatic. Allowing
+              // googleapis without gstatic loads the @font-face rules and then blocks every
+              // file they point at — the same fallback, one step later.
+              "font-src 'self' data: https://fonts.gstatic.com",
               // wss:// is listed explicitly. Supabase Realtime connects over a WebSocket, and
               // Chrome does not accept it under the https:// source expression alone, so
               // without this every live room silently fails to subscribe.
