@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { createRetriever } from '@/lib/ai/retrieve'
 import { createGenerateClient, generationConfig, type GenerateFn } from '@/lib/ai/generate'
+import { JUDGE_MAX_TOKENS } from '@/lib/ai/verify'
 import { GOLDEN_QUERIES, GOLDEN_SET_VERSION } from '../documents/golden-queries'
 import { CORPUS_DOCUMENTS, CORPUS_VERSION, corpusFullText } from '../documents/openstax-corpus'
 import { EVAL_OWNER_ID, evalDocumentId } from '../seed-ids'
@@ -371,7 +372,7 @@ async function main(): Promise<void> {
       generationConfig: {
         thinkingBudget: 0,
         slideMaxTokens: 1000,
-        judgeMaxTokens: 300,
+        judgeMaxTokens: JUDGE_MAX_TOKENS,
         concurrency: 1,
         requestsPerMinute: RPM,
       },

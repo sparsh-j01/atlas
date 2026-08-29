@@ -1,0 +1,76 @@
+{
+  "runId": "e3219b59",
+  "timestamp": "2026-08-28T18:26:11.143Z",
+  "corpusVersion": "golden-corpus-v1",
+  "goldenSetVersion": "golden-queries-v1",
+  "documentId": "openstax-social-psychology",
+  "model": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  },
+  "baselineContext": {
+    "originalTokens": 25995,
+    "usedTokens": 25995,
+    "truncated": false,
+    "droppedFraction": 0
+  },
+  "comparability": {
+    "publishable": true,
+    "reason": "baseline saw the whole document (25995 tokens, within the 120000-token budget)"
+  },
+  "arms": {
+    "baseline": {
+      "groundedRate": 1,
+      "supportedGenerationRate": 1,
+      "schemaValidRate": 1,
+      "unsupportedGenerationCount": 2,
+      "supportedGenerationCount": 14,
+      "meanLatencyMs": 17298.38888888889,
+      "evaluableQueries": 18,
+      "inconclusiveCount": 0
+    },
+    "rag": {
+      "groundedRate": 1,
+      "supportedGenerationRate": 1,
+      "schemaValidRate": 0.8695652173913043,
+      "unsupportedGenerationCount": 2,
+      "supportedGenerationCount": 14,
+      "meanLatencyMs": 19164.777777777777,
+      "evaluableQueries": 18,
+      "inconclusiveCount": 0
+    }
+  },
+  "deltas": [
+    {
+      "metric": "groundedness",
+      "baseline": 1,
+      "rag": 1,
+      "delta": 0
+    },
+    {
+      "metric": "supported generation",
+      "baseline": 1,
+      "rag": 1,
+      "delta": 0
+    },
+    {
+      "metric": "schema valid",
+      "baseline": 1,
+      "rag": 0.8695652173913043,
+      "delta": -0.13043478260869568
+    },
+    {
+      "metric": "unsupported generation",
+      "baseline": 2,
+      "rag": 2,
+      "delta": 0
+    },
+    {
+      "metric": "mean latency ms",
+      "baseline": 17298.38888888889,
+      "rag": 19164.777777777777,
+      "delta": -1866.3888888888869
+    }
+  ],
+  "providerCalls": 101
+}

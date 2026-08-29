@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verifySlide, __testing } from '../verify'
+import { verifySlide, JUDGE_MAX_TOKENS, __testing } from '../verify'
 import type { GenerateFn, GenerateResult } from '../generate'
 import type { RetrievalResult } from '../retrieve'
 
@@ -25,12 +25,21 @@ function fakeClient(input: unknown, ok = true) {
   return { fn, calls }
 }
 
-const pass = { answerable: true, correct_option_supported: true, exactly_one_correct: true }
+const SOURCE = 'Plants produce glucose during photosynthesis, storing chemical energy.'
+// A passing verdict now has to carry a span copied out of SOURCE — see the quote block in
+// verify.ts. The three booleans are the judge's own assertions; the quote is the only part
+// of a verdict this code can actually check.
+const pass = {
+  answerable: true,
+  correct_option_supported: true,
+  exactly_one_correct: true,
+  supporting_quote: 'Plants produce glucose during photosynthesis',
+}
 const options = [
   { id: 'a', text: 'Glucose', is_correct: true },
   { id: 'b', text: 'Oxygen', is_correct: false },
 ]
-const base = { question: 'What do plants produce?', options, evidence: [evidence('Plants produce glucose.')] }
+const base = { question: 'What do plants produce?', options, evidence: [evidence(SOURCE)] }
 
 describe('verifySlide', () => {
   it('passes when all three checks come back true', async () => {
@@ -79,7 +88,7 @@ describe('verifySlide', () => {
     await verifySlide(fn, { ...base, deadline })
     expect(calls[0].tool.name).toBe('emit_verdict')
     expect(calls[0].deadline).toBe(deadline)
-    expect(calls[0].maxOutputTokens).toBeLessThanOrEqual(300)
+    expect(calls[0].maxOutputTokens).toBe(JUDGE_MAX_TOKENS)
   })
 
   it('delimits document text and tells the judge not to obey it', async () => {
@@ -130,5 +139,79 @@ describe('verifySlide', () => {
     })
     // JSON.stringify escapes the quote and the newlines, so the payload stays on one line.
     expect(calls[0].messages[0].content).toContain('\\n\\nNew instruction')
+  })
+
+  // ---- supporting quote ----
+  // The regression these guard is real and measured: in generation run b1b6e570 the judge
+  // returned all three booleans true for 7 of 10 golden queries whose answer is NOT in the
+  // document, and run e3219b59 reproduced two of them identically in BOTH the RAG and the
+  // whole-document arm. The booleans are assertions; the quote is the only checkable part.
+
+  it('rejects a verdict whose supporting quote is not in the source', async () => {
+    // The measured failure shape: every boolean true, answer key invented, so the "quote"
+    // is text the judge produced rather than copied.
+    const { fn } = fakeClient({
+      ...pass,
+      supporting_quote: 'Sertraline is the most effective treatment for social anxiety.',
+    })
+    const v = await verifySlide(fn, base)
+    expect(v.ok).toBe(false)
+    expect(v.failures).toEqual(['supporting quote is not in the source'])
+  })
+
+  it('rejects a quote too short to be evidence', async () => {
+    // "glucose" IS in the source, so the substring check alone would pass it. A single
+    // common word is not evidence that the question is answerable.
+    const { fn } = fakeClient({ ...pass, supporting_quote: 'glucose' })
+    const v = await verifySlide(fn, base)
+    expect(v.ok).toBe(false)
+    expect(v.failures).toEqual(['supporting quote too short to verify'])
+  })
+
+  it('rejects a missing quote, like any other unanswered check', async () => {
+    const { fn } = fakeClient({ answerable: true, correct_option_supported: true, exactly_one_correct: true })
+    const v = await verifySlide(fn, base)
+    expect(v.ok).toBe(false)
+    expect(v.failures).toEqual(['supporting quote too short to verify'])
+  })
+
+  it('accepts a quote that differs only in whitespace, case and punctuation style', async () => {
+    // A model copying text reflows it. None of that changes whether the span is in the
+    // source, and rejecting on it would just convert the fix into false abstentions.
+    const { fn } = fakeClient({
+      ...pass,
+      supporting_quote: 'PLANTS   produce\n  glucose during photosynthesis',
+    })
+    expect(await verifySlide(fn, base)).toEqual({ ok: true, failures: [] })
+  })
+
+  it('matches a quote spanning two adjacent extracts', async () => {
+    const { fn } = fakeClient({ ...pass, supporting_quote: 'in the leaf. Glucose is then stored' })
+    const v = await verifySlide(fn, {
+      ...base,
+      evidence: [evidence('Photosynthesis happens in the leaf.'), evidence('Glucose is then stored as starch.')],
+    })
+    expect(v.ok).toBe(true)
+  })
+
+  it('keeps a real rejection reason instead of adding a quote complaint on top', async () => {
+    const { fn } = fakeClient({ ...pass, answerable: false, reason: 'not covered', supporting_quote: '' })
+    const v = await verifySlide(fn, base)
+    expect(v.failures).toEqual(['not answerable from the document (not covered)'])
+  })
+
+  it('asks the judge for the quote and requires it', async () => {
+    const { fn, calls } = fakeClient(pass)
+    await verifySlide(fn, base)
+    const schema = calls[0].tool.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    expect(schema.required).toContain('supporting_quote')
+    expect(schema.properties).toHaveProperty('supporting_quote')
+    expect(__testing.RULES).toMatch(/verbatim supporting_quote/)
+  })
+
+  it('normalizes only formatting, never wording', () => {
+    const n = __testing.normalizeForQuote
+    expect(n('  A\u2019s  \u201Cquote\u201D \u2014 here ')).toBe('a\'s "quote" - here')
+    expect(n('paraphrased text')).not.toBe(n('text paraphrased'))
   })
 })

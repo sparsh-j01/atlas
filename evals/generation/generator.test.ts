@@ -80,9 +80,18 @@ function scriptedClient(responses: GenerateResult[]): { fn: GenerateFn; calls: n
 }
 
 const slideOk = (): GenerateResult => ({ ok: true, input: GOOD_SLIDE })
-const judgeOk = (): GenerateResult => ({
+
+/** A passing verdict must carry a span copied from the evidence it was shown — `verifySlide`
+ *  checks it against that text, so the quote has to come from the same slice the test feeds
+ *  in, and a test that changes the evidence window has to change the quote with it. */
+const judgeOk = (quote = 'Diffusion of responsibility is the tendency for no one in a group to help'): GenerateResult => ({
   ok: true,
-  input: { answerable: true, correct_option_supported: true, exactly_one_correct: true },
+  input: {
+    answerable: true,
+    correct_option_supported: true,
+    exactly_one_correct: true,
+    supporting_quote: quote,
+  },
 })
 const judgeNo = (): GenerateResult => ({
   ok: true,
@@ -90,6 +99,7 @@ const judgeNo = (): GenerateResult => ({
     answerable: false,
     correct_option_supported: false,
     exactly_one_correct: false,
+    supporting_quote: '',
     reason: 'the extracts do not cover this',
   },
 })
@@ -111,7 +121,7 @@ describe('evaluateQueryGeneration', () => {
   it('is NOT grounded when the accepted slide came from evidence that misses the gold interval', async () => {
     // The judge is satisfied, but the retrieved chunk does not overlap the gold coordinates.
     // This is the only metric that can disagree with the judge, so it has to be able to.
-    const { fn } = scriptedClient([slideOk(), judgeOk()])
+    const { fn } = scriptedClient([slideOk(), judgeOk('stander apathy follows from it directly.')])
     const offGold = evidence(0.82, 120, 160) // past the gold span
     const out = await evaluateQueryGeneration(answerable, doc, FULL_TEXT, offGold, fn)
 
