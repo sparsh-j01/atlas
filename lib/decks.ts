@@ -1,5 +1,7 @@
 import 'server-only'
+import { cache } from 'react'
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
+import { QueryBuilder } from 'drizzle-orm/pg-core'
 import { db } from '@/lib/db'
 import { decks, sessions, slides } from '@/lib/db/schema'
 import type { SlideConfig } from '@/lib/slides'
@@ -17,7 +19,32 @@ export type DeckListItem = {
   slideCount: number
 }
 
-export async function listDecks(ownerId: string): Promise<DeckListItem[]> {
+/**
+ * Slides per deck, as a correlated subquery.
+ *
+ * Built through QueryBuilder rather than written as one raw `sql` template, because in a
+ * SELECT-field position Drizzle emits interpolated columns UNQUALIFIED. The hand-written
+ * version came out as `(select count(*)::int from "slides" where "deck_id" = "id")` — inside
+ * the subquery both names resolve against `slides`, so the predicate was `slides.deck_id =
+ * slides.id`, never true, and every deck on the dashboard read "0 slides". The builder emits
+ * `"slides"."deck_id" = "decks"."id"`.
+ *
+ * QueryBuilder, not `db`: `db` is a lazy Proxy that opens a connection on first property
+ * access, and this is evaluated at module load.
+ *
+ * `::int` because `count(*)` is bigint, which postgres.js hands back as a string.
+ */
+const slideCountSql = sql<number>`(${new QueryBuilder()
+  .select({ n: sql`count(*)::int` })
+  .from(slides)
+  .where(eq(slides.deckId, decks.id))})`
+
+// Deliberately not `async`: a Drizzle select is a thenable, and an async wrapper would adopt
+// (i.e. run) it on call. Returning the builder lets lib/decks.test.ts read `.toSQL()` without
+// a database — which is the only way to assert the correlation below, since that only emits
+// wrongly in a select-field position. Callers await it exactly as before. Re-adding `async`
+// fails the test with a connection error rather than silently un-testing the query.
+export function listDecks(ownerId: string): Promise<DeckListItem[]> {
   return db
     .select({
       id: decks.id,
@@ -25,14 +52,19 @@ export async function listDecks(ownerId: string): Promise<DeckListItem[]> {
       description: decks.description,
       status: decks.status,
       updatedAt: decks.updatedAt,
-      slideCount: sql<number>`(select count(*)::int from ${slides} where ${slides.deckId} = ${decks.id})`,
+      slideCount: slideCountSql,
     })
     .from(decks)
     .where(eq(decks.ownerId, ownerId))
     .orderBy(desc(decks.updatedAt))
 }
 
-export async function getDeckWithSlides(deckId: string, ownerId: string) {
+// cache(): the edit page calls this AND its generateMetadata does, and both run in the same
+// request. Without it the deck title in the tab costs a second round-trip.
+export const getDeckWithSlides = cache(async function getDeckWithSlides(
+  deckId: string,
+  ownerId: string,
+) {
   const [deck] = await db
     .select()
     .from(decks)
@@ -41,7 +73,7 @@ export async function getDeckWithSlides(deckId: string, ownerId: string) {
   if (!deck) return null
   const rows = await db.select().from(slides).where(eq(slides.deckId, deckId)).orderBy(asc(slides.position))
   return { deck, slides: rows }
-}
+})
 
 // Guard for every deck mutation: the deck must be the caller's AND not currently live. A
 // non-ended session freezes the deck so its slides can't shift under a running game
