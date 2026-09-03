@@ -44,7 +44,7 @@ export function PollCard({
     <div className="flex flex-col gap-3">
       {/* Same reasoning as the MCQ prompt: a one-line input clipped the question mid-word. */}
       <textarea
-        className={`${inputClass} min-h-12 resize-y [field-sizing:content]`}
+        className={`${inputClass} w-full min-h-12 resize-y [field-sizing:content]`}
         rows={2}
         placeholder="What do you want to ask the room?"
         aria-label={`Poll question for ${name}`}

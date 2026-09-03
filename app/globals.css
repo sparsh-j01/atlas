@@ -56,6 +56,12 @@
   /* Sticky yellow. One element per screen, maximum, never inside a list. */
   --note: #ffe681;
 
+  /* The room's ground, hoisted out of .stage so <body> can reach it. A .stage screen is
+     min-h-screen, but the body underneath it kept the cream ground, so rubber-banding past
+     the top or bottom edge flashed cream — on a projector, in a dimmed hall. Used by .stage
+     itself and by the body:has(.stage) rule in @layer base, so the value stays in one place. */
+  --stage-ground: #111111;
+
   /* Offset right and down, warm brown, never black or centred. That offset is what
      makes a card read as paper on a lit desk instead of a floating div. */
   --lift: 6px 8px 20px rgb(43 39 31 / 0.08);
@@ -67,7 +73,7 @@
 /* The room. Projector, participant phone once the session is live, and the landing
    page's own dark section. Only the values change. */
 .stage {
-  --ground: #111111;
+  --ground: var(--stage-ground);
   --raised: #171717;
   --overlay: #1e1e1e;
   --rule: #333333;
@@ -154,6 +160,16 @@
     color: var(--ink);
     font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* When the page IS the room, the page behind it has to be the room too. The host console
+     and the phone-during-play both put .stage on a min-h-screen element, which covers the
+     viewport but not the overscroll gutter — so a flick past the end showed cream behind a
+     dark screen, and the scrollbar rendered light. Not a token swap: body sits outside
+     .stage, so it reads --stage-ground directly. */
+  body:has(.stage) {
+    background: var(--stage-ground);
+    color-scheme: dark;
   }
 
   /* One focus treatment for the whole app, so no component has to remember. */

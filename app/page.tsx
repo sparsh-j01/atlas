@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { MarketingNav, SiteFooter, SiteHeader } from '@/components/SiteHeader'
 import { avatarUrl } from '@/lib/avatars'
-import { btn } from '@/components/ui'
+import { btn, tilt } from '@/components/ui'
 
 // The mock tally in the hero. Percentages are illustrative, not a claim.
 const answers = [
@@ -114,7 +114,9 @@ export default function Home() {
           </p>
 
           <div className="hero-buttons">
-            <Link href="/login?mode=signup" className={btn('primary', 'xl')}>
+            {/* The one tilt in the product. docs/design.md §5: the hero CTA on the marketing
+                page keeps the comp's rotate(-1deg), and nothing else does. */}
+            <Link href="/login?mode=signup" className={`${btn('primary', 'xl')} ${tilt}`}>
               Create a classroom
             </Link>
             <Link href="/play" className={btn('secondary', 'xl')}>

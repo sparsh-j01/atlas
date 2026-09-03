@@ -210,7 +210,7 @@ export function OptionRows({
         <div key={o.id} className="flex items-center gap-2">
           {lead?.(o.id)}
           <input
-            className={inputClass}
+            className={`${inputClass} w-full`}
             placeholder="Option text"
             // Position, not the option's own text: this is the field you are typing INTO, and
             // a name that changes with every keystroke is re-announced on every keystroke.

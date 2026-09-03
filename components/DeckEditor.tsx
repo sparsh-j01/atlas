@@ -126,7 +126,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
 
       <div className="mt-6 flex flex-col gap-3">
         <input
-          className={`${inputCls} font-display border-transparent bg-transparent px-0 text-3xl hover:border-transparent focus:border-transparent`}
+          className={`${inputCls} w-full font-display border-transparent bg-transparent px-0 text-3xl hover:border-transparent focus:border-transparent`}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => run(updateDeckAction(deck.id, { title }), 'Could not save the title.')}
@@ -134,7 +134,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           aria-label="Deck title"
         />
         <textarea
-          className={`${inputCls} resize-y border-transparent bg-transparent px-0 text-dim hover:border-transparent focus:border-transparent`}
+          className={`${inputCls} w-full resize-y border-transparent bg-transparent px-0 text-dim hover:border-transparent focus:border-transparent`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onBlur={() =>
@@ -222,25 +222,31 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
               >
                 <DotsSixVertical size={18} weight="regular" />
               </span>
+              {/* aria-disabled, not disabled. Moving a slide to the top disables its own up
+                  caret, and the browser drops focus off a disabled element to <body> — so
+                  the keyboard path lost the user's place in a long deck at exactly the moment
+                  the move succeeded. aria-disabled keeps the button focusable and announced
+                  as unavailable; `move` already returns early at either end, so the click
+                  does nothing on its own. */}
               <button
                 type="button"
                 onClick={() => move(s.id, -1)}
-                disabled={i === 0}
+                aria-disabled={i === 0}
                 // Names the slide it moves. There is one pair of these per slide, so a
                 // bare "Move slide up" is six identical buttons to a screen reader.
                 aria-label={`Move slide ${i + 1} up`}
                 title="Move up"
-                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink disabled:opacity-25"
+                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink aria-disabled:pointer-events-none aria-disabled:opacity-25"
               >
                 <CaretUp size={16} weight="regular" />
               </button>
               <button
                 type="button"
                 onClick={() => move(s.id, 1)}
-                disabled={i === ordered.length - 1}
+                aria-disabled={i === ordered.length - 1}
                 aria-label={`Move slide ${i + 1} down`}
                 title="Move down"
-                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink disabled:opacity-25"
+                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink aria-disabled:pointer-events-none aria-disabled:opacity-25"
               >
                 <CaretDown size={16} weight="regular" />
               </button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { X } from '@phosphor-icons/react/ssr'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
@@ -36,6 +37,7 @@ type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 // than waiting on the session's own broadcast — best-effort Realtime shouldn't strand the host.
 export function HostConsole({
   code,
+  joinHost,
   total,
   initialIndex,
   initialStatus,
@@ -48,6 +50,9 @@ export function HostConsole({
   initialTimeLimitMs,
 }: {
   code: string
+  /** The domain the room joins on, resolved server-side so the projector never paints a
+   *  half-written URL. See app/host/[code]/page.tsx. */
+  joinHost: string
   total: number
   initialIndex: number
   initialStatus: string
@@ -105,7 +110,6 @@ export function HostConsole({
   // The full window, kept so the drain bar knows what fraction is left. Without it the bar
   // would only know the remaining milliseconds, not the share.
   const [windowMs, setWindowMs] = useState<number | null>(initialTimeLimitMs)
-  const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -151,7 +155,6 @@ export function HostConsole({
     setDeadline(
       data.status === 'active' ? Date.parse(data.serverStartedAt) + data.timeLimitMs : null,
     )
-    setNow(Date.now())
   }
 
   async function reveal() {
@@ -244,7 +247,6 @@ export function HostConsole({
             ? null
             : Date.parse(payload.serverStartedAt) + payload.timeLimitMs,
         )
-        setNow(Date.now())
       })
       .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
         const p = payload as SlideRevealPayload
@@ -314,16 +316,12 @@ export function HostConsole({
     }
   }, [code, liveIds])
 
-  // Tick only while a question is open; the countdown is the only thing that needs `now`.
-  useEffect(() => {
-    if (status !== 'active' || !deadline) return
-    const id = setInterval(() => setNow(Date.now()), 250)
-    return () => clearInterval(id)
-  }, [status, deadline])
-
-  const msLeft = status === 'active' && deadline ? Math.max(0, deadline - now) : null
-  const secondsLeft = msLeft === null ? null : Math.ceil(msLeft / 1000)
-  const fractionLeft = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
+  // The clock no longer lives here. It used to be a 250ms setInterval writing `now` into
+  // this component's state, which re-rendered the WHOLE console four times a second for the
+  // length of every question: the roster (up to 300 rows, each with an <img>), the projector
+  // slide, and during a live poll the pie chart mid-transition. Nothing in that tree reads
+  // the clock. Only two leaves do, and they own their own tick now (see useCountdown).
+  const running = status === 'active' ? deadline : null
   const atLast = index >= total - 1
   // While a question is open the count comes from the leaky-bucket broadcast, which is a
   // throttled estimate — answers landing inside the same 1s window as the last one never
@@ -347,33 +345,19 @@ export function HostConsole({
     // it is the screen on the wall of a dimmed hall, and a full-cream wall behind a
     // question is a flashbang. Nothing below needs to know: the same class strings render
     // on either surface.
-    <main className="stage flex min-h-screen flex-col">
+    <main id="main" className="stage flex min-h-screen flex-col">
+      {/* The page's h1, and it is off-screen for the same reason the deck editor's is: the
+          projector has no room for a title, but the document outline started at h2 with
+          nothing above it. Matches the tab title, so a host with five tabs open hears the
+          same name they read. */}
+      <h1 className="sr-only">Room {code}</h1>
       {/* The drain. A full-width line at the very top is the one countdown cue that reads
           from the back of a hall without stealing space from the question. */}
-      <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
-        {fractionLeft !== null && (
-          <div
-            // scaleX, not width: this transition re-fires every 200ms for the whole answer
-            // window, and `width` is a layout property — on the host it reflows behind the
-            // question, on 100 phones it does it 100 times. A transform is compositor-only.
-            // The bar is a square-edged rectangle, so there is no radius to distort.
-            //
-            // Always --pen. Under 5s this used to flip to --wrong, spending the coral that
-            // means "wrong answer" moments before the reveal used it for exactly that, on
-            // the same two screens. docs/design.md §3 reserves correct/wrong for graded
-            // answers and §8 specifies the drain in --pen; the draining bar and the counting
-            // number already carry urgency without a reserved token.
-            className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear"
-            style={{ transform: `scaleX(${fractionLeft})` }}
-          />
-        )}
-      </div>
+      <DrainBar key={running ?? "idle"} deadline={running} windowMs={windowMs} />
 
       <header className="flex flex-wrap items-end justify-between gap-8 border-b border-rule px-6 py-6 sm:px-10">
         <div>
-          <div className={capCls} suppressHydrationWarning>
-            Join at {typeof window === 'undefined' ? '' : window.location.host}/play
-          </div>
+          <div className={capCls}>Join at {joinHost}/play</div>
           <div className="tabular mt-1 text-5xl leading-none tracking-[0.14em] text-pen sm:text-6xl">
             {code}
           </div>
@@ -383,9 +367,7 @@ export function HostConsole({
           {status !== 'lobby' && status !== 'ended' && (
             <>
               <Stat value={answeredCount} label="answered" />
-              {secondsLeft !== null && (
-                <Stat value={secondsLeft} label="seconds" tone="text-pen" suppress />
-              )}
+              <SecondsStat key={running ?? "idle"} deadline={running} />
             </>
           )}
         </div>
@@ -421,6 +403,15 @@ export function HostConsole({
             <p className="text-center text-sm text-dim">
               Session ended. The code is free for reuse.
             </p>
+            {/* The way out. The control bar below is gated on `status !== 'ended'`, so once a
+                class finishes this section was the whole screen and it carried no link at
+                all — the host's only exit from the last thing they see every session was the
+                browser's back button. */}
+            <div className="flex justify-center">
+              <Link href="/dashboard" className={btn('pen', 'lg')}>
+                Back to your decks
+              </Link>
+            </div>
           </section>
         ) : (
           <>
@@ -490,52 +481,118 @@ export function HostConsole({
       </div>
 
       {status !== 'ended' && (
-        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-rule bg-ground/95 px-6 py-4 backdrop-blur sm:px-10">
-          {status === 'lobby' ? (
-            <button onClick={() => goTo(0)} disabled={busy || total === 0} className={btn('primary', 'xl')}>
-              {busy ? 'Starting' : 'Start the session'}
-            </button>
-          ) : (
-            <>
-              <button onClick={() => goTo(index - 1)} disabled={busy || index <= 0} className={btn('secondary', 'lg')}>
-                Back
-              </button>
-              {status === 'active' && (
-                <button onClick={reveal} disabled={busy} className={btn('primary', 'xl')}>
-                  {/* Same endpoint either way — it closes the answer window. On a quiz that
-                      also discloses the key, which is the whole event; on a poll there is
-                      nothing to disclose, so calling it "Reveal" would promise a result the
-                      room has been watching for the last 30 seconds. */}
-                  {scored ? 'Reveal the answer' : 'Close voting'}
-                </button>
-              )}
-              <button onClick={() => goTo(index + 1)} disabled={busy || atLast} className={btn('secondary', 'lg')}>
-                {status === 'active' ? 'Skip' : 'Next'}
-              </button>
-              <span className="tabular text-sm text-dim">
-                {index + 1} / {total}
-              </span>
-            </>
+        // The error lives INSIDE the sticky bar. It used to render after it, at the end of
+        // the flow, which put it one line past the bottom of a viewport that min-h-screen
+        // had already filled — and a room cannot scroll the screen it is reading, so the
+        // host saw nothing at all. role="alert" was firing for a screen reader and for
+        // nobody else.
+        <div className="sticky bottom-0 border-t border-rule bg-ground/95 backdrop-blur">
+          {error && (
+            <p role="alert" className="px-6 pt-4 text-sm text-wrong sm:px-10">
+              {error}
+            </p>
           )}
-          <div className="ml-auto">
-            <DeleteButton
-              action={end}
-              confirmText="End this session for everyone?"
-              label="End session"
-              pendingLabel="Ending"
-              className={btn('danger', 'md')}
-            />
+          <div className="flex flex-wrap items-center gap-3 px-6 py-4 sm:px-10">
+            {status === 'lobby' ? (
+              <button onClick={() => goTo(0)} disabled={busy || total === 0} className={btn('primary', 'xl')}>
+                {busy ? 'Starting' : 'Start the session'}
+              </button>
+            ) : (
+              <>
+                <button onClick={() => goTo(index - 1)} disabled={busy || index <= 0} className={btn('secondary', 'lg')}>
+                  Back
+                </button>
+                {status === 'active' && (
+                  <button onClick={reveal} disabled={busy} className={btn('primary', 'xl')}>
+                    {/* Same endpoint either way — it closes the answer window. On a quiz that
+                        also discloses the key, which is the whole event; on a poll there is
+                        nothing to disclose, so calling it "Reveal" would promise a result the
+                        room has been watching for the last 30 seconds. */}
+                    {scored ? 'Reveal the answer' : 'Close voting'}
+                  </button>
+                )}
+                <button onClick={() => goTo(index + 1)} disabled={busy || atLast} className={btn('secondary', 'lg')}>
+                  {status === 'active' ? 'Skip' : 'Next'}
+                </button>
+                <span className="tabular text-sm text-dim">
+                  {index + 1} / {total}
+                </span>
+              </>
+            )}
+            <div className="ml-auto">
+              <DeleteButton
+                action={end}
+                confirmText="End this session for everyone?"
+                label="End session"
+                pendingLabel="Ending"
+                className={btn('danger', 'md')}
+              />
+            </div>
           </div>
         </div>
       )}
-
-      {error && (
-        <p role="alert" className="px-6 pb-4 text-sm text-wrong sm:px-10">
-          {error}
-        </p>
-      )}
     </main>
   )
+}
+
+/**
+ * Milliseconds left against a server deadline, re-read on a 250ms tick.
+ *
+ * The tick lives in whichever leaf calls this, never in HostConsole itself. Two components
+ * need the clock and they sit in different parts of the tree, so they each run their own
+ * interval: two timers is the cheap side of the trade, against re-rendering a 300-row roster
+ * and a mid-transition chart four times a second, which is what one shared `now` in the
+ * parent cost. Both read the same `Date.now()` against the same deadline, so the worst skew
+ * between the bar and the number is a quarter of a second on a value rounded to seconds.
+ *
+ * Returns null when nothing is running, which is what unmounts the readout.
+ */
+function useCountdown(deadline: number | null) {
+  // `now` is the only thing the interval writes; the remainder is derived during render, so
+  // there is no setState in the effect and no seeding pass. Callers key these components on
+  // the deadline, which remounts them per question and re-runs this initializer — without
+  // that, `now` would still hold the last tick from the previous slide for up to 250ms.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!deadline) return
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [deadline])
+  return deadline ? Math.max(0, deadline - now) : null
+}
+
+/** The countdown as a full-width line at the very top — the one cue that reads from the back
+ *  of a hall without stealing space from the question. */
+function DrainBar({ deadline, windowMs }: { deadline: number | null; windowMs: number | null }) {
+  const msLeft = useCountdown(deadline)
+  const fraction = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
+  return (
+    <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
+      {fraction !== null && (
+        <div
+          // scaleX, not width: this transition re-fires every 200ms for the whole answer
+          // window, and `width` is a layout property — on the host it reflows behind the
+          // question, on 100 phones it does it 100 times. A transform is compositor-only.
+          // The bar is a square-edged rectangle, so there is no radius to distort.
+          //
+          // Always --pen. Under 5s this used to flip to --wrong, spending the coral that
+          // means "wrong answer" moments before the reveal used it for exactly that, on
+          // the same two screens. docs/design.md §3 reserves correct/wrong for graded
+          // answers and §8 specifies the drain in --pen; the draining bar and the counting
+          // number already carry urgency without a reserved token.
+          className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear"
+          style={{ transform: `scaleX(${fraction})` }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The seconds remaining, beside the player and answered counts. */
+function SecondsStat({ deadline }: { deadline: number | null }) {
+  const msLeft = useCountdown(deadline)
+  if (msLeft === null) return null
+  return <Stat value={Math.ceil(msLeft / 1000)} label="seconds" tone="text-pen" suppress />
 }
 
 /** The room, with a remove control on every player. Shared by the lobby (where it's the main

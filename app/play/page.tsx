@@ -333,7 +333,7 @@ function PlayRoom() {
               inputMode="numeric"
               autoComplete="off"
               placeholder="000000"
-              className={`${inputCls} py-4 text-center tabular text-4xl tracking-[0.3em]`}
+              className={`${inputCls} w-full py-4 text-center tabular text-4xl tracking-[0.3em]`}
             />
           </div>
 
@@ -347,7 +347,7 @@ function PlayRoom() {
               onChange={(e) => setNickname(e.target.value)}
               maxLength={24}
               placeholder="Pick anything"
-              className={`${inputCls} py-4 text-xl`}
+              className={`${inputCls} w-full py-4 text-xl`}
             />
           </div>
 

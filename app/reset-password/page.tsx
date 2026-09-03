@@ -67,7 +67,7 @@ export default function ResetPassword() {
               onChange={(e) => setPassword(e.target.value)}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? 'reset-error' : 'password-hint'}
-              className={inputCls}
+              className={`${inputCls} w-full`}
             />
             <p id="password-hint" className="text-sm text-dim">
               At least 8 characters.

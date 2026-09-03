@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { correctOptionId } from '@/lib/mcq'
 import { explanationOf, isScored } from '@/lib/slides'
@@ -33,6 +33,11 @@ export default async function HostSessionPage({ params }: { params: Promise<{ co
   return (
     <HostConsole
       code={session.code}
+      // The join URL, resolved server-side. The console used to read window.location.host
+      // during render, which is '' on the server — so the first thing painted on the wall
+      // was "Join at /play" with the domain missing until hydration. This is the one line a
+      // room of students has to read and retype.
+      joinHost={(await headers()).get('host') ?? ''}
       total={session.deckId ? await slideCount(session.deckId) : 0}
       initialIndex={session.currentSlideIndex}
       initialStatus={session.status}

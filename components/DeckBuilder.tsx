@@ -216,7 +216,7 @@ export function DeckBuilder() {
             rows={4}
             maxLength={400}
             placeholder="Photosynthesis for year 9 biology. Focus on the light-dependent reactions."
-            className={`${inputCls} resize-y leading-relaxed`}
+            className={`${inputCls} w-full resize-y leading-relaxed`}
           />
           <p className="text-sm text-dim">
             Written from the model&apos;s own knowledge, not from your material. Upload a
@@ -379,6 +379,20 @@ function DocumentPanel({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Before the label, not after it: `peer-*` compiles to a following-sibling selector,
+          so the input has to precede the element that mirrors its focus. */}
+      <input
+        ref={fileRef}
+        id="pdf"
+        type="file"
+        accept={ACCEPT_ATTRIBUTE}
+        className="peer sr-only"
+        disabled={Boolean(ingest)}
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) onPick(f)
+        }}
+      />
       <label
         htmlFor="pdf"
         onDragOver={(e) => {
@@ -392,13 +406,23 @@ function DocumentPanel({
           const f = e.dataTransfer.files?.[0]
           if (f) onPick(f)
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-plate border border-dashed px-6 py-14 text-center transition-colors ${
+        // peer-focus-visible mirrors the real focus onto the label. The <input> is sr-only,
+        // which clips it but leaves it in the tab order, so keyboard focus landed on an
+        // invisible 1px box and the dropzone never reacted — WCAG 2.4.7, on the only way
+        // into the document front door. The global :focus-visible ring can't help: it fires
+        // on the element that is clipped.
+        className={`flex cursor-pointer flex-col items-center justify-center rounded-plate border border-dashed px-6 py-14 text-center transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ink ${
           over ? 'border-pen bg-pen-wash' : 'border-rule-strong hover:border-ink hover:bg-overlay'
         }`}
       >
         {ingest ? (
           <>
-            <span className="font-display text-xl">{ingest}</span>
+            {/* aria-live, like the generation wait below. Ingest cycles six status sentences
+                over what can be a minute of work, and without a live region a screen reader
+                gets silence — no way to tell processing from a hang. */}
+            <span className="font-display text-xl" aria-live="polite">
+              {ingest}
+            </span>
             <span className="mt-2 text-sm text-dim">
               Reading the file and indexing it. Stay on this page.
             </span>
@@ -407,25 +431,13 @@ function DocumentPanel({
           <>
             <span className="font-display text-xl">Drop a lecture PDF or PowerPoint here</span>
             <span className="mt-2 text-sm text-dim">
-              Or click to choose one. Up to {MAX_MB}MB. A PDF has to contain real text —
-              scans of paper are rejected. A PowerPoint can have text in its images; we read
-              those.
+              Or click to choose one. Up to {MAX_MB}MB. A PDF has to contain real text;
+              scans of paper are rejected. A PowerPoint can have text in its images, and we
+              read those.
             </span>
           </>
         )}
       </label>
-      <input
-        ref={fileRef}
-        id="pdf"
-        type="file"
-        accept={ACCEPT_ATTRIBUTE}
-        className="sr-only"
-        disabled={Boolean(ingest)}
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) onPick(f)
-        }}
-      />
     </div>
   )
 }

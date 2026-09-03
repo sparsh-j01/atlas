@@ -69,7 +69,7 @@ function McqCard({
           the card and a single line clipped it mid-word — while the shorter explanation
           below already got two rows. Grows with `field-sizing`, falls back to two rows. */}
       <textarea
-        className={`${inputClass} min-h-12 resize-y [field-sizing:content]`}
+        className={`${inputClass} w-full min-h-12 resize-y [field-sizing:content]`}
         rows={2}
         placeholder="Question prompt"
         aria-label={`Question prompt for ${name}`}
@@ -95,14 +95,22 @@ function McqCard({
           const i = m.options.findIndex((x) => x.id === id)
           const optionName = m.options[i]?.text.trim() || `option ${i + 1}`
           return (
-            <input
-              type="radio"
-              name={`correct-${slideId}`}
-              checked={m.options[i]?.is_correct ?? false}
-              onChange={() => patch({ options: m.options.map((x) => ({ ...x, is_correct: x.id === id })) })}
-              aria-label={`Mark ${optionName} correct on ${name}`}
+            // Wrapped in a 44px label rather than left bare. Every other radio in the editor
+            // sits beside visible text and gets that text's target for free; this one is
+            // named only by aria-label, so the target was the browser's own ~13px dot — the
+            // most consequential click on the card, and the hardest to hit on a tablet.
+            <label
+              className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-pill transition-colors hover:bg-overlay"
               title="Mark correct"
-            />
+            >
+              <input
+                type="radio"
+                name={`correct-${slideId}`}
+                checked={m.options[i]?.is_correct ?? false}
+                onChange={() => patch({ options: m.options.map((x) => ({ ...x, is_correct: x.id === id })) })}
+                aria-label={`Mark ${optionName} correct on ${name}`}
+              />
+            </label>
           )
         }}
       />
@@ -131,7 +139,7 @@ function McqCard({
       <label className="flex flex-col gap-1 text-sm">
         <span className={capCls}>Explanation</span>
         <textarea
-          className={`${inputClass} min-h-16 resize-y`}
+          className={`${inputClass} w-full min-h-16 resize-y`}
           maxLength={EXPLANATION_MAX}
           placeholder="Why this answer is right. Shown after the reveal."
           aria-label={`Explanation for ${name}`}

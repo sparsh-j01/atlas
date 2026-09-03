@@ -172,7 +172,7 @@ function LoginForm() {
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? 'form-error' : undefined}
           placeholder="you@university.edu"
-          className={inputCls}
+          className={`${inputCls} w-full`}
         />
       </div>
 
@@ -190,7 +190,7 @@ function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           aria-invalid={error ? true : undefined}
           aria-describedby={signup ? 'password-hint' : error ? 'form-error' : undefined}
-          className={inputCls}
+          className={`${inputCls} w-full`}
         />
         {signup && (
           <p id="password-hint" className="text-sm text-dim">

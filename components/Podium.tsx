@@ -29,10 +29,17 @@ export function Podium({
   const rest = ranking.filter((e) => e.rank > 3)
 
   return (
-    // Side by side from 1280px, for the same reason as the reveal: stacked, the closing
+    // Side by side once it fits, for the same reason as the reveal: stacked, the closing
     // screen measured 1416px against a 1080p projector and ranks 9–12 never appeared. The
-    // phone renders the same markup and never reaches xl, so it keeps the stack.
-    <div className="flex flex-col gap-12 xl:flex-row xl:items-start xl:justify-center xl:gap-16">
+    // phone renders the same markup and never reaches the breakpoint, so it keeps the stack.
+    //
+    // 1380px, not `xl` (1280). The side-by-side row cannot shrink — three lg:w-56 blocks
+    // (3 × 224) plus two sm:gap-6 (2 × 24) is a hard 720px, plus gap-16 (64) plus the
+    // shrink-0 30rem column (480) is 1264px of content. The host console's own px-10 takes
+    // 80, and a scrollbar can take another ~17, so anything under ~1361px viewport ran the
+    // standings column off the right edge — right through 1280×800 and 1366×768, two of the
+    // commonest laptop widths. Recompute this number if any of those widths change.
+    <div className="flex flex-col gap-12 min-[1380px]:flex-row min-[1380px]:items-start min-[1380px]:justify-center min-[1380px]:gap-16">
       <div className="flex items-end justify-center gap-4 sm:gap-6">
         {PLACE.map(({ rank, h }) => {
           const e = byRank.get(rank)
@@ -103,7 +110,7 @@ export function Podium({
       </div>
 
       {rest.length > 0 && (
-        <section className="min-w-0 xl:w-[30rem] xl:shrink-0">
+        <section className="min-w-0 min-[1380px]:w-[30rem] min-[1380px]:shrink-0">
           <h3 className="mb-4 text-lg font-semibold text-dim lg:mb-6 lg:text-2xl">Everyone else</h3>
           {/* No rank-delta chips here. "+2" answers "since the last question", and on the
               final standings there is no next question for it to be measured against. */}
