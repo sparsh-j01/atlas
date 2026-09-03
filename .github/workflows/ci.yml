@@ -13,14 +13,24 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # SHA-pinned, not @v4: a tag can be repointed at any commit by whoever controls the
+      # action repo, and this job runs before any human reads the diff. Comment carries the
+      # version so Dependabot can still bump it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
-      - run: npm install  # not npm ci: esbuild optional platform deps trip npm ci EBADPLATFORM
+      # `npm ci` installs the locked tree exactly; `npm install` resolves the semver ranges in
+      # package.json instead, so a malicious patch release of any transitive dep would run its
+      # install scripts here and still report green against an unchanged lockfile.
+      #
+      # This was `npm install` because esbuild's optional platform deps tripped EBADPLATFORM.
+      # That cause is gone: the lockfile now records all 26 @esbuild/* platform packages
+      # (linux-x64 included) and npm >= 10.4 — which node 22 ships — resolves them correctly.
+      - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
