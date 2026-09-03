@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/env'
+import { SESSION_COOKIE_OPTIONS } from './cookie-options'
 
 // Refreshes the auth cookie on every request (Supabase SSR: without this, server
 // components can see an expired session) and gates the creator area. Not `server-only`
@@ -11,6 +12,9 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    // Must match ./server.ts exactly, or a refresh here rewrites the cookie with weaker
+    // attributes than the one sign-in set.
+    cookieOptions: SESSION_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return request.cookies.getAll()

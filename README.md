@@ -50,6 +50,75 @@ npm run dev                  # http://localhost:3000
 Needs a Supabase project (Postgres + Realtime). Scripts: `dev`, `build`, `lint`,
 `typecheck`, `test`, plus `db:generate` / `db:migrate` for schema changes.
 
+## Auth setup
+
+Teachers sign up with an email and password and cannot sign in until they click the
+confirmation link; students never sign in at all. Two things live in the Supabase
+dashboard rather than in this repo:
+
+**Authentication → Providers → Email** — enable the provider and turn *Confirm email*
+on. **Authentication → URL Configuration** — set the Site URL and add your dev and
+production origins to the redirect allowlist (`http://localhost:3000/auth/callback` and
+the deployed equivalent).
+
+**Authentication → Providers → Google** — for "Continue with Google". Create an OAuth
+client in the Google Cloud Console (APIs & Services → Credentials → OAuth client ID →
+Web application) with this as the authorised redirect URI:
+
+```
+https://<YOUR-PROJECT-REF>.supabase.co/auth/v1/callback
+```
+
+That is Supabase's callback, not this app's. Paste the client ID and secret into the
+Supabase dashboard; **the secret never belongs in this repo**. Supabase runs the OAuth
+2.0 / OIDC exchange — it builds the authorization request, holds the secret, and
+validates the ID token's signature, issuer, audience and nonce on its servers. This app
+is the OAuth client *of Supabase*: `/auth/signin` starts the flow, `/auth/callback`
+exchanges the returned code against a PKCE verifier held in an httpOnly cookie. There is
+no token parsing or crypto in this codebase, and none should be added.
+
+**Authentication → Email Templates** — point the two links at `/auth/confirm` so they
+verify by token hash. Without this the default templates still work, but only in the
+browser that requested them (they carry a PKCE code, and the verifier is a cookie in
+that browser) — a teacher who signs up on a laptop and opens the mail on their phone
+gets an error.
+
+```html
+<!-- Confirm signup -->
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup">Confirm your email</a>
+
+<!-- Reset password -->
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password">Set a new password</a>
+```
+
+**Authentication → Emails → Email OTP Expiration** — set it to **900** seconds (15
+minutes). The default is 3600. This is the lifetime of the `token_hash` in the two links
+above, so it is the window a teacher has between asking for the mail and clicking it;
+Supabase's own security advisor flags anything above an hour. It does not affect the
+PKCE `code` that `/auth/callback` exchanges, which is separately short-lived and
+single-use.
+
+Supabase's built-in sender is capped at a couple of messages an hour and is not meant
+for production; add your own SMTP under **Project Settings → Auth** before real users
+arrive. Worth turning on while you are there: **leaked password protection**, which
+checks new passwords against HaveIBeenPwned.
+
+This app never sees a stored credential and does no hashing of its own — Supabase
+bcrypts the password on its servers, and TLS covers it in transit. Hashing in the
+browser would only make the hash the password.
+
+Every auth call runs server-side in `lib/auth-actions.ts`, so the session cookie is
+`httpOnly` + `Secure` (`lib/supabase/cookie-options.ts`) and no access or refresh token is
+reachable from page JavaScript. `@supabase/ssr`'s own defaults are `httpOnly: false` with
+no `Secure` at all, because its *browser* client needs to read the session back — nothing
+here does, so both are closed. Those attributes are pinned by
+`lib/supabase/cookie-options.test.ts`; if that test fails, the session became readable by
+scripts again.
+
+Input shapes — credentials, the `/auth/confirm` query parameters, and the `/auth/signin`
+provider — are validated with zod in `lib/auth-validation.ts`; Supabase re-checks
+everything regardless.
+
 ## License
 
 TBD.
