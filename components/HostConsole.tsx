@@ -337,19 +337,34 @@ export function HostConsole({
   // show a chart the server never filled — or withhold one it did.
   const scored = slide ? isScored(slide.type) : true
   const showResults = slide !== null && (status === 'revealed' || !scored)
-  const urgent = secondsLeft !== null && secondsLeft <= 5
+  // Standings ride beside the results rather than under them (see the grid below), so the
+  // whole reveal fits one projector viewport. Hoisted because both the grid's columns and
+  // the section itself key off it.
+  const showStandings = status === 'revealed' && scored && leaderboard.length > 0
 
   return (
-    <main className="flex min-h-screen flex-col">
+    // `stage` flips every token to the dark surface. The host console IS the projector --
+    // it is the screen on the wall of a dimmed hall, and a full-cream wall behind a
+    // question is a flashbang. Nothing below needs to know: the same class strings render
+    // on either surface.
+    <main className="stage flex min-h-screen flex-col">
       {/* The drain. A full-width line at the very top is the one countdown cue that reads
           from the back of a hall without stealing space from the question. */}
       <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
         {fractionLeft !== null && (
           <div
-            className={`h-full origin-left transition-[width] duration-200 ease-linear ${
-              urgent ? 'bg-wrong' : 'bg-lamp'
-            }`}
-            style={{ width: `${fractionLeft * 100}%` }}
+            // scaleX, not width: this transition re-fires every 200ms for the whole answer
+            // window, and `width` is a layout property — on the host it reflows behind the
+            // question, on 100 phones it does it 100 times. A transform is compositor-only.
+            // The bar is a square-edged rectangle, so there is no radius to distort.
+            //
+            // Always --pen. Under 5s this used to flip to --wrong, spending the coral that
+            // means "wrong answer" moments before the reveal used it for exactly that, on
+            // the same two screens. docs/design.md §3 reserves correct/wrong for graded
+            // answers and §8 specifies the drain in --pen; the draining bar and the counting
+            // number already carry urgency without a reserved token.
+            className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear"
+            style={{ transform: `scaleX(${fractionLeft})` }}
           />
         )}
       </div>
@@ -359,7 +374,7 @@ export function HostConsole({
           <div className={capCls} suppressHydrationWarning>
             Join at {typeof window === 'undefined' ? '' : window.location.host}/play
           </div>
-          <div className="font-data mt-1 text-5xl leading-none tracking-[0.14em] text-lamp sm:text-6xl">
+          <div className="tabular mt-1 text-5xl leading-none tracking-[0.14em] text-pen sm:text-6xl">
             {code}
           </div>
         </div>
@@ -369,7 +384,7 @@ export function HostConsole({
             <>
               <Stat value={answeredCount} label="answered" />
               {secondsLeft !== null && (
-                <Stat value={secondsLeft} label="seconds" tone={urgent ? 'text-wrong' : 'text-lamp'} suppress />
+                <Stat value={secondsLeft} label="seconds" tone="text-pen" suppress />
               )}
             </>
           )}
@@ -409,34 +424,53 @@ export function HostConsole({
           </section>
         ) : (
           <>
-            {slide && (
-              <section className="flex flex-col gap-8">
-                {showResults ? (
-                  <>
-                    <h2 className="font-display max-w-[22ch] text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
-                      {slide.prompt}
-                    </h2>
-                    <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
-                  </>
-                ) : (
-                  <ProjectorSlide prompt={slide.prompt} options={slide.options} />
-                )}
-                {status === 'revealed' && explanation && (
-                  <p className="rounded-plate border-l-2 border-lamp bg-raised px-6 py-5 text-xl leading-relaxed text-dim">
-                    {explanation}
-                  </p>
-                )}
-              </section>
-            )}
+            {/* The reveal has to fit ONE viewport. Stacked, it measured 2058px against a
+                1080p projector: ranks 2–10 sat below the fold, and the sticky control bar
+                floated over rank 1 — the winner was the single row the toolbar covered. The
+                room cannot scroll, so the standings move BESIDE the results from 1280px up,
+                which is where a projector lives. Below that the host is on a laptop and
+                scrolling is normal, so it stays stacked. */}
+            <div
+              className={`grid gap-10 ${
+                showStandings ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start' : ''
+              }`}
+            >
+              {slide && (
+                // key on the slide id: advancing remounts this, which replays the
+                // entrance. Under 300ms because the host is waiting on it.
+                <section key={slide.id} className="anim-fade-up flex min-w-0 flex-col gap-8">
+                  {showResults ? (
+                    <>
+                      {/* One step down from ProjectorSlide's asking size, and a wider
+                          measure. While the question is being answered it is the whole
+                          screen; at the reveal the room has already read it and the
+                          distribution is the subject. At signage scale it wrapped to four
+                          lines and ate 264px of the one viewport this state has to fit. */}
+                      <h2 className="font-display max-w-[34ch] text-3xl leading-[1.15] sm:text-4xl lg:text-5xl">
+                        {slide.prompt}
+                      </h2>
+                      <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
+                    </>
+                  ) : (
+                    <ProjectorSlide prompt={slide.prompt} options={slide.options} />
+                  )}
+                  {status === 'revealed' && explanation && (
+                    <p className="rounded-plate border border-pen bg-pen-wash px-6 py-5 text-xl leading-relaxed text-dim lg:text-3xl lg:px-8 lg:py-7">
+                      {explanation}
+                    </p>
+                  )}
+                </section>
+              )}
 
-            {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
-                the last question — putting them up right after one reads as if the poll scored. */}
-            {status === 'revealed' && scored && leaderboard.length > 0 && (
-              <section>
-                <h3 className={`${capCls} mb-4`}>Leaderboard</h3>
-                <Leaderboard entries={leaderboard} />
-              </section>
-            )}
+              {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
+                  the last question — putting them up right after one reads as if the poll scored. */}
+              {showStandings && (
+                <section className="min-w-0">
+                  <h3 className={`${capCls} mb-4`}>Leaderboard</h3>
+                  <Leaderboard entries={leaderboard} />
+                </section>
+              )}
+            </div>
 
             {/* Mid-game access to the same remove control. A native <details> so there's no
                 open/closed state to hold, and it stays collapsed on the projector until the
@@ -478,7 +512,7 @@ export function HostConsole({
               <button onClick={() => goTo(index + 1)} disabled={busy || atLast} className={btn('secondary', 'lg')}>
                 {status === 'active' ? 'Skip' : 'Next'}
               </button>
-              <span className="font-data text-sm text-dim">
+              <span className="tabular text-sm text-dim">
                 {index + 1} / {total}
               </span>
             </>
@@ -533,7 +567,7 @@ function Roster({
             // WHICH player this removes — there is one of these per person on screen.
             aria-label={`Remove ${p.nickname}`}
             title={`Remove ${p.nickname}`}
-            className="rounded-full p-1 text-faint transition-colors hover:bg-wrong/15 hover:text-wrong disabled:opacity-40"
+            className="hit rounded-full p-1 text-faint transition-colors hover:bg-wrong/15 hover:text-wrong disabled:opacity-40"
           >
             <X size={14} weight="regular" />
           </button>
@@ -559,7 +593,7 @@ function Stat({
     <div>
       <div
         suppressHydrationWarning={suppress}
-        className={`font-data text-4xl leading-none tabular-nums sm:text-5xl ${tone ?? 'text-ink'}`}
+        className={`tabular text-4xl leading-none tabular-nums sm:text-5xl ${tone ?? 'text-ink'}`}
       >
         {value}
       </div>

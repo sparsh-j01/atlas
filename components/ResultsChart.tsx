@@ -23,7 +23,18 @@ export function ResultsChart(props: {
 // Six fixed hues, one per option slot (MAX_OPTIONS). Assigned by index rather than hashed
 // from the option id, so the same option keeps its colour between the live feed and the
 // final chart instead of jumping as counts change.
-const PALETTE = ['#e0a83a', '#5aa9e6', '#4fbf8b', '#b98be8', '#e8845c', '#7fd1c1']
+//
+// Built in OKLCH against the dark surface this actually renders on (the host console is
+// `.stage`), then validated: every hue sits in the dark lightness band, clears the chroma
+// floor, and the worst ADJACENT pair separates by dE 10.1 under protanopia (target >= 8).
+// Lightness is deliberately staggered rather than uniform -- cyan and violet collapse into
+// each other under deuteranopia at equal L, so luminance carries the difference instead.
+// The order is load-bearing for the same reason: these are pie slices, so neighbours in
+// this array are neighbours on screen. Re-validate before reordering or adding a hue.
+//
+// None of these is the lime or coral from the token set: those two are reserved for
+// correct/wrong on graded answers and must never read as "just another option".
+const PALETTE = ['#4e75d2', '#cb7f00', '#00896d', '#b668c8', '#a18400', '#008e9d']
 
 const SIZE = 200
 const OUTER = 92 // leaves a little room inside the viewBox for the stroke's antialiasing
@@ -74,10 +85,12 @@ function ResultsPie({
   }))
 
   return (
-    <div className="flex flex-wrap items-center gap-8">
+    // Same lg: room tier as the bars — the reveal is the most-watched frame in the product
+    // and a 224px dial with 14px counts does not read from the back of a hall.
+    <div className="flex flex-wrap items-center gap-8 lg:gap-14">
       <svg
         viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="h-56 w-56 shrink-0"
+        className="h-56 w-56 shrink-0 lg:h-96 lg:w-96"
         role="img"
         aria-label={
           total === 0
@@ -119,22 +132,25 @@ function ResultsPie({
       </svg>
 
       {/* The legend is the accessible + readable half: percentages are hard to judge by eye
-          from a wedge, and a projector at the back of a room needs the number. */}
-      <ul className="flex min-w-48 flex-col gap-2">
+          from a wedge, and a projector at the back of a room needs the number.
+          Width-capped: `flex-1` let it take the whole 1920px row, and `ml-auto` on the value
+          then parked each count ~1400px from the label it belongs to — two columns of
+          unrelated numbers rather than a legend. */}
+      <ul className="flex min-w-48 max-w-3xl flex-1 flex-col gap-2 lg:min-w-80 lg:gap-4">
         {segments.map((s) => (
-          <li key={s.o.id} className="flex items-baseline gap-3">
+          <li key={s.o.id} className="flex items-baseline gap-3 lg:gap-5">
             <span
               aria-hidden
-              className="h-3 w-3 shrink-0 translate-y-0.5 rounded-[2px]"
+              className="h-3 w-3 shrink-0 translate-y-0.5 rounded-full lg:h-5 lg:w-5"
               style={{ background: s.color }}
             />
-            <span className="truncate text-xl">
+            <span className="truncate text-xl lg:text-3xl">
               {s.o.text}
               {s.o.id === pickedId && (
-                <span className="ml-2 text-sm text-lamp">your answer</span>
+                <span className="ml-2 text-sm text-pen lg:text-xl">your answer</span>
               )}
             </span>
-            <span className="ml-auto shrink-0 font-data text-sm tabular-nums text-dim">
+            <span className="ml-auto shrink-0 tabular text-sm tabular-nums text-dim lg:text-2xl">
               {s.n} / {Math.round(s.frac * 100)}%
             </span>
           </li>

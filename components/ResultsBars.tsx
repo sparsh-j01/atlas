@@ -30,8 +30,11 @@ export function ResultsBars({
     return () => cancelAnimationFrame(id)
   }, [])
 
+  // lg: is the room. This only ever renders on the host console, but the host is often on a
+  // laptop before the projector is plugged in — so the base tier stays laptop-sized and the
+  // room scale arrives with the width.
   return (
-    <ul className="flex flex-col gap-3">
+    <ul className="flex flex-col gap-3 lg:gap-5">
       {slide.options.map((o) => {
         const n = aggregate?.counts[o.id] ?? 0
         // Share of responses, not of players: a slide nobody answered shows empty bars
@@ -41,18 +44,35 @@ export function ResultsBars({
         return (
           <li key={o.id}>
             <div className="mb-1.5 flex items-baseline justify-between gap-3">
-              <span className={`truncate text-xl ${isCorrect ? 'font-semibold text-correct' : ''}`}>
+              <span
+                className={`truncate text-xl lg:text-3xl ${
+                  isCorrect ? 'font-semibold text-correct' : ''
+                }`}
+              >
                 {o.text}
+                {/* The word, not just the lime. On the projector the right answer was
+                    signalled by colour alone, which docs/design.md §10 rules out and which
+                    a colour-blind student at the back cannot read. aria-hidden because the
+                    bar below already ends its own label with ", correct". */}
+                {isCorrect && (
+                  <span aria-hidden className="ml-2 text-sm font-normal lg:text-xl">
+                    ✓ Correct
+                  </span>
+                )}
                 {o.id === pickedId && (
-                  <span className="ml-2 text-sm font-normal text-lamp">your answer</span>
+                  <span className="ml-2 text-sm font-normal text-pen lg:text-xl">your answer</span>
                 )}
               </span>
-              <span className="shrink-0 font-data text-sm tabular-nums text-dim">
+              <span className="shrink-0 tabular text-sm tabular-nums text-dim lg:text-2xl">
                 {n} / {pct}%
               </span>
             </div>
-            <div className="h-7 overflow-hidden rounded-plate bg-overlay">
+            <div className="h-7 overflow-hidden rounded-plate bg-overlay lg:h-12">
               <div
+                // ponytail: `width` animates layout, unlike the drain bars which moved to
+                // scaleX. Kept here on purpose — this fires once per reveal on at most six
+                // rows, and the bar has a 20px radius that scaleX would squash into an
+                // ellipse. Revisit only if the reveal ever measures as a jank source.
                 className={`h-full rounded-plate transition-[width] duration-700 ease-out motion-reduce:transition-none ${
                   isCorrect ? 'bg-correct' : 'bg-rule-strong'
                 }`}

@@ -4,8 +4,9 @@ import { CaretDown, CaretUp, DotsSixVertical, Plus } from '@phosphor-icons/react
 import { useOptimistic, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { SlideCard, type EditorSlide } from '@/components/SlideCard'
+import { hasUnsavedSlides, useUnsavedSlidesWarning } from '@/components/slide-fields'
 import { DeleteButton } from '@/components/DeleteButton'
-import { btn, capCls, inputCls, panelCls } from '@/components/ui'
+import { btn, capCls, inputCls, panelCls, statusDotCls } from '@/components/ui'
 import {
   addSlideAction,
   deleteSlideAction,
@@ -23,7 +24,12 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
   const [status, setStatus] = useState(deck.status)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [leaveWarned, setLeaveWarned] = useState(false)
   const [, startTransition] = useTransition()
+
+  // Reload / tab close. The in-app link is guarded separately below — beforeunload does
+  // not fire for a client-side navigation.
+  useUnsavedSlidesWarning()
 
   // Server positions are the source of truth (each reorder persists + revalidates);
   // useOptimistic just makes a drag feel instant during the round-trip. Deriving from
@@ -84,9 +90,39 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
-      <Link href="/dashboard" className="text-sm text-dim transition-colors hover:text-ink">
-        Back to your decks
-      </Link>
+      {/* The title and description above save on blur, but slide bodies save on a button —
+          so leaving with an unsaved slide used to discard it with no warning. Stop the first
+          click, say what is unsaved, let the second one through. Same arm-then-confirm shape
+          as DeleteButton, and no blocking dialog. */}
+      <div className="flex flex-wrap items-baseline gap-3">
+        <Link
+          href="/dashboard"
+          className="text-sm text-dim transition-colors hover:text-ink"
+          onNavigate={(e) => {
+            if (leaveWarned || !hasUnsavedSlides()) return
+            e.preventDefault()
+            setLeaveWarned(true)
+            // Disarm after a few seconds so the guard asks again next time. Without this
+            // one dismissal covers the rest of the session, including slides edited after
+            // it — which is the case that loses work.
+            setTimeout(() => setLeaveWarned(false), 6000)
+          }}
+        >
+          Back to your decks
+        </Link>
+        {leaveWarned && (
+          <span role="alert" className="text-sm text-wrong">
+            A slide has unsaved edits. Click again to leave without saving.
+          </span>
+        )}
+      </div>
+
+      {/* The page's h1. The editor is the densest screen in the app and had NO headings at
+          all — an empty document outline, nothing announcing what the page was, and no way
+          to navigate it by heading. The visible title has to stay an editable field (an
+          <input> inside a heading contributes no accessible name), so the heading is
+          off-screen and renders the same state, which is what keeps the two in step. */}
+      <h1 className="sr-only">{title || 'Untitled deck'}</h1>
 
       <div className="mt-6 flex flex-col gap-3">
         <input
@@ -117,13 +153,10 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           pill lost in the header. */}
       <div
         className={`${panelCls} mt-4 flex flex-wrap items-center gap-4 px-5 py-4 ${
-          ready ? 'border-correct/40' : ''
+          ready ? 'border-pen/40' : ''
         }`}
       >
-        <span
-          aria-hidden
-          className={`h-2 w-2 shrink-0 rounded-full ${ready ? 'bg-correct' : 'bg-faint'}`}
-        />
+        <span aria-hidden className={statusDotCls(ready)} />
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{ready ? 'Ready to present' : 'Draft'}</p>
           <p className="mt-0.5 text-sm text-dim">
@@ -149,7 +182,13 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
       )}
 
       <ul className="mt-8 flex flex-col gap-4">
-        {ordered.map((s, i) => (
+        {ordered.map((s, i) => {
+          // One name for everything inside this card. Every repeated control below (delete,
+          // add option, save, and each option field) carries it, so a screen reader hears
+          // which slide it is acting on instead of the same four verbs once per slide.
+          const slideName = `slide ${i + 1}`
+          const typeLabel = isSlideType(s.type) ? SLIDE_TYPE_LABEL[s.type] : s.type
+          return (
           <li
             key={s.id}
             ref={(el) => {
@@ -168,25 +207,30 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
             className={`${panelCls} p-5`}
           >
             <div className="mb-4 flex items-center gap-1 border-b border-rule pb-3">
-              <button
-                type="button"
-                aria-label="Drag to reorder"
-                title="Drag to reorder"
-                className="cursor-grab rounded-plate p-1.5 text-faint transition-colors hover:text-ink"
+              {/* Pointer-only affordance: mousedown arms the native drag. It is aria-hidden
+                  and out of the tab order on purpose — as a focusable button it announced
+                  "Drag to reorder" and then did nothing on Enter. The two carets beside it
+                  are the keyboard and touch path, and they run the same persist. */}
+              <span
+                aria-hidden
+                tabIndex={-1}
+                className="grid size-11 shrink-0 cursor-grab place-items-center rounded-pill text-faint transition-colors hover:text-ink"
                 onMouseDown={() => {
                   const el = liRefs.current[s.id]
                   if (el) el.draggable = true
                 }}
               >
                 <DotsSixVertical size={18} weight="regular" />
-              </button>
+              </span>
               <button
                 type="button"
                 onClick={() => move(s.id, -1)}
                 disabled={i === 0}
-                aria-label="Move slide up"
+                // Names the slide it moves. There is one pair of these per slide, so a
+                // bare "Move slide up" is six identical buttons to a screen reader.
+                aria-label={`Move slide ${i + 1} up`}
                 title="Move up"
-                className="rounded-plate p-1.5 text-faint transition-colors hover:text-ink disabled:opacity-25"
+                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink disabled:opacity-25"
               >
                 <CaretUp size={16} weight="regular" />
               </button>
@@ -194,27 +238,37 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
                 type="button"
                 onClick={() => move(s.id, 1)}
                 disabled={i === ordered.length - 1}
-                aria-label="Move slide down"
+                aria-label={`Move slide ${i + 1} down`}
                 title="Move down"
-                className="rounded-plate p-1.5 text-faint transition-colors hover:text-ink disabled:opacity-25"
+                className="grid size-11 shrink-0 place-items-center rounded-pill text-faint transition-colors hover:text-ink disabled:opacity-25"
               >
                 <CaretDown size={16} weight="regular" />
               </button>
-              <span className="ml-2 font-data text-sm text-dim">{i + 1}</span>
-              <span className={`${capCls} ml-3`}>
-                {isSlideType(s.type) ? SLIDE_TYPE_LABEL[s.type] : s.type}
-              </span>
+              {/* The card's heading. The number and the type were already on screen as two
+                  loose spans; making them the h2 gives the editor the document outline it
+                  had none of, at no visual cost. "Slide" is only for the announcement — the
+                  column of numerals reads as slide numbers on screen. */}
+              {/* The sr-only pieces are separators. Without them the accessible name
+                  concatenates to "Slide 1Quiz question" — flex `gap` is not a text node. */}
+              <h2 className="ml-2 flex items-baseline gap-3">
+                <span className="sr-only">Slide </span>
+                <span className="tabular text-sm text-dim">{i + 1}</span>
+                <span className="sr-only">, </span>
+                <span className={capCls}>{typeLabel}</span>
+              </h2>
               <span className="ml-auto">
                 <DeleteButton
                   action={deleteSlideAction.bind(null, deck.id, s.id)}
                   confirmText="Delete this slide?"
+                  name={slideName}
                   className={btn('danger', 'sm')}
                 />
               </span>
             </div>
-            <SlideCard deckId={deck.id} slide={s} />
+            <SlideCard deckId={deck.id} slide={s} name={slideName} />
           </li>
-        ))}
+          )
+        })}
       </ul>
 
       {ordered.length === 0 && (
@@ -233,7 +287,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
             onClick={() =>
               startTransition(() => run(addSlideAction(deck.id, t), 'Could not add a slide.'))
             }
-            className="flex items-center justify-center gap-2 rounded-plate border border-dashed border-rule-strong py-4 text-sm font-semibold text-dim transition-colors hover:border-lamp hover:bg-lamp/5 hover:text-lamp"
+            className="flex items-center justify-center gap-2 rounded-plate border border-dashed border-rule-strong py-4 text-sm font-semibold text-dim transition-colors hover:border-pen hover:bg-pen-wash hover:text-pen-ink"
           >
             <Plus size={16} weight="regular" />
             Add {SLIDE_TYPE_LABEL[t].toLowerCase()}

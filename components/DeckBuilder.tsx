@@ -173,7 +173,7 @@ export function DeckBuilder() {
   return (
     <form onSubmit={submit} className="mt-10 flex flex-col gap-8">
       {/* Source picker. Two real choices, so a segmented control rather than a dropdown. */}
-      <div className="flex w-full gap-1 rounded-plate border border-rule bg-raised p-1 sm:w-fit">
+      <div className="flex w-full gap-1 rounded-pill border border-rule bg-raised p-1 sm:w-fit">
         {(['document', 'topic'] as const).map((m) => (
           <button
             key={m}
@@ -184,8 +184,8 @@ export function DeckBuilder() {
               setPartial(null)
             }}
             aria-pressed={mode === m}
-            className={`flex-1 rounded-[3px] px-5 py-2.5 text-sm font-semibold transition-colors sm:flex-none ${
-              mode === m ? 'bg-lamp text-lamp-ink' : 'text-dim hover:text-ink'
+            className={`flex-1 rounded-pill px-5 py-2.5 text-sm font-semibold transition-colors sm:flex-none ${
+              mode === m ? 'bg-pen text-pen-on' : 'text-dim hover:text-ink'
             }`}
           >
             {m === 'document' ? 'From a document' : 'From a topic'}
@@ -238,7 +238,7 @@ export function DeckBuilder() {
             max={MAX_SLIDES}
             value={slideCount}
             onChange={(e) => setSlideCount(Number(e.target.value))}
-            className={`${inputCls} w-24 font-data`}
+            className={`${inputCls} w-24 tabular`}
           />
         </div>
 
@@ -265,7 +265,7 @@ export function DeckBuilder() {
             type="checkbox"
             checked={includePolls}
             onChange={(e) => setIncludePolls(e.target.checked)}
-            className="h-4 w-4 accent-[var(--lamp)]"
+            className="h-4 w-4 accent-[var(--pen)]"
           />
           Mix in opinion polls
         </label>
@@ -280,13 +280,26 @@ export function DeckBuilder() {
       </div>
 
       {busy && (
-        <p className="text-sm text-dim" aria-live="polite">
-          {STAGES[stage % STAGES.length]}. This usually takes 30 to 60 seconds.
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="anim-breathe text-sm text-dim" aria-live="polite">
+            {/* Clamped, not wrapped. `% length` sent a job past 32s back to "Outlining the
+                deck", which is a claim about the server that is false by then — the whole
+                point of naming stages instead of showing a spinner. It holds on the last. */}
+            {STAGES[Math.min(stage, STAGES.length - 1)]}. This usually takes 30 to 60 seconds.
+          </p>
+          {/* Indeterminate on purpose: the job reports stages, not a percentage, and a
+              fake percentage that stalls at 90 is worse than no number at all. */}
+          <div
+            aria-hidden
+            className="h-0.5 w-full overflow-hidden rounded-pill bg-overlay motion-reduce:hidden"
+          >
+            <div className="h-full w-1/4 rounded-pill bg-pen [animation:sweep_1.4s_var(--ease-in-out)_infinite]" />
+          </div>
+        </div>
       )}
 
       {partial && (
-        <div className={`${panelCls} border-lamp/40 p-5`} role="status">
+        <div className={`${panelCls} border-pen/40 p-5`} role="status">
           <p className="font-semibold">
             Built {partial.made} of {partial.asked} slides.
           </p>
@@ -306,7 +319,7 @@ export function DeckBuilder() {
       )}
 
       {error && (
-        <p role="alert" className="rounded-plate border border-wrong/40 bg-wrong/10 p-4 text-sm text-wrong">
+        <p role="alert" className="rounded-plate border border-wrong/40 bg-wrong-wash p-4 text-sm text-wrong">
           {error}
         </p>
       )}
@@ -335,7 +348,7 @@ function DocumentPanel({
     return (
       <div className={`${panelCls} flex flex-col gap-4 p-5`}>
         <div className="flex flex-wrap items-center gap-4">
-          <span aria-hidden className="grid h-11 w-11 place-items-center rounded-plate bg-lamp/15 font-data text-xs text-lamp">
+          <span aria-hidden className="grid h-11 w-11 place-items-center rounded-pill bg-pen/15 tabular text-xs text-pen">
             {kind}
           </span>
           <div className="min-w-0 flex-1">
@@ -380,7 +393,7 @@ function DocumentPanel({
           if (f) onPick(f)
         }}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-plate border border-dashed px-6 py-14 text-center transition-colors ${
-          over ? 'border-lamp bg-lamp/5' : 'border-rule-strong hover:border-ink hover:bg-overlay'
+          over ? 'border-pen bg-pen-wash' : 'border-rule-strong hover:border-ink hover:bg-overlay'
         }`}
       >
         {ingest ? (

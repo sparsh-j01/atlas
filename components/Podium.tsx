@@ -8,10 +8,14 @@ import type { LeaderboardEntry } from '@/lib/realtime/events'
 // server (lib/realtime/aggregate.ts) — this only arranges them.
 // Podium order is 2nd, 1st, 3rd so first place stands in the middle, and the block heights
 // carry the ranking even before you read the numbers.
+//
+// Three size tiers, not two. This renders on a phone (play page) and on a projector (host
+// console) from the same markup, so the lg: step is the room: below it the type is sized for
+// a hand, above it for the back of a hall.
 const PLACE = [
-  { rank: 2, h: 'h-28' },
-  { rank: 1, h: 'h-44' },
-  { rank: 3, h: 'h-20' },
+  { rank: 2, h: 'h-28 lg:h-44' },
+  { rank: 1, h: 'h-44 lg:h-72' },
+  { rank: 3, h: 'h-20 lg:h-32' },
 ]
 
 export function Podium({
@@ -25,35 +29,70 @@ export function Podium({
   const rest = ranking.filter((e) => e.rank > 3)
 
   return (
-    <div className="flex flex-col gap-12">
+    // Side by side from 1280px, for the same reason as the reveal: stacked, the closing
+    // screen measured 1416px against a 1080p projector and ranks 9–12 never appeared. The
+    // phone renders the same markup and never reaches xl, so it keeps the stack.
+    <div className="flex flex-col gap-12 xl:flex-row xl:items-start xl:justify-center xl:gap-16">
       <div className="flex items-end justify-center gap-4 sm:gap-6">
         {PLACE.map(({ rank, h }) => {
           const e = byRank.get(rank)
           if (!e) return null // fewer than three players — render the places that exist
           const mine = e.participantId === highlightId
           const first = rank === 1
+          // Counts up from third place so the winner's bar lands last.
+          const barDelay = (3 - rank) * 90
+          const riderDelay = barDelay + 60
           return (
-            <div key={rank} className="flex w-28 flex-col items-center gap-3 sm:w-40">
+            <div key={rank} className="flex w-28 flex-col items-center gap-3 sm:w-40 lg:w-56 lg:gap-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={avatarUrl(e.avatarSeed)}
                 alt=""
-                className={`rounded-full bg-overlay ring-2 ${
-                  first ? 'h-16 w-16 ring-lamp sm:h-20 sm:w-20' : 'h-12 w-12 ring-rule sm:h-14 sm:w-14'
+                style={{ animationDelay: `${riderDelay}ms` }}
+                className={`anim-fade-up rounded-full bg-overlay ring-2 ${
+                  first
+                    ? 'h-16 w-16 ring-pen sm:h-20 sm:w-20 lg:h-28 lg:w-28'
+                    : 'h-12 w-12 ring-rule sm:h-14 sm:w-14 lg:h-20 lg:w-20'
                 }`}
               />
-              <span className="max-w-full truncate text-center font-semibold">
+              {/* Wraps rather than truncating. Nicknames run to 24 characters (the join
+                  route's cap) and a 23-character one was being cut to "Maximilian Feath…" on
+                  the winner's own block — the one name in the room that has earned being
+                  read in full. `break-words` so a single long token still cannot overflow. */}
+              <span
+                style={{ animationDelay: `${riderDelay}ms` }}
+                className={`anim-fade-up max-w-full break-words text-center font-semibold ${
+                  first ? 'lg:text-3xl' : 'lg:text-2xl'
+                }`}
+              >
                 {e.nickname}
-                {mine && <span className="ml-1 text-sm font-normal text-lamp">you</span>}
+                {mine && <span className="ml-1 text-sm font-normal text-pen lg:text-lg">you</span>}
               </span>
-              <span className="font-data tabular-nums text-dim">{e.score}</span>
+              {/* Playfair and --ink, per docs/design.md §4: a podium score is a figure at
+                  rest, and this is the game's last frame. It was the smallest, dimmest text
+                  on screen sitting under a 48px rank numeral. */}
+              <span
+                style={{ animationDelay: `${riderDelay}ms` }}
+                className={`font-display anim-fade-up text-xl ${
+                  first ? 'lg:text-4xl' : 'lg:text-3xl'
+                }`}
+              >
+                {e.score}
+              </span>
               <div
-                className={`flex w-full items-start justify-center rounded-t-plate pt-3 ${h} ${
-                  first ? 'bg-lamp' : 'bg-overlay'
+                style={{ animationDelay: `${barDelay}ms` }}
+                className={`anim-rise flex w-full items-start justify-center rounded-t-plate pt-3 lg:pt-5 ${h} ${
+                  // The 2nd/3rd fill is --overlay, which is 1.13:1 against --ground inside a
+                  // .stage — the blocks were effectively invisible, so the heights carried
+                  // nothing. --faint is a non-text token at 5.1:1 there, which draws the
+                  // silhouette and clears the 3:1 floor for a meaningful graphic (1.4.11).
+                  first ? 'bg-pen' : 'border-2 border-faint bg-overlay'
                 }`}
               >
                 <span
-                  className={`font-data text-3xl tabular-nums ${first ? 'text-lamp-ink' : 'text-dim'}`}
+                  className={`font-display text-3xl lg:text-5xl ${
+                    first ? 'text-pen-on' : 'text-dim'
+                  }`}
                 >
                   {rank}
                 </span>
@@ -64,9 +103,11 @@ export function Podium({
       </div>
 
       {rest.length > 0 && (
-        <section>
-          <h3 className="mb-4 text-lg font-semibold text-dim">Everyone else</h3>
-          <Leaderboard entries={rest} highlightId={highlightId} compact />
+        <section className="min-w-0 xl:w-[30rem] xl:shrink-0">
+          <h3 className="mb-4 text-lg font-semibold text-dim lg:mb-6 lg:text-2xl">Everyone else</h3>
+          {/* No rank-delta chips here. "+2" answers "since the last question", and on the
+              final standings there is no next question for it to be measured against. */}
+          <Leaderboard entries={rest} highlightId={highlightId} compact showDelta={false} />
         </section>
       )}
     </div>

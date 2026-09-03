@@ -8,6 +8,7 @@ import { Podium } from '@/components/Podium'
 import { openSessionChannel } from '@/lib/realtime/channels'
 import { isScored } from '@/lib/slides'
 import { EVENTS } from '@/lib/realtime/events'
+import { SiteHeader } from '@/components/SiteHeader'
 import { btn, capCls, inputCls } from '@/components/ui'
 import type {
   LeaderboardEntry,
@@ -304,11 +305,18 @@ function PlayRoom() {
 
   if (!me) {
     return (
-      <main className="flex min-h-screen flex-col">
-        <div className="border-b border-rule px-6 py-5">
-          <span className="font-display text-xl">Atlas</span>
-        </div>
-        <div className="flex flex-1 flex-col justify-center gap-6 p-6">
+      // The header is a SIBLING of <main>, not inside it. SiteHeader's first child is the
+      // skip link, and a skip link rendered inside the landmark it targets sends you
+      // backwards past itself. The other three states below render no header, so <main> is
+      // the whole screen and needs no id.
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        {/* Built for a phone, but it is a real URL someone opens on a laptop too, so the
+            column is capped rather than stretched across a desktop viewport. */}
+        <main
+          id="main"
+          className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6"
+        >
           <div>
             <h1 className="font-display text-3xl">Join the room</h1>
             <p className="mt-2 text-dim">The code is on the screen at the front.</p>
@@ -325,7 +333,7 @@ function PlayRoom() {
               inputMode="numeric"
               autoComplete="off"
               placeholder="000000"
-              className={`${inputCls} py-4 text-center font-data text-4xl tracking-[0.3em]`}
+              className={`${inputCls} py-4 text-center tabular text-4xl tracking-[0.3em]`}
             />
           </div>
 
@@ -352,8 +360,8 @@ function PlayRoom() {
           <button onClick={join} disabled={busy} className={`${btn('primary', 'xl')} w-full`}>
             {busy ? 'Joining' : 'Join'}
           </button>
-        </div>
-      </main>
+        </main>
+      </div>
     )
   }
 
@@ -361,14 +369,14 @@ function PlayRoom() {
 
   if (status === 'ended') {
     return (
-      <main className="flex min-h-screen flex-col justify-center gap-10 p-6">
+      <main className="stage flex min-h-screen flex-col justify-center gap-10 p-6">
         <div className="text-center">
           <h1 className="font-display text-3xl">That is a wrap</h1>
           {myEntry ? (
             <p className="mt-3 text-lg text-dim">
               You finished{' '}
-              <span className="font-data text-ink">#{myEntry.rank}</span> with{' '}
-              <span className="font-data tabular-nums text-ink">{myEntry.score}</span> points.
+              <span className="tabular text-ink">#{myEntry.rank}</span> with{' '}
+              <span className="tabular text-ink">{myEntry.score}</span> points.
             </p>
           ) : (
             <p className="mt-3 text-dim">Thanks for playing.</p>
@@ -384,12 +392,12 @@ function PlayRoom() {
   // Lobby, or between slides after a reveal with nothing to show yet.
   if (!slide) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-5 p-8 text-center">
+      <main className="stage flex min-h-screen flex-col items-center justify-center gap-5 p-8 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={avatarUrl(me.avatarSeed)}
           alt=""
-          className="h-24 w-24 rounded-full bg-overlay ring-2 ring-lamp"
+          className="h-24 w-24 rounded-full bg-overlay ring-2 ring-pen"
         />
         <h1 className="font-display text-3xl">{me.nickname}</h1>
         <p className="text-dim">You are in. Waiting for the host to start.</p>
@@ -400,7 +408,13 @@ function PlayRoom() {
   const msLeft = status === 'active' && deadline ? Math.max(0, deadline - now) : null
   const secondsLeft = msLeft === null ? null : Math.ceil(msLeft / 1000)
   const fractionLeft = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
-  const urgent = secondsLeft !== null && secondsLeft <= 5
+  // The tiles have to go dead when the clock does. Without this they stayed tappable with
+  // the countdown reading 0, and a tap round-tripped to the server only to come back "Too
+  // slow" — a control offering an action it can no longer perform (failure-patterns #49).
+  // This is the phone's clock, which the countdown comment above already flags as
+  // possibly skewed; a fast phone forfeits its last few hundred ms. That is the better
+  // trade than a live-looking button that always loses.
+  const windowClosed = msLeft !== null && msLeft <= 0
   const scored = isScored(slide.type)
   // Only a scored slide has a right answer to be judged against. Without the `scored` gate a
   // poll would compare the pick to a null correctId, fail, and tell every voter "Not this
@@ -409,88 +423,119 @@ function PlayRoom() {
     status === 'revealed' && picked && scored ? (picked === correctId ? 'correct' : 'wrong') : null
 
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="stage flex min-h-screen flex-col">
       {/* The same drain the projector shows, so the phone and the room share one clock. */}
       <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
         {fractionLeft !== null && (
           <div
-            className={`h-full transition-[width] duration-200 ease-linear ${
-              urgent ? 'bg-wrong' : 'bg-lamp'
-            }`}
-            style={{ width: `${fractionLeft * 100}%` }}
+            // scaleX, not width: this transition re-fires every 200ms for the whole answer
+            // window, and `width` is a layout property — on the host it reflows behind the
+            // question, on 100 phones it does it 100 times. A transform is compositor-only.
+            // The bar is a square-edged rectangle, so there is no radius to distort.
+            //
+            // Always --pen. It used to flip to --wrong under 5s, which spent the coral that
+            // means "your answer was wrong" five seconds before the reveal used it for
+            // exactly that, on this same screen. docs/design.md §3 reserves correct/wrong
+            // for graded answers and §8 specifies the drain in --pen. The length of the bar
+            // and the number beside it already carry the urgency; the colour was a third
+            // encoding of the same fact, and the one that collided.
+            className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear"
+            style={{ transform: `scaleX(${fractionLeft})` }}
           />
         )}
       </div>
 
       <div className="flex flex-1 flex-col gap-6 p-5">
-        <div className="flex items-start justify-between gap-4">
+        {/* flex-1: the question takes the slack the tiles gave up and sits centred in it,
+            rather than pinned to the top with a dead band underneath. */}
+        <div className="flex flex-1 items-center justify-between gap-4">
           <h1 className="text-xl font-semibold leading-snug">{slide.prompt}</h1>
+          {/* --pen at every count, for the same reason as the drain bar above. */}
           {secondsLeft !== null && (
             <span
               aria-live="off"
               suppressHydrationWarning
-              className={`shrink-0 font-data text-3xl tabular-nums ${
-                urgent ? 'text-wrong' : 'text-lamp'
-              }`}
+              className="shrink-0 tabular text-3xl tabular-nums text-pen"
             >
               {secondsLeft}
             </span>
           )}
         </div>
 
-        <div className="grid flex-1 content-start gap-3">
-          {slide.options.map((o, i) => {
-            const isPicked = picked === o.id
-            const isCorrect = status === 'revealed' && o.id === correctId
-            const live = status === 'active' && !picked
-            // After the reveal, everything that is neither the key nor your own pick fades
-            // back so the two answers that matter are the two you can read.
-            const muted = status === 'revealed' && !isCorrect && !isPicked
-            return (
-              <button
-                key={o.id}
-                onClick={() => answer(o.id)}
-                disabled={status !== 'active' || picked !== null}
-                className={`flex items-center gap-4 rounded-plate border px-4 py-4 text-left transition-colors ${
-                  isCorrect
-                    ? 'border-correct bg-correct/15'
-                    : isPicked
-                      ? status === 'revealed' && scored
-                        ? 'border-wrong bg-wrong/15'
-                        : 'border-lamp bg-lamp/15'
-                      : 'border-rule bg-raised'
-                } ${muted ? 'opacity-45' : ''} ${live ? 'active:border-lamp active:bg-overlay' : 'cursor-default'}`}
-              >
-                <span
-                  aria-hidden
-                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-plate font-data ${
+        {/* Bottom-anchored: this block never grows, so the flex-1 question row above takes
+            every spare pixel and the tiles settle at the foot of the viewport. On a 390×844
+            phone the stack ran 105px→421px — ending at exactly half the screen, with option
+            A in the hardest place to reach one-handed and the easy-reach half empty. It now
+            ends at 824. The lock-in and rejection messages sit inside this block, so a
+            closed window is answered beside the tile that was tapped rather than at the
+            foot of the page. */}
+        <div className="flex shrink-0 flex-col gap-3">
+          <div className="grid gap-3">
+            {slide.options.map((o, i) => {
+              const isPicked = picked === o.id
+              const isCorrect = status === 'revealed' && o.id === correctId
+              const live = status === 'active' && !picked && !windowClosed
+              // After the reveal, everything that is neither the key nor your own pick fades
+              // back so the two answers that matter are the two you can read.
+              const muted = status === 'revealed' && !isCorrect && !isPicked
+              return (
+                <button
+                  key={o.id}
+                  onClick={() => answer(o.id)}
+                  disabled={status !== 'active' || picked !== null || windowClosed}
+                  style={{ touchAction: 'manipulation' }}
+                  className={`flex items-center gap-4 rounded-plate border px-4 py-4 text-left transition-[transform,background-color,border-color,opacity] duration-150 ease-out ${
+                    live ? 'active:scale-[0.97]' : ''
+                  } ${
                     isCorrect
-                      ? 'bg-correct text-lamp-ink'
+                      ? 'border-correct bg-correct/15'
                       : isPicked
                         ? status === 'revealed' && scored
-                          ? 'bg-wrong text-lamp-ink'
-                          : 'bg-lamp text-lamp-ink'
-                        : 'bg-overlay text-dim'
-                  }`}
+                          ? 'border-wrong bg-wrong/15'
+                          : 'border-pen bg-pen/15'
+                        : 'border-rule bg-raised'
+                  } ${live ? 'active:border-pen active:bg-overlay' : 'cursor-default'}`}
                 >
-                  {LETTERS[i] ?? i + 1}
-                </span>
-                <span className="text-lg leading-snug">{o.text}</span>
-              </button>
-            )
-          })}
-        </div>
+                  <span
+                    aria-hidden
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-pill tabular ${
+                      isCorrect
+                        ? 'bg-correct text-pen-on'
+                        : isPicked
+                          ? status === 'revealed' && scored
+                            ? 'bg-wrong text-pen-on'
+                            : 'bg-pen text-pen-on'
+                          : 'bg-overlay text-dim'
+                    }`}
+                  >
+                    {LETTERS[i] ?? i + 1}
+                  </span>
+                  {/* The muted state dims the TEXT, not the tile. Opacity on the button dropped
+                      the letter badge to 2.4:1, and the letter is how a student matches their
+                      phone to the projector — it is the last thing that may fade. */}
+                  <span className={`text-lg leading-snug ${muted ? 'opacity-60' : ''}`}>{o.text}</span>
+                </button>
+              )
+            })}
+          </div>
 
-        {status === 'active' && picked && (
-          <p className="text-center text-dim">
-            {scored ? 'Answer locked in. Hang tight.' : 'Vote locked in. Watch the screen.'}
-          </p>
-        )}
-        {notice && (
-          <p role="alert" className="text-center text-sm text-wrong">
-            {notice}
-          </p>
-        )}
+          {status === 'active' && picked && (
+            <p className="text-center text-dim">
+              {scored ? 'Answer locked in. Hang tight.' : 'Vote locked in. Watch the screen.'}
+            </p>
+          )}
+          {/* Says why the tiles went dead, in the place they went dead. */}
+          {status === 'active' && !picked && windowClosed && (
+            <p role="status" className="text-center text-sm text-dim">
+              {scored ? 'Time. Answers are closed.' : 'Time. Voting is closed.'}
+            </p>
+          )}
+          {notice && (
+            <p role="alert" className="anim-fade-up text-center text-sm text-wrong">
+              {notice}
+            </p>
+          )}
+        </div>
 
         {status === 'revealed' && (
           <div className="flex flex-col gap-4">
@@ -519,12 +564,12 @@ function PlayRoom() {
                 scored. */}
             {myEntry && scored && (
               <p className="text-center text-dim">
-                <span className="font-data text-ink">#{myEntry.rank}</span> with{' '}
-                <span className="font-data tabular-nums text-ink">{myEntry.score}</span>
+                <span className="tabular text-ink">#{myEntry.rank}</span> with{' '}
+                <span className="tabular text-ink">{myEntry.score}</span>
               </p>
             )}
             {explanation && (
-              <p className="rounded-plate border-l-2 border-lamp bg-raised px-4 py-3 text-sm leading-relaxed text-dim">
+              <p className="rounded-plate border border-pen bg-pen-wash px-4 py-3 text-sm leading-relaxed text-dim">
                 {explanation}
               </p>
             )}

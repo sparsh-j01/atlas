@@ -11,7 +11,7 @@ export function tallyMcq(rows: { optionId: string }[]): AggregateMcq {
 
 /**
  * The lobby roster the projector renders: connected ids resolved against server-issued
- * names, in presence order.
+ * names, in a stable order.
  *
  * This is a security boundary, not a formatting helper. Presence payloads are written by
  * clients and migration 0005's policy cannot tell a participant from anyone else holding
@@ -20,9 +20,16 @@ export function tallyMcq(rows: { optionId: string }[]): AggregateMcq {
  * a participants row a forged entry never had). Resolving through `named` — built from
  * GET /roster, i.e. the rows the join endpoint wrote — means an id nobody was issued
  * resolves to nothing and never reaches the screen.
+ *
+ * Sorted by participant id, for the same reason rankLeaderboard breaks ties on it. Presence
+ * order is whatever order the channel's state object happens to enumerate: stable within one
+ * connection (a new join appends), but a host reload re-subscribes and the whole wall of
+ * names rearranges in front of the class for no reason anyone can see.
  */
 export function resolveRoster<T>(liveIds: string[], named: Map<string, T>): T[] {
-  return liveIds.flatMap((id) => named.get(id) ?? [])
+  return [...liveIds]
+    .sort((a, b) => a.localeCompare(b))
+    .flatMap((id) => named.get(id) ?? [])
 }
 
 type Ranked = { participantId: string; nickname: string; avatarSeed: string; score: number }

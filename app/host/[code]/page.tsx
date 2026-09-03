@@ -6,6 +6,12 @@ import { currentSlide, sanitizeSlide, slideCount, tallySlideAnswers } from '@/li
 import { getHostedSession } from '@/lib/sessions'
 import { HostConsole } from '@/components/HostConsole'
 
+// The room code, so a host juggling tabs mid-class can tell two live sessions apart.
+export async function generateMetadata({ params }: { params: Promise<{ code: string }> }) {
+  const { code } = await params
+  return { title: `Room ${code}` }
+}
+
 // The host's live view for a session. Auth is the httpOnly host-token cookie set at launch
 // (launchDeckAction), never the URL — so only the creator who launched this session sees it,
 // and a shared link is useless to anyone else.

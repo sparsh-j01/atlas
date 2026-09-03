@@ -53,11 +53,29 @@ describe('resolveRoster', () => {
     ['real-2', { participantId: 'real-2', nickname: 'Grace', avatarSeed: 'Grace' }],
   ])
 
-  it('renders server-issued names, in presence order', () => {
+  it('renders server-issued names', () => {
     expect(resolveRoster(['real-2', 'real-1'], named).map((p) => p.nickname)).toEqual([
-      'Grace',
       'Ada',
+      'Grace',
     ])
+  })
+
+  // Presence order is whatever the channel's state object enumerates. It holds within one
+  // connection, so this only shows up when the host reloads mid-class and the projected wall
+  // of names rearranges itself. Same id tie-break rankLeaderboard already documents.
+  it('orders by participant id, whatever order presence reports', () => {
+    const forward = resolveRoster(['real-1', 'real-2'], named).map((p) => p.participantId)
+    const reversed = resolveRoster(['real-2', 'real-1'], named).map((p) => p.participantId)
+    expect(forward).toEqual(['real-1', 'real-2'])
+    expect(reversed).toEqual(forward)
+  })
+
+  // Sorting must not mutate the caller's array — liveIds is React state in HostConsole, and
+  // an in-place sort would rewrite it behind the setState that produced it.
+  it('does not reorder the array it was given', () => {
+    const ids = ['real-2', 'real-1']
+    resolveRoster(ids, named)
+    expect(ids).toEqual(['real-2', 'real-1'])
   })
 
   // The reason this function exists. A presence payload is client-written and the RLS

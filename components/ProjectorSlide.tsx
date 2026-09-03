@@ -41,7 +41,7 @@ export function ProjectorSlide({
           >
             <span
               aria-hidden
-              className={`font-data grid shrink-0 place-items-center rounded-plate bg-overlay text-dim ${
+              className={`tabular grid shrink-0 place-items-center rounded-pill bg-overlay text-dim ${
                 room ? 'h-10 w-10 text-lg' : 'h-8 w-8 text-sm'
               }`}
             >
