@@ -1,84 +1,102 @@
-/* Font import first, before Tailwind's. `@import "tailwindcss"` expands to ~1300
-   lines during the PostCSS pass, and CSS requires every @import to precede all
-   rules — so an @import written after it lands mid-file in the generated output
-   and the whole stylesheet fails to parse. */
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap');
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Atlas design system.
+   Atlas design system. One core, two surfaces.
 
-   Paper, not dashboard. The surfaces a teacher works on -- landing, sign in,
-   dashboard, the deck editor -- are warm off-white with a book serif for
-   headings, because what they are editing is course material. It should look
-   closer to a syllabus than to an admin panel.
+   Derived from the landing page design (see docs/design.md). Three registers:
 
-   The one place that stays dark is the live room (`.stage`): the projector is
-   the primary screen in a dimmed lecture hall, and a full-white wall behind a
-   question is a flashbang. Same token names, redefined inside the scope, so
-   every component works on both surfaces without knowing which it is on.
+     print  Playfair Display -- the material itself: headings, prompts, figures.
+     pen    Caveat + blue    -- marks on top of it: logo, room code, live labels.
+     room   the .stage scope -- lights down: projector, phone during play.
 
-   One accent (lamp) for anything live or primary. Correct/wrong are the only
-   other hues, and they only ever appear on graded answers.
-   Two radii: --radius-plate for surfaces, --radius-pill for controls.
-   Display serif for headings and figures, Geist for body and UI, Geist Mono for
-   numbers read from the back of the room.
+   Everything reads through the tokens below. The dark surface redefines the same
+   token names inside .stage, so a component never knows which surface it is on --
+   ProjectorSlide, Leaderboard and the landing page's own dark section all render
+   correctly on either.
+
+   Contrast is gated by docs/design-contrast.mjs. Three values are deliberately
+   darker than the landing comp (--dim, --pen-ink, --correct); the comp sets them
+   at body size where they miss 4.5:1 on cream. Do not "restore" them.
    --------------------------------------------------------------------------- */
 
 :root {
-  /* Warm paper. The tint matters: a neutral grey #f7f7f7 reads as "unstyled",
-     the warm cast reads as stock. */
-  --ground: #f9f7f6;
-  --raised: #fffefd;
-  --overlay: #f1eeec;
-  --rule: #dde1e7;
-  --rule-strong: #c5ccd6;
+  /* Lets height animate to and from `auto`, which the FAQ disclosure needs. Ignored
+     by engines that don't support it; there it just opens without the transition. */
+  interpolate-size: allow-keywords;
 
-  --ink: #011121;
-  --dim: #4b5563;
-  --faint: #9b9893;
+  /* Warm paper. The tint is the point -- neutral grey reads as unstyled. */
+  --ground: #f7f3eb;
+  --raised: #fffdf8;
+  --overlay: #efe9dd;
+  --rule: #ded9cf;
+  --rule-strong: #c9c4bb;
 
-  /* Deeper than the dark-room gold: #e0a83a on paper fails contrast. */
-  --lamp: #a97a16;
-  --lamp-hi: #8d6410;
-  --lamp-ink: #fdfcfb;
-  --lamp-wash: #f6efdd;
+  --ink: #111111;
+  --dim: #6b6862;
+  /* Non-text only: disabled fills, hollow dots, icon strokes. On cream there is no
+     room for a third ink step that still clears 4.5:1 -- anything dark enough to
+     pass collapses into --dim. Text uses --ink or --dim. */
+  --faint: #8a857d;
 
-  --correct: #1c7d55;
-  --wrong: #b93a2c;
+  /* The pen. Marks what is live, current, or chosen -- and nothing else. */
+  --pen: #2868ff;
+  --pen-ink: #2159e6; /* text below 18.66px bold / 24px regular */
+  --pen-wash: #dce7ff;
+  --pen-on: #ffffff;
 
-  /* Warm-brown shadows, never black. Black shadows on warm paper go grey and
-     make cards look like they were pasted on. */
-  --lift: 0 4px 12px -6px rgb(82 66 50 / 0.12), 0 1px 3px 0 rgb(82 66 50 / 0.05);
-  --lift-high: 0 14px 38px -18px rgb(82 66 50 / 0.16), 0 3px 8px 0 rgb(82 66 50 / 0.05);
+  --correct: #3d7d36;
+  --correct-wash: #eff8e7;
+  /* Nudged one step darker than the comp's #c14434, the same correction --dim, --pen-ink
+     and --correct already carry: at #c14434 the error text on its OWN wash is 4.45:1, so
+     the pairing the palette defines missed AA at body size. #bf4232 clears it on wash,
+     cream and raised alike. Do not "restore" it. */
+  --wrong: #bf4232;
+  --wrong-wash: #ffece9;
+
+  /* Sticky yellow. One element per screen, maximum, never inside a list. */
+  --note: #ffe681;
+
+  /* Offset right and down, warm brown, never black or centred. That offset is what
+     makes a card read as paper on a lit desk instead of a floating div. */
+  --lift: 6px 8px 20px rgb(43 39 31 / 0.08);
+  --lift-high: 16px 22px 48px rgb(43 39 31 / 0.13);
 
   color-scheme: light;
 }
 
-/* The live room. Projector, participant phone, and anything mirrored to the
-   wall. Only the values change -- the token names are identical, so
-   ProjectorSlide, Leaderboard and Podium render correctly on either surface. */
+/* The room. Projector, participant phone once the session is live, and the landing
+   page's own dark section. Only the values change. */
 .stage {
-  --ground: #0b0e13;
-  --raised: #12161e;
-  --overlay: #1a2029;
-  --rule: #232b37;
-  --rule-strong: #38424f;
+  --ground: #111111;
+  --raised: #171717;
+  --overlay: #1e1e1e;
+  --rule: #333333;
+  --rule-strong: #444444;
 
-  --ink: #eceae4;
-  --dim: #98a1b0;
-  --faint: #667080;
+  --ink: #ffffff;
+  --dim: #aaaaaa;
+  --faint: #858585;
 
-  --lamp: #e0a83a;
-  --lamp-hi: #eeba52;
-  --lamp-ink: #16120a;
-  --lamp-wash: #211a0d;
+  /* The pen turns lime in the dark. Blue at #2868ff on #111 is 3.0:1 -- it dies on
+     a projector. Lime is 13.6:1. Same role, different face. */
+  --pen: #b7ed32;
+  --pen-ink: #b7ed32;
+  --pen-wash: #253611;
+  --pen-on: #111111;
 
-  --correct: #4fbf8b;
-  --wrong: #e0605c;
+  /* Lime already means "this one" during the question; at reveal it means "the
+     correct one". A promotion, not a collision -- so the room never carries more
+     than two accents. */
+  --correct: #b7ed32;
+  --correct-wash: #253611;
+  --wrong: #ff8d7c;
+  --wrong-wash: #3a1d19;
 
-  --lift: 0 4px 12px -6px rgb(0 0 0 / 0.5);
-  --lift-high: 0 14px 38px -18px rgb(0 0 0 / 0.6);
+  --note: #ffe681;
+
+  /* No desk lamp in a dark hall, so no offset. */
+  --lift: 0 6px 20px rgb(0 0 0 / 0.5);
+  --lift-high: 0 16px 44px rgb(0 0 0 / 0.6);
 
   color-scheme: dark;
   background: var(--ground);
@@ -96,38 +114,49 @@
   --color-dim: var(--dim);
   --color-faint: var(--faint);
 
-  --color-lamp: var(--lamp);
-  --color-lamp-hi: var(--lamp-hi);
-  --color-lamp-ink: var(--lamp-ink);
-  --color-lamp-wash: var(--lamp-wash);
+  --color-pen: var(--pen);
+  --color-pen-ink: var(--pen-ink);
+  --color-pen-wash: var(--pen-wash);
+  --color-pen-on: var(--pen-on);
 
   --color-correct: var(--correct);
+  --color-correct-wash: var(--correct-wash);
   --color-wrong: var(--wrong);
+  --color-wrong-wash: var(--wrong-wash);
+  --color-note: var(--note);
 
-  --font-sans: var(--font-geist);
-  --font-display: var(--font-gowun);
-  --font-data: var(--font-geist-mono);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-playfair);
+  --font-pen: var(--font-caveat);
 
   --shadow-lift: var(--lift);
   --shadow-lift-high: var(--lift-high);
 
-  --radius-plate: 6px;
-  --radius-pill: 8px;
+  /* Generous radii are most of why this reads warm. Three steps, no more. */
+  --radius-pill: 999px;
+  --radius-plate: 20px;
+  --radius-tile: 14px;
+
+  /* Motion. Three curves, and every animation in the app uses one of them -- these
+     override Tailwind's defaults, so an existing `ease-out` utility picks up the
+     stronger curve without being rewritten.
+       out    entrances and growth: fast start, long settle
+       in-out state swaps that leave and arrive
+       drawer height and reveal, where the tail matters most */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
   body {
     background: var(--ground);
     color: var(--ink);
-    font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-    /* The open tracking on body copy is deliberate and is half of this
-       typographic voice. Tight sans next to a book serif reads as a mismatch. */
-    letter-spacing: 0.035em;
+    font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* One focus treatment for the whole app. Keyboard users get a visible ring on
-     every control without each component remembering to add one. */
+  /* One focus treatment for the whole app, so no component has to remember. */
   :focus-visible {
     outline: 2px solid var(--ink);
     outline-offset: 2px;
@@ -135,7 +164,7 @@
   }
 
   .stage :focus-visible {
-    outline-color: var(--lamp);
+    outline-color: var(--pen);
   }
 
   ::selection {
@@ -143,19 +172,89 @@
     color: var(--ground);
   }
 
+  /* --dim, not --faint: a placeholder is text and has to clear 4.5:1. */
   ::placeholder {
-    color: var(--faint);
+    color: var(--dim);
+    opacity: 1;
+  }
+
+  /* Landing-page links inherit their colour instead of taking a UA blue. This lives in
+     @layer base, not next to the landing layout below: an unlayered `.atlas-page a`
+     rule outranks Tailwind's utilities, so `text-ground` on a filled button lost to it
+     and every primary CTA rendered ink-on-ink. Layered, utilities win. */
+  .atlas-page a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 }
 
 @layer utilities {
-  /* Headings and figures. Normal weight on purpose: this serif at 700 turns
-     into a newspaper masthead, which is the wrong register. Tracking opens very
-     slightly because the face sets a touch tight at display size. */
+  /* Print. Headings, prompts, and figures that sit still. Weight 700 is the voice --
+     Playfair at 400 is a text weight and reads as a different product. */
   .font-display {
-    font-family: var(--font-gowun), 'Iowan Old Style', Georgia, serif;
-    font-weight: 400;
-    letter-spacing: 0.01em;
+    font-family: var(--font-playfair), 'Iowan Old Style', Georgia, serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  /* Pen. Annotation only: logo, room code, live labels, empty-state asides. Never a
+     control label, never body copy, never a question read under a countdown. */
+  .font-pen {
+    font-family: var(--font-caveat), 'Bradley Hand', cursive;
+    font-weight: 700;
+  }
+
+  /* Figures that change in place -- countdowns, live tallies, scores. Proportional
+     serif figures visibly jitter as they re-render, which makes a leaderboard look
+     broken. Static figures can stay in .font-display. */
+  .tabular {
+    /* The font-family is load-bearing, not inherited-by-luck: nested under .font-display
+       this class would take Playfair, whose proportional figures jitter as they re-render —
+       the exact failure .tabular exists to prevent. Spec: docs/design.md §4. */
+    font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  /* Pointer target grown to the 44px comfort size without moving anything: the control
+     keeps its drawn size and an invisible ::after carries the hit area. Only for controls
+     that stand alone -- on a tight row of icon buttons the expanded areas would overlap
+     and the later sibling would steal its neighbour's edge, so those get real padding. */
+  .hit {
+    position: relative;
+  }
+
+  .hit::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    translate: -50% -50%;
+  }
+
+  /* Section eyebrow, straight from the landing comp. */
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--pen-ink);
+  }
+
+  /* Field labels and column headers. Not a decorative eyebrow. */
+  .cap {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
   }
 
   /* Horizontal rails hide their scrollbar; the overflow is the affordance. */
@@ -167,6 +266,82 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Motion.
+
+   Named animations rather than per-component keyframes, so the whole app moves on
+   one vocabulary. Only transform and opacity are animated (the two properties the
+   compositor can handle without laying the page out again) -- the one exception is
+   the hero tally, which animates width on purpose because the growing bar IS the
+   thing being demonstrated, and it runs once on a marketing page.
+   --------------------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Only `from` is declared, so the bar animates to whatever width the markup set. */
+/* scaleX, not width: width is a layout property and animating it reflows the row. The fill
+   is a plain rectangle clipped by .answer's overflow, so scaling has no radius to distort. */
+@keyframes grow-width {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Ambient "still working" for long waits. Never used as decoration. */
+@keyframes breathe {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+.anim-rise {
+  transform-origin: bottom;
+  animation: rise 520ms var(--ease-out) both;
+}
+
+.anim-fade-up {
+  animation: fade-up 420ms var(--ease-out) both;
+}
+
+.anim-fade-in {
+  animation: fade-in 260ms var(--ease-out) both;
+}
+
+.anim-grow-width {
+  transform-origin: left;
+  animation: grow-width 900ms var(--ease-out) both;
+}
+
+.anim-breathe {
+  animation: breathe 1.8s var(--ease-in-out) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -176,120 +351,48 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* Gentler, not zero. Reduced motion means no movement, not no feedback -- these
+     keep a plain cross-fade so an entrance still reads as an entrance. Placed after
+     the blanket rule so the later !important wins. */
+  .anim-rise,
+  .anim-fade-up,
+  .anim-fade-in,
+  .anim-grow-width {
+    animation-name: fade-in !important;
+    animation-duration: 260ms !important;
+  }
+
+  /* An indefinite pulse is exactly what this preference is meant to stop. The
+     wait still has its live-region text. */
+  .anim-breathe {
+    animation: none !important;
+  }
 }
 
 /* ===========================================================================
-   Landing page (Ananya, merged 2026-08-29).
+   Landing page layout.
 
-   Hand-written CSS, namespaced under .atlas-page and its children. It defines
-   its own :root custom properties (--blue, --cream, --lime, --paper) and does
-   not touch the @theme block above -- the two systems share only --ink, and
-   hers is scoped to elements inside .atlas-page.
+   Page-specific composition only -- the hero grid, the process strip, the step
+   list. Every colour, face and radius comes from the tokens above, so this page
+   and the product cannot drift apart.
 
-   Kept separate rather than folded into @theme on purpose: these are plain CSS
-   variables read by plain CSS rules, not Tailwind tokens, so putting them in
-   @theme would generate ~8 utility classes nothing uses and imply the landing
-   page is themeable the same way the app is. It isn't, and it doesn't need to be.
+   It previously carried a second :root and unlayered `body` / `a` / `*` rules.
+   Unlayered CSS beats @layer base, so those were silently restyling the whole
+   app from a file scoped to one page. They are gone; what is left is layout.
    =========================================================================== */
 
-:root {
-  --cream: #f7f3eb;
-  --paper: #fffdf8;
-  --ink: #111111;
-  --blue: #2868ff;
-  --blue-light: #dce7ff;
-  --lime: #b7ed32;
-  --muted: #77736d;
-  --line: #ded9cf;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  margin: 0;
-  background: var(--cream);
-  color: var(--ink);
-  font-family: "DM Sans", sans-serif;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
+/* Ruled paper under the whole marketing page. Same 28px grid the how-it-works band
+   draws, at roughly a third of the contrast -- there it is the section's own surface,
+   here it is only meant to be felt. Sections with their own background (.how-section,
+   the cards) paint over it. */
 .atlas-page {
-  overflow: hidden;
+  background-color: var(--ground);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
-
-
-/* ---------------- NAVBAR ---------------- */
-
-.navbar {
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4.5vw;
-  border-bottom: 1px solid var(--line);
-  background: var(--cream);
-}
-
-.logo {
-  font-family: "Caveat", cursive;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-.logo span,
-.footer-logo span {
-  color: var(--blue);
-  font-size: 25px;
-}
-
-.nav-links {
-  display: flex;
-  gap: 36px;
-  font-size: 14px;
-}
-
-.nav-links a {
-  transition: opacity 0.2s ease;
-}
-
-.nav-links a:hover {
-  opacity: 0.55;
-}
-
-.nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 25px;
-  font-size: 14px;
-}
-
-.login-link:hover {
-  text-decoration: underline;
-}
-
-.nav-button {
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  padding: 12px 20px;
-  transition: 0.2s ease;
-}
-
-.nav-button:hover {
-  background: var(--ink);
-  color: white;
-}
-
 
 /* ---------------- HERO ---------------- */
 
@@ -299,7 +402,7 @@ a {
   grid-template-columns: 0.9fr 1.1fr;
   gap: 5vw;
   align-items: center;
-  padding: 85px 6vw 75px;
+  padding: 48px 6vw 75px;
   position: relative;
 }
 
@@ -308,255 +411,114 @@ a {
   z-index: 2;
 }
 
-.eyebrow,
-.section-label,
-.final-label {
-  color: var(--blue);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 4px;
-  margin-bottom: 30px;
-}
-
-.eyebrow span {
-  font-size: 15px;
-  margin-right: 10px;
-}
-
+/* Caveat as a headline is a marketing move, and this is the one page allowed to make
+   it -- it is the comp's signature. In-product headings are Playfair (see .font-display);
+   the pen never sets an h1 on a screen someone has to work in. */
 .hero-title {
-  font-family: "Caveat", cursive;
-  font-size: clamp(76px, 8vw, 125px);
-  line-height: 0.78;
+  font-family: var(--font-caveat), cursive;
   font-weight: 700;
-  letter-spacing: -3px;
+  font-size: clamp(66px, 7.5vw, 118px);
+  line-height: 0.82;
+  letter-spacing: -0.02em;
 }
 
 .blue-text {
-  color: var(--blue);
-}
-
-.blue-scribble {
-  color: var(--blue);
-  font-size: 30px;
-  transform: rotate(-4deg);
-  margin: 8px 0 12px 25px;
+  color: var(--pen);
 }
 
 .sticky-note {
   display: inline-block;
-  background: #ffe681;
-  padding: 13px 17px;
-  font-family: "Caveat", cursive;
-  font-size: 24px;
-  line-height: 1.05;
-  transform: rotate(-2deg);
-  box-shadow: 3px 5px 0 rgba(0, 0, 0, 0.05);
-  margin: 10px 0 25px;
-}
-
-.sticky-note strong {
+  background: var(--note);
+  padding: 14px 18px;
+  font-family: var(--font-caveat), cursive;
   font-weight: 700;
+  font-size: 24px;
+  line-height: 1.15;
+  transform: rotate(-2deg);
+  box-shadow: var(--lift);
+  margin: 22px 0 26px;
 }
 
 .hero-description {
   max-width: 490px;
-  color: var(--muted);
+  color: var(--dim);
   font-size: 17px;
   line-height: 1.7;
 }
 
 .hero-buttons {
   display: flex;
-  gap: 15px;
+  flex-wrap: wrap;
+  gap: 14px;
   margin-top: 30px;
-}
-
-.primary-button,
-.secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 17px 26px;
-  font-weight: 700;
-  transition: 0.25s ease;
-}
-
-.primary-button {
-  background: var(--ink);
-  color: white;
-}
-
-.primary-button:hover {
-  transform: translateY(-3px) rotate(-1deg);
-}
-
-.secondary-button {
-  border: 1px solid #c9c4bb;
-}
-
-.secondary-button:hover {
-  background: white;
 }
 
 .teacher-proof {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 14px;
   margin-top: 35px;
   font-size: 13px;
-}
-
-.teacher-proof span {
-  color: var(--blue);
+  color: var(--dim);
 }
 
 .avatars {
   display: flex;
 }
 
-.avatars span {
-  width: 39px;
-  height: 39px;
-  display: grid;
-  place-items: center;
+.avatars img {
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 2px solid var(--cream);
-  margin-left: -7px;
-  background: #f2c5a8;
-  font-size: 20px;
+  border: 2px solid var(--ground);
+  background: var(--overlay);
+  margin-left: -8px;
 }
 
-.avatars span:nth-child(2) {
-  background: #c6d5ee;
-}
-
-.avatars span:nth-child(3) {
-  background: #dfe5ad;
-}
-
-
-/* ---------------- QUIZ ---------------- */
+/* ---------------- HERO MOCKUP ---------------- */
 
 .hero-right {
   position: relative;
-  padding: 40px 20px 70px;
-}
-
-.live-label {
-  position: absolute;
-  top: 0;
-  right: 7%;
-  color: var(--blue);
-  background: var(--blue-light);
-  border: 1px solid #9ebdff;
-  padding: 13px 20px;
-  border-radius: 999px;
-  font-family: "Caveat", cursive;
-  font-size: 19px;
-  font-weight: 700;
-  transform: rotate(3deg);
-  z-index: 3;
+  padding: 30px 10px 60px;
 }
 
 .quiz-window {
-  background: white;
-  border: 1.5px solid #dedede;
-  border-radius: 28px;
-  padding: 25px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-plate);
+  padding: 28px;
+  /* The page's one rotated element. */
   transform: rotate(1.2deg);
-  box-shadow: 20px 25px 55px rgba(43, 39, 31, 0.13);
-}
-
-.window-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #e8e4dc;
-}
-
-.window-dots {
-  display: flex;
-  gap: 8px;
-}
-
-.window-dots span {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: #ff6258;
-}
-
-.window-dots span:nth-child(2) {
-  background: #f4bd3f;
-}
-
-.window-dots span:nth-child(3) {
-  background: #55c76b;
-}
-
-.live-pill {
-  background: #eff8e7;
-  color: #4e9c45;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.quiz-content {
-  padding: 35px 10px 5px;
-}
-
-.question-meta {
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 2px;
-}
-
-.question-meta span {
-  float: right;
-  color: var(--ink);
-  letter-spacing: 0;
-  font-size: 14px;
-}
-
-.quiz-content h2 {
-  font-family: "Playfair Display", serif;
-  font-size: clamp(30px, 3vw, 47px);
-  line-height: 1.05;
-  max-width: 600px;
-  margin: 30px 0;
+  box-shadow: var(--lift-high);
 }
 
 .answer {
-  height: 65px;
-  border: 1px solid #dcd9d2;
-  border-radius: 17px;
+  min-height: 62px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-tile);
   display: flex;
   align-items: center;
   position: relative;
   overflow: hidden;
-  margin: 12px 0;
+  margin: 10px 0;
 }
 
 .answer-active {
-  border-color: #b7cdfd;
+  border-color: var(--pen);
 }
 
 .answer-letter {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   margin-left: 10px;
   border-radius: 50%;
-  background: white;
-  border: 1px solid #ddd;
+  background: var(--raised);
+  border: 1px solid var(--rule);
   z-index: 2;
   font-weight: 600;
+  font-size: 14px;
 }
 
 .answer-text {
@@ -570,11 +532,8 @@ a {
   height: 100%;
   left: 0;
   top: 0;
-  background: #e3ebff;
-}
-
-.answer-active .answer-fill {
-  background: #cfddff;
+  background: var(--pen-wash);
+  transition: width 500ms ease-out;
 }
 
 .answer-percent {
@@ -582,103 +541,80 @@ a {
   margin-right: 18px;
   z-index: 2;
   font-size: 12px;
-  color: #777;
+  /* --ink, not --dim. The fill slides UNDER this label, and --dim on --pen-wash is 4.47:1.
+     A DOM-walking contrast check cannot see it because the fill is a positioned sibling, so
+     it has to be reasoned about here. Hierarchy comes from 12px vs the row's 14px. */
+  color: var(--ink);
 }
 
-.quiz-footer {
-  border-top: 1px solid #e5e1d9;
-  margin-top: 25px;
-  padding-top: 18px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #999;
-  letter-spacing: 1px;
-}
-
-.quiz-footer strong {
-  color: var(--blue);
+/* Floating badge over the card's lower-left corner. z-index because the rotated card
+   paints after it in source order and was covering the label. */
+/* .cap paints --dim, a paper-surface token — on this ink chip that is 3.4:1 before any
+   opacity, and 2.0:1 with it. The note carries its own foreground; inherit it. */
+.student-note .cap {
+  color: inherit;
+  opacity: 0.8;
 }
 
 .student-note {
   position: absolute;
-  bottom: 0;
+  bottom: 6px;
   left: 0;
+  z-index: 3;
   background: var(--ink);
-  color: white;
-  padding: 18px 25px;
-  border-radius: 20px;
+  color: var(--ground);
+  padding: 16px 24px;
+  border-radius: var(--radius-tile);
   transform: rotate(-2deg);
-  box-shadow: 5px 8px 15px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--lift-high);
 }
-
-.student-note small {
-  display: block;
-  color: #aaa;
-  font-size: 9px;
-  letter-spacing: 2px;
-}
-
-.student-note strong {
-  display: block;
-  font-family: "Playfair Display", serif;
-  font-size: 35px;
-  margin-top: 4px;
-}
-
-.arrow-doodle {
-  position: absolute;
-  bottom: 65px;
-  left: -30px;
-  font-family: "Caveat", cursive;
-  font-size: 65px;
-  color: var(--blue);
-  transform: rotate(-15deg);
-}
-
 
 /* ---------------- PROCESS STRIP ---------------- */
 
 .process-strip {
-  background: var(--blue);
-  color: white;
-  min-height: 110px;
+  background: var(--pen);
+  color: var(--pen-on);
+  min-height: 96px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-around;
-  padding: 0 5vw;
-  font-family: "Caveat", cursive;
+  justify-content: center;
+  gap: 6px 28px;
+  padding: 24px 5vw;
+  font-family: var(--font-caveat), cursive;
   font-weight: 700;
-  font-size: 20px;
-  letter-spacing: 4px;
+  font-size: 21px;
+  letter-spacing: 0.22em;
 }
 
-.process-strip span {
-  font-size: 24px;
+/* nth-child(even) is the ✦ separators — the words sit on the odd slots. Dimming every
+   span put white at 0.65 on --pen, which is 2.84:1 and misses even the 3:1 large-text
+   floor. The separator is decorative and can be as quiet as it likes; the words cannot. */
+.process-strip span:nth-child(even) {
+  opacity: 0.65;
 }
-
 
 /* ---------------- HOW IT WORKS ---------------- */
 
 .how-section {
-  min-height: 600px;
-  padding: 130px 7vw;
+  padding: 120px 7vw;
   position: relative;
-  background-color: var(--paper);
-
+  background-color: var(--raised);
   background-image:
-    linear-gradient(#e8e9ee 1px, transparent 1px),
-    linear-gradient(90deg, #e8e9ee 1px, transparent 1px);
-
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
   background-size: 28px 28px;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 7vw;
 }
 
+/* Knocks the grid back so it reads as ruled paper, not a wireframe. */
 .how-section::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(255, 253, 248, 0.82);
-  z-index: 0;
+  background: color-mix(in srgb, var(--raised) 86%, transparent);
 }
 
 .how-section > * {
@@ -686,419 +622,330 @@ a {
   z-index: 1;
 }
 
-.how-section {
-  display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 7vw;
-}
-
 .how-heading h2 {
-  font-family: "Playfair Display", serif;
-  font-size: clamp(45px, 5vw, 75px);
-  line-height: 0.98;
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(40px, 4.6vw, 68px);
+  line-height: 1.0;
+  letter-spacing: -0.025em;
   margin: 0;
-}
-
-.section-label {
-  margin-bottom: 35px;
 }
 
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
+/* The numbering is real: this is a sequence, and step 2 cannot happen before 1. */
 .step {
   display: grid;
-  grid-template-columns: 45px 70px 1fr;
-  align-items: center;
-  gap: 18px;
-  padding: 25px 0;
-  border-top: 1px solid #d8d4cb;
+  grid-template-columns: 48px 1fr;
+  align-items: baseline;
+  gap: 20px;
+  padding: 28px 0;
+  border-top: 1px solid var(--rule);
 }
 
 .step-number {
-  color: var(--blue);
+  font-family: var(--font-playfair), Georgia, serif;
   font-weight: 700;
-}
-
-.step-icon {
-  font-size: 42px;
-  transform: rotate(-5deg);
+  font-size: 22px;
+  color: var(--pen);
 }
 
 .step h3 {
-  font-family: "Playfair Display", serif;
-  font-size: 24px;
-  margin: 0 0 7px;
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 700;
+  font-size: 23px;
+  margin: 0 0 8px;
 }
 
 .step p {
-  color: var(--muted);
+  color: var(--dim);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
+  max-width: 46ch;
 }
 
-.step-arrow {
-  display: none;
+/* ---------------- MARGINALIA ----------------
+
+   The comp's decorative layer: doodles, the rocket, the hearts. Landing page only.
+   These are marketing register -- they do not scale to a projector and they render
+   differently per platform, which is why the product surfaces carry none of them.
+   Here they are most of the page's personality.
+
+   All of it is aria-hidden in the markup and none of it holds information. */
+
+.doodle {
+  position: absolute;
+  font-family: var(--font-caveat), cursive;
+  font-weight: 700;
+  color: var(--pen);
+  pointer-events: none;
+  user-select: none;
+}
+
+.blue-scribble {
+  position: static;
+  display: block;
+  color: var(--pen);
+  font-size: 30px;
+  line-height: 1;
+  transform: rotate(-4deg);
+  margin: 10px 0 0 25px;
+}
+
+.arrow-doodle {
+  bottom: 70px;
+  left: -26px;
+  font-size: 62px;
+  transform: rotate(-15deg);
+}
+
+.live-label {
+  position: absolute;
+  top: -6px;
+  right: 7%;
+  z-index: 3;
+  color: var(--pen-ink);
+  background: var(--pen-wash);
+  border: 1px solid color-mix(in srgb, var(--pen) 45%, transparent);
+  padding: 11px 18px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-caveat), cursive;
+  font-weight: 700;
+  font-size: 19px;
+  transform: rotate(3deg);
 }
 
 .simple-doodle {
-  position: absolute;
   right: 5%;
-  bottom: 50px;
-  font-family: "Caveat", cursive;
-  color: var(--blue);
+  bottom: 46px;
   font-size: 25px;
+  line-height: 1.25;
+  text-align: center;
   transform: rotate(7deg);
 }
 
-
-/* ---------------- CLASSROOM ---------------- */
-
-.classroom-section {
-  background: #111111;
-  color: white;
-  padding: 110px 6vw;
-  display: grid;
-  grid-template-columns: 0.7fr 1.6fr 0.5fr;
-  gap: 40px;
-  align-items: center;
-}
-
-.lime-label {
-  color: var(--lime);
-  font-family: "Caveat", cursive;
-  font-weight: 700;
-  font-size: 20px;
-  letter-spacing: 3px;
-  margin-bottom: 25px;
-}
-
-.classroom-intro h2 {
-  font-family: "Caveat", cursive;
-  font-size: clamp(45px, 5vw, 75px);
-  line-height: 0.9;
-  margin: 0;
-}
-
-.classroom-intro p {
-  color: #999;
-  line-height: 1.7;
-  margin-top: 30px;
-}
-
-.lime-link {
-  display: inline-block;
-  color: var(--lime);
-  font-family: "Caveat", cursive;
-  font-size: 23px;
-  margin-top: 15px;
-}
-
-.star-doodle {
-  color: var(--lime);
-  font-size: 70px;
-  transform: rotate(-10deg);
-}
-
-.classroom-demo {
-  border: 1px solid #444;
-  border-radius: 25px;
-  padding: 35px;
-  background: #171717;
-}
-
-.demo-header {
-  display: flex;
-  justify-content: space-between;
-  padding-bottom: 25px;
-  border-bottom: 1px solid #333;
-}
-
-.demo-header small {
-  display: block;
-  color: #777;
-  font-size: 10px;
-  letter-spacing: 2px;
-}
-
-.demo-header strong {
-  display: block;
-  color: var(--lime);
-  font-family: "Caveat", cursive;
-  font-size: 30px;
-  margin-top: 6px;
-}
-
-.students-count {
-  color: #aaa;
-  text-align: right;
-}
-
-.students-count small {
-  margin-top: 4px;
-}
-
-.demo-question {
-  font-family: "Playfair Display", serif;
-  font-size: 28px;
-  margin: 35px 0;
-  line-height: 1.2;
-}
-
-.demo-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.demo-options div {
-  padding: 20px;
-  border: 1px solid #333;
-  border-radius: 15px;
-  color: #ddd;
-}
-
-.demo-options span {
-  color: #666;
-  margin-right: 20px;
-}
-
-.demo-options .selected-option {
-  border-color: var(--lime);
-  color: white;
-  box-shadow: inset 0 0 0 1px var(--lime);
-}
-
-.classroom-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 35px;
-}
-
-.classroom-stats div {
-  border-top: 1px solid #333;
-  padding-top: 20px;
-}
-
-.classroom-stats strong {
-  display: block;
-  font-family: "Playfair Display", serif;
-  font-size: 38px;
-}
-
-.classroom-stats span {
-  color: #777;
-  font-size: 12px;
-}
-
-
-/* ---------------- FINAL CTA ---------------- */
-
-.final-section {
-  min-height: 650px;
-  padding: 120px 5vw;
-  text-align: center;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.final-label {
-  margin-bottom: 25px;
-}
-
-.final-section h2 {
-  font-family: "Playfair Display", serif;
-  font-size: clamp(55px, 8vw, 105px);
-  line-height: 0.9;
-  margin: 0;
-}
-
-.final-section h2 span {
-  color: var(--blue);
-  font-family: "Caveat", cursive;
-}
-
-.final-section p {
-  font-family: "Caveat", cursive;
-  color: var(--muted);
-  font-size: 22px;
-  margin: 25px 0;
-}
-
 .rocket {
-  position: absolute;
   left: 8%;
-  bottom: 100px;
-  font-size: 75px;
+  bottom: 90px;
+  font-size: 72px;
   transform: rotate(-15deg);
 }
 
 .heart {
-  position: absolute;
   right: 12%;
-  top: 130px;
+  top: 110px;
   color: #ff8d7c;
-  font-size: 40px;
+  font-size: 38px;
+  line-height: 1.35;
   transform: rotate(10deg);
 }
 
-
-/* ---------------- FOOTER ---------------- */
-
-.footer {
-  border-top: 1px solid var(--line);
-  min-height: 100px;
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  align-items: center;
-  padding: 0 5vw;
-  color: #777;
-  font-size: 13px;
-}
-
-.footer-logo {
-  color: var(--ink);
-  font-family: "Caveat", cursive;
-  font-weight: 700;
-  font-size: 25px;
-}
-
-
-/* ---------------- MOBILE ---------------- */
-
 @media (max-width: 900px) {
-
-  .nav-links {
+  /* The absolutely-positioned marginalia has nowhere to go once the columns stack. */
+  .arrow-doodle,
+  .simple-doodle,
+  .rocket,
+  .heart {
     display: none;
   }
+}
 
-  .hero {
+/* ---------------- FAQ ---------------- */
+
+.faq-section {
+  padding: 110px 6vw;
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr;
+  gap: 6vw;
+  border-top: 1px solid var(--rule);
+}
+
+.faq-section h2 {
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(36px, 4vw, 58px);
+  line-height: 1.0;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.faq-list {
+  border-top: 1px solid var(--rule);
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--rule);
+}
+
+.faq-item summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 0;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 700;
+  font-size: 20px;
+  transition: color 150ms ease;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary:hover {
+  color: var(--pen-ink);
+}
+
+/* The marker rotates to an x when the row opens. A native <details> gives us the
+   toggle, the keyboard path and the aria wiring for free -- no state to hold. */
+.faq-item summary::after {
+  content: "+";
+  font-family: var(--font-sans), sans-serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--pen);
+  flex-shrink: 0;
+  transition: transform 200ms ease;
+}
+
+.faq-item[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.faq-item p {
+  margin: 0;
+  padding: 0 0 26px;
+  max-width: 62ch;
+  color: var(--dim);
+  line-height: 1.7;
+}
+
+/* Animating a <details> open needs a height it can interpolate, which `auto` is not
+   until `interpolate-size` is switched on (declared on :root above). Engines without
+   ::details-content simply open instantly -- the disclosure still works, it just does
+   not animate, which is the correct thing to degrade to. */
+.faq-item::details-content {
+  block-size: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    block-size 250ms var(--ease-drawer),
+    opacity 200ms ease,
+    content-visibility 250ms allow-discrete;
+}
+
+.faq-item[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .faq-section {
     grid-template-columns: 1fr;
-    padding-top: 70px;
-  }
-
-  .hero-title {
-    font-size: 78px;
-  }
-
-  .hero-right {
-    margin-top: 40px;
-  }
-
-  .how-section {
-    grid-template-columns: 1fr;
-  }
-
-  .classroom-section {
-    grid-template-columns: 1fr;
-  }
-
-  .classroom-stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .footer {
-    grid-template-columns: 1fr;
-    gap: 15px;
-    padding: 25px;
-    text-align: center;
+    gap: 40px;
   }
 }
 
 @media (max-width: 600px) {
-
-  .navbar {
-    padding: 0 20px;
+  .faq-section {
+    padding: 80px 24px;
   }
 
-  .nav-actions {
-    gap: 10px;
+  .faq-item summary {
+    font-size: 18px;
   }
+}
 
-  .login-link {
-    display: none;
-  }
+/* ---------------- FINAL CTA ---------------- */
 
+.final-section {
+  padding: 130px 5vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Anchors the rocket and the hearts. */
+  position: relative;
+}
+
+.final-section h2 {
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 800;
+  font-size: clamp(44px, 6.5vw, 92px);
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.final-section h2 span {
+  color: var(--pen);
+}
+
+.final-section p {
+  font-family: var(--font-caveat), cursive;
+  font-weight: 700;
+  color: var(--dim);
+  font-size: 23px;
+  margin: 22px 0 30px;
+}
+
+/* ---------------- RESPONSIVE ---------------- */
+
+@media (max-width: 900px) {
   .hero {
-    padding: 55px 22px;
+    grid-template-columns: 1fr;
+    padding-top: 40px;
+    min-height: 0;
   }
 
-  .hero-title {
-    font-size: 70px;
-  }
-
-  .hero-buttons {
-    flex-direction: column;
-  }
-
-  .primary-button,
-  .secondary-button {
-    width: 100%;
-  }
-
-  .quiz-window {
-    padding: 15px;
-  }
-
-  .quiz-content h2 {
-    font-size: 30px;
-  }
-
-  .process-strip {
-    font-size: 13px;
-    gap: 10px;
-    letter-spacing: 1px;
-  }
-
-  .process-strip span {
-    font-size: 15px;
+  .hero-right {
+    margin-top: 30px;
   }
 
   .how-section {
-    padding: 80px 25px;
-  }
-
-  .step {
-    grid-template-columns: 35px 50px 1fr;
-  }
-
-  .step-icon {
-    font-size: 30px;
-  }
-
-  .step h3 {
-    font-size: 19px;
-  }
-
-  .demo-options {
     grid-template-columns: 1fr;
+    gap: 48px;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero {
+    padding: 32px 22px 48px;
   }
 
-  .classroom-section {
-    padding: 80px 25px;
-  }
-
-  .classroom-stats {
-    grid-template-columns: 1fr;
+  .how-section {
+    padding: 80px 24px;
   }
 
   .final-section {
-    padding: 80px 25px;
+    padding: 80px 24px;
   }
 
-  .rocket {
-    opacity: 0.5;
-    left: 2%;
+  .quiz-window {
+    padding: 18px;
+    transform: none;
   }
 
-  .heart {
-    opacity: 0.5;
+  .process-strip {
+    font-size: 15px;
+    letter-spacing: 0.12em;
+  }
+
+  /* The mockup's floating badge overlaps the card once the column collapses. */
+  .student-note {
+    position: static;
+    display: inline-block;
+    margin-top: 18px;
+    transform: none;
   }
 }
