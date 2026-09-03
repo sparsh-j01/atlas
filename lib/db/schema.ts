@@ -19,8 +19,15 @@ import type { SlideConfig } from '@/lib/slides'
 // App data for authenticated creators; `id` mirrors auth.users.id (Supabase Auth),
 // row created on signup. RLS is ENABLED from creation (deny-all by default); the own-row
 // read/update policy lands with auth in M2. Full design in docs/schema.md.
+//
+// `id` deliberately carries NO foreign key to `auth.users`. It looks like an oversight —
+// decks/documents/sessions all cascade FROM here, so nothing cascades when an auth user is
+// deleted, and orphan profiles accumulate. Adding the FK breaks the load test:
+// scripts/fixture.ts inserts FIXTURE_OWNER straight into this table for a synthetic creator
+// that has no auth.users row, and that absence is the security property — it is what makes a
+// fixture deck unreachable through any real auth path. Failure pattern #54.
 export const profiles = pgTable('profiles', {
-  id: uuid('id').primaryKey(), // = auth.users.id
+  id: uuid('id').primaryKey(), // = auth.users.id, but intentionally unconstrained — see above
   email: text('email'),
   displayName: text('display_name'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

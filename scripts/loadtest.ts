@@ -21,6 +21,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { openSessionChannel } from '../lib/realtime/channels'
 import { EVENTS } from '../lib/realtime/events'
 import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
+import { blocksRun, resolvePlan } from '../lib/loadtest-guard'
 
 config({ path: '.env.local' })
 
@@ -41,26 +42,29 @@ if (!Number.isInteger(N) || N < 1) {
   process.exit(1)
 }
 
-// One websocket per simulated participant, plus the host console if a browser is open. The
-// plan's CONCURRENT CONNECTION ceiling is a hard quota, not a soft one: exceeding it in a
-// billing cycle gets the whole organisation flagged over-quota and its projects restricted.
-// It happened here — a 250-connection peak against a Free limit of 200, recorded in July
-// 2026 and still the reason this guard exists. Two back-to-back runs stack, because a
-// closed socket takes a moment to be reaped server-side.
+// One websocket per simulated participant, plus the host console if a browser is open.
+// The ceiling, the override policy and the reasoning live in lib/loadtest-guard.ts, which
+// is where they are tested — scripts/ is not in vitest's `include`.
 //
-// LOADTEST_PLAN names the ceiling; LOADTEST_ALLOW_OVER=1 is the deliberate override for a
-// run you have decided to pay for.
-const PLAN_CONNECTION_LIMIT = { free: 200, pro: 500 } as const
-const PLAN = (process.env.LOADTEST_PLAN ?? 'free') as keyof typeof PLAN_CONNECTION_LIMIT
-const CONNECTION_LIMIT = PLAN_CONNECTION_LIMIT[PLAN] ?? PLAN_CONNECTION_LIMIT.free
+// LOADTEST_PLAN names the ceiling. LOADTEST_ALLOW_OVER=1 is honoured on a paid plan only:
+// on free it is ignored, because this org's grace period ended 30 Aug 2026 and the next
+// crossing restricts every project with 402s immediately.
+const { plan: PLAN, limit: CONNECTION_LIMIT } = resolvePlan(process.env.LOADTEST_PLAN)
+const ALLOW_OVER = process.env.LOADTEST_ALLOW_OVER === '1'
 // +1 for the host console you will almost certainly have open while watching the run.
-if (N + 1 > CONNECTION_LIMIT && process.env.LOADTEST_ALLOW_OVER !== '1') {
+if (blocksRun(N + 1, PLAN, ALLOW_OVER)) {
   console.error(
     `${N} clients + 1 host = ${N + 1} concurrent Realtime connections, over the ${PLAN} plan's ` +
       `limit of ${CONNECTION_LIMIT}.\n` +
       `Exceeding it puts the ORGANISATION over quota for the billing cycle, which restricts ` +
       `every project — not just this run.\n` +
-      `Run a smaller N, set LOADTEST_PLAN=pro, or set LOADTEST_ALLOW_OVER=1 to proceed anyway.`,
+      (PLAN === 'free'
+        ? `This org's grace period ended 30 Aug 2026: the next crossing returns 402 on every ` +
+          `request straight away, with no warning window.\n` +
+          (ALLOW_OVER ? `LOADTEST_ALLOW_OVER=1 is ignored on the free plan. ` : '') +
+          `Run a smaller N, or set LOADTEST_PLAN=pro once you are actually on Pro.`
+        : `Run a smaller N, or set LOADTEST_ALLOW_OVER=1 to proceed with a run you have ` +
+          `decided to pay for.`),
   )
   process.exit(1)
 }
