@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { SlideCard, type EditorSlide } from '@/components/SlideCard'
 import { hasUnsavedSlides, useUnsavedSlidesWarning } from '@/components/slide-fields'
 import { DeleteButton } from '@/components/DeleteButton'
-import { btn, capCls, inputCls, panelCls, statusDotCls } from '@/components/ui'
+import { ShareDeck } from '@/components/ShareDeck'
+import { btn, capCls, inputCls, panelCls, statusDotCls, textareaCls } from '@/components/ui'
 import {
   addSlideAction,
   deleteSlideAction,
@@ -16,7 +17,13 @@ import {
 } from '@/lib/actions'
 import { isSlideType, SLIDE_TYPE_LABEL, SLIDE_TYPES } from '@/lib/slides'
 
-type EditorDeck = { id: string; title: string; description: string | null; status: string }
+type EditorDeck = {
+  id: string
+  title: string
+  description: string | null
+  status: string
+  shareToken: string | null
+}
 
 export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorSlide[] }) {
   const [title, setTitle] = useState(deck.title)
@@ -134,7 +141,7 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           aria-label="Deck title"
         />
         <textarea
-          className={`${inputCls} w-full resize-y border-transparent bg-transparent px-0 text-dim hover:border-transparent focus:border-transparent`}
+          className={`${textareaCls} w-full resize-y border-transparent bg-transparent px-0 text-dim hover:border-transparent focus:border-transparent`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onBlur={() =>
@@ -169,6 +176,8 @@ export function DeckEditor({ deck, slides }: { deck: EditorDeck; slides: EditorS
           {ready ? 'Back to draft' : 'Mark ready'}
         </button>
       </div>
+
+      <ShareDeck deckId={deck.id} initialToken={deck.shareToken} />
 
       {statusError && (
         <p role="alert" className="mt-3 text-sm text-wrong">

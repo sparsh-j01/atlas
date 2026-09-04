@@ -50,12 +50,24 @@ export const decks = pgTable(
     status: text('status').notNull().default('draft'), // draft | ready
     sourceType: text('source_type').notNull().default('manual'), // manual | topic | pdf
     sourceRef: text('source_ref'), // topic string or Storage path (AI paths land in M6/M7)
+    // Opaque capability for the public read-only view at /d/{token} (M9). NULL = not shared,
+    // which is the default and the only state a deck reaches on its own. Rotating it revokes
+    // every link that was ever handed out, so "unshare" and "reshare" need no extra column.
+    // It is the whole credential for that page, so it is 22 random base64url chars from
+    // randomBytes — never the deck id, which is enumerable from the creator's own URLs.
+    shareToken: text('share_token'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  // Every deck query filters by owner_id (see lib/decks.ts) and it's the profile-delete
-  // cascade target — index it.
-  (t) => [index('decks_owner_id_idx').on(t.ownerId)],
+  (t) => [
+    // Every deck query filters by owner_id (see lib/decks.ts) and it's the profile-delete
+    // cascade target — index it.
+    index('decks_owner_id_idx').on(t.ownerId),
+    // Unique so a collision surfaces as a constraint violation rather than two decks
+    // answering to one link; partial so the many NULLs (every unshared deck) stay out of
+    // the index. This is also the lookup path for /d/{token}.
+    uniqueIndex('decks_share_token_idx').on(t.shareToken).where(sql`${t.shareToken} is not null`),
+  ],
 ).enableRLS()
 
 export const slides = pgTable(

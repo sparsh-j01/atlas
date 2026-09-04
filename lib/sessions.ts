@@ -1,9 +1,10 @@
 import 'server-only'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { sessions } from '@/lib/db/schema'
+import { answers, decks, participants, sessions, slides } from '@/lib/db/schema'
 import { getDeckWithSlides } from '@/lib/decks'
 import { isUniqueViolation, newCode, newToken } from '@/lib/realtime/session-util'
+import { shapeResults, type SessionResults } from '@/lib/results'
 import { timingSafeEqual } from 'node:crypto'
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -88,4 +89,147 @@ export async function getHostedSession(code: string, hostToken: string) {
   if (!constantTimeEqual(row.hostToken, hostToken)) return null
   
   return row
+}
+
+// --- Post-session results (M9) -------------------------------------------------------
+//
+// Keyed by session id, never by code: `sessions_active_code_idx` is partial on
+// `status <> 'ended'`, so a 6-digit code is released for reuse the moment a session ends and
+// two finished sessions can share one. The code identifies a LIVE room; the id identifies a
+// game that happened.
+//
+// Ownership is `hostId = ownerId` on the session row itself rather than a join through the
+// deck, because `sessions.deck_id` is ON DELETE SET NULL — results have to stay reachable
+// after the deck is gone, which is exactly when a deck join would stop matching.
+
+export type SessionListItem = {
+  id: string
+  deckId: string | null
+  deckTitle: string | null
+  endedAt: Date | null
+  createdAt: Date
+  players: number
+}
+
+/** The creator's finished sessions, newest first. */
+export function listEndedSessions(ownerId: string): Promise<SessionListItem[]> {
+  return db
+    .select({
+      id: sessions.id,
+      deckId: sessions.deckId,
+      deckTitle: decks.title,
+      endedAt: sessions.endedAt,
+      createdAt: sessions.createdAt,
+      // Correlated subquery rather than a group-by join: a join through participants would
+      // multiply the session row and needs a GROUP BY over every selected column. `::int`
+      // because count(*) is bigint, which postgres.js returns as a string (see lib/decks.ts).
+      players: sql<number>`(select count(*)::int from ${participants}
+                            where ${participants.sessionId} = ${sessions.id})`,
+    })
+    .from(sessions)
+    .leftJoin(decks, eq(decks.id, sessions.deckId))
+    .where(and(eq(sessions.hostId, ownerId), eq(sessions.status, 'ended')))
+    .orderBy(desc(sessions.endedAt), desc(sessions.createdAt))
+}
+
+export type SessionResultsPage = {
+  session: { id: string; code: string; endedAt: Date | null; createdAt: Date }
+  deckId: string | null
+  deckTitle: string | null
+  results: SessionResults
+}
+
+/**
+ * One finished session's full results, or null if it is not this creator's (or not over).
+ *
+ * Restricted to ended sessions on purpose: a live room's numbers belong on the host console,
+ * which is authoritative and updating, and a second half-finished view of the same game is a
+ * way to read a stale score and act on it.
+ */
+export async function getSessionResults(
+  sessionId: string,
+  ownerId: string,
+): Promise<SessionResultsPage | null> {
+  const [session] = await db
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        eq(sessions.hostId, ownerId),
+        eq(sessions.status, 'ended'),
+      ),
+    )
+    .limit(1)
+  if (!session) return null
+
+  // The deck may be gone (ON DELETE SET NULL). Both reads below are scoped by the session,
+  // so they return the game's own rows either way.
+  const deckRows = session.deckId
+    ? await db
+        .select({
+          id: slides.id,
+          type: slides.type,
+          prompt: slides.prompt,
+          config: slides.config,
+          position: slides.position,
+        })
+        .from(slides)
+        .where(eq(slides.deckId, session.deckId))
+        .orderBy(asc(slides.position))
+    : []
+
+  const [deck] = session.deckId
+    ? await db
+        .select({ title: decks.title })
+        .from(decks)
+        .where(eq(decks.id, session.deckId))
+        .limit(1)
+    : []
+
+  const people = await db
+    .select({
+      participantId: participants.id,
+      nickname: participants.nickname,
+      avatarSeed: participants.avatarSeed,
+      score: participants.score,
+    })
+    .from(participants)
+    .where(eq(participants.sessionId, sessionId))
+
+  const rows = await db
+    .select({
+      slideId: answers.slideId,
+      participantId: answers.participantId,
+      response: answers.response,
+      isCorrect: answers.isCorrect,
+      pointsAwarded: answers.pointsAwarded,
+      responseMs: answers.responseMs,
+    })
+    .from(answers)
+    .where(eq(answers.sessionId, sessionId))
+
+  return {
+    session: {
+      id: session.id,
+      code: session.code,
+      endedAt: session.endedAt,
+      createdAt: session.createdAt,
+    },
+    deckId: session.deckId,
+    deckTitle: deck?.title ?? null,
+    results: shapeResults(
+      deckRows,
+      people,
+      rows.map((r) => ({
+        slideId: r.slideId,
+        participantId: r.participantId,
+        optionId: r.response.optionId,
+        isCorrect: r.isCorrect,
+        pointsAwarded: r.pointsAwarded,
+        responseMs: r.responseMs,
+      })),
+      session.revealedSlideIds,
+    ),
+  }
 }

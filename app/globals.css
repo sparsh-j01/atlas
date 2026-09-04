@@ -273,6 +273,29 @@
     color: var(--dim);
   }
 
+  /* Insets a full-bleed surface back into the part of the screen the phone actually shows.
+     Needed because app/layout.tsx sets viewport-fit=cover: without it env(safe-area-inset-*)
+     is 0 and every rule below is a no-op; with it the page paints edge to edge and runs
+     under the status bar and the home indicator unless something pads it back.
+
+     Goes on the OUTER element so the ground still bleeds to the physical edges and only the
+     content moves — the room is meant to fill the screen, it just must not put a tap target
+     under the home indicator's swipe strip. Both axes: in landscape the notch is on a side.
+
+     NEVER put this on an element that also carries a Tailwind p-* utility. This block is
+     appended to `utilities` after Tailwind's own, so `.safe` is emitted later and wins at
+     equal specificity: `class="safe p-8"` renders with NO padding except the inset, which is
+     0 on most devices. That is failure-patterns #55 (a shared class string carrying a
+     property its callers override) in the other direction. Only edge-anchored layouts need
+     it anyway — a vertically centred screen has slack at both ends and is already clear of
+     the insets, which is why the lobby, the wrap-up and the error boundary do without. */
+  .safe {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
   /* Horizontal rails hide their scrollbar; the overflow is the affordance. */
   .no-bar {
     scrollbar-width: none;

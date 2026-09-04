@@ -37,6 +37,7 @@ type Status = 'lobby' | 'active' | 'revealed' | 'ended'
 // than waiting on the session's own broadcast — best-effort Realtime shouldn't strand the host.
 export function HostConsole({
   code,
+  sessionId,
   joinHost,
   total,
   initialIndex,
@@ -50,6 +51,9 @@ export function HostConsole({
   initialTimeLimitMs,
 }: {
   code: string
+  /** The session's own id, for the results link on the ended screen. Not the code: a code is
+   *  freed for reuse the moment a session ends, so it cannot name this game afterwards. */
+  sessionId: string
   /** The domain the room joins on, resolved server-side so the projector never paints a
    *  half-written URL. See app/host/[code]/page.tsx. */
   joinHost: string
@@ -406,9 +410,17 @@ export function HostConsole({
             {/* The way out. The control bar below is gated on `status !== 'ended'`, so once a
                 class finishes this section was the whole screen and it carried no link at
                 all — the host's only exit from the last thing they see every session was the
-                browser's back button. */}
-            <div className="flex justify-center">
-              <Link href="/dashboard" className={btn('pen', 'lg')}>
+                browser's back button.
+
+                Results is the pen button, not "Back to your decks": this screen is still on a
+                projector in front of the class, and the thing a teacher does next is look at
+                which questions the room got wrong. The link survives the room — it is keyed
+                by session id, so it still works after the code is reused. */}
+            <div className="flex flex-wrap justify-center gap-3">
+              <Link href={`/results/${sessionId}`} className={btn('pen', 'lg')}>
+                See the results
+              </Link>
+              <Link href="/dashboard" className={btn('secondary', 'lg')}>
                 Back to your decks
               </Link>
             </div>

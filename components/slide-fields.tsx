@@ -5,13 +5,14 @@ import { useEffect, useState, useTransition } from 'react'
 import { saveSlideAction } from '@/lib/actions'
 import { TIME_MAX_MS, TIME_MIN_MS } from '@/lib/mcq'
 import { validateSlide, type EditableSlide } from '@/lib/slides'
-import { btn, capCls, inputCls } from '@/components/ui'
+import { btn, capCls, inputCls, textareaCls } from '@/components/ui'
 
 // Pieces every slide editor shares. Lives in its own module so SlideCard can import the
 // per-type editors without them importing it back — the dependency runs one way:
 // slide-fields ← {SlideCard, PollCard}, and SlideCard ← PollCard.
 
 export const inputClass = inputCls
+export const textareaClass = textareaCls
 
 /**
  * Slide ids with unsaved edits. A module-level set rather than a context: every editor

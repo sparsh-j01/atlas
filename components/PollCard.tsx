@@ -4,7 +4,7 @@ import { MAX_OPTIONS, MIN_OPTIONS } from '@/lib/mcq'
 import { CHART_KINDS, newPollOption } from '@/lib/poll'
 import type { EditableSlide } from '@/lib/slides'
 import {
-  inputClass,
+  textareaClass,
   OptionRows,
   SlideCardFooter,
   TimeLimitField,
@@ -44,7 +44,7 @@ export function PollCard({
     <div className="flex flex-col gap-3">
       {/* Same reasoning as the MCQ prompt: a one-line input clipped the question mid-word. */}
       <textarea
-        className={`${inputClass} w-full min-h-12 resize-y [field-sizing:content]`}
+        className={`${textareaClass} w-full min-h-12 resize-y [field-sizing:content]`}
         rows={2}
         placeholder="What do you want to ask the room?"
         aria-label={`Poll question for ${name}`}

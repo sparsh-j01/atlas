@@ -1,4 +1,5 @@
 import 'server-only'
+import { randomBytes } from 'node:crypto'
 import { cache } from 'react'
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 import { QueryBuilder } from 'drizzle-orm/pg-core'
@@ -191,4 +192,163 @@ export async function reorderSlides(deckId: string, ownerId: string, orderedIds:
     }
   })
   await touchDeck(deckId, ownerId)
+}
+
+// --- Deck library (M9): duplicate + share ---------------------------------------------
+
+/**
+ * Copy a deck and all of its slides for the same owner.
+ *
+ * Deliberately does NOT call assertDeckEditable. That guard exists to stop slides shifting
+ * under a running game; copying reads the original and writes somewhere else entirely, so a
+ * deck that is currently live can still be duplicated — which is exactly when a teacher
+ * wants to, having just watched it and wanting to fix question 4 for the next section.
+ */
+export async function duplicateDeck(deckId: string, ownerId: string): Promise<string> {
+  const source = await getDeckWithSlides(deckId, ownerId)
+  if (!source) throw new Error('deck not found')
+  return copyDeckRows(source.deck, source.slides, ownerId, `${source.deck.title} (copy)`)
+}
+
+/**
+ * The shared insert behind both duplicate and save-a-copy.
+ *
+ * Three fields are deliberately NOT carried over:
+ *
+ * - `sourceType` resets to 'manual'. It is not decoration: the AI rate limiter counts decks
+ *   by `sourceType = 'topic'` / `'pdf'` created in the last hour (app/api/decks/generate*),
+ *   so copying it would make duplicating ten decks spend the creator's whole hourly
+ *   generation quota. 'manual' is also just true — a copy was copied, not generated.
+ * - `sourceRef` is a Storage path or a topic string belonging to the ORIGINAL. On a
+ *   cross-owner copy it would put one creator's document path on another creator's row.
+ * - `shareToken` stays null. A copy inherits the content, never the audience.
+ *
+ * `status` DOES carry over: a copy of a valid ready deck is itself valid and ready, and
+ * forcing a re-tick would be make-work.
+ */
+async function copyDeckRows(
+  source: { title: string; description: string | null; status: string },
+  sourceSlides: { position: number; type: string; prompt: string; config: SlideConfig }[],
+  ownerId: string,
+  title: string,
+): Promise<string> {
+  return db.transaction(async (tx) => {
+    const [deck] = await tx
+      .insert(decks)
+      .values({
+        ownerId,
+        title,
+        description: source.description,
+        status: source.status,
+      })
+      .returning({ id: decks.id })
+    if (sourceSlides.length > 0) {
+      await tx.insert(slides).values(
+        // Renumbered 0..n-1 rather than copying `position`: deleting a slide leaves a gap in
+        // the original's column (nothing renumbers), and the copy has no reason to inherit
+        // one. New row ids come from defaultRandom, so option ids inside `config` are the
+        // only ids shared with the original — which is correct, they are internal to the
+        // slide and never cross deck boundaries.
+        sourceSlides
+          .slice()
+          .sort((a, b) => a.position - b.position)
+          .map((s, i) => ({
+            deckId: deck.id,
+            position: i,
+            type: s.type,
+            prompt: s.prompt,
+            config: s.config,
+          })),
+      )
+    }
+    return deck.id
+  })
+}
+
+/** Turn sharing on (minting a fresh token) or off. Returns the token, or null when off.
+ *  Turning it on twice ROTATES the token, which is how a link is revoked and reissued. */
+export async function setDeckShared(
+  deckId: string,
+  ownerId: string,
+  shared: boolean,
+): Promise<string | null> {
+  // Ownership only, not editability: sharing changes nothing a live session reads.
+  const [deck] = await db
+    .select({ id: decks.id })
+    .from(decks)
+    .where(and(eq(decks.id, deckId), eq(decks.ownerId, ownerId)))
+    .limit(1)
+  if (!deck) throw new Error('deck not found')
+
+  const token = shared ? randomBytes(16).toString('base64url') : null
+  await db
+    .update(decks)
+    .set({ shareToken: token, updatedAt: new Date() })
+    .where(and(eq(decks.id, deckId), eq(decks.ownerId, ownerId)))
+  return token
+}
+
+export type SharedDeck = {
+  id: string
+  title: string
+  description: string | null
+  slides: { id: string; type: string; prompt: string; config: SlideConfig }[]
+}
+
+/**
+ * A shared deck by its token, for the public /d/{token} page. No owner scoping — the token
+ * IS the authorization, and it only ever matches a deck whose owner turned sharing on.
+ *
+ * Returns the questions AND their correct answers: the reader is another teacher deciding
+ * whether the deck is any good, and a question list without its key cannot be judged. That
+ * is also why sharing is opt-in and revocable — anyone holding the link sees the answers,
+ * which the toggle's own copy says out loud.
+ */
+export async function getSharedDeck(token: string): Promise<SharedDeck | null> {
+  // A blank token must never match. `shareToken` is NULL on unshared decks so SQL's
+  // three-valued logic already excludes them from `= ''`, but an empty string reaching a
+  // lookup at all is a bug worth failing loudly on rather than relying on that.
+  if (!token) return null
+  const [deck] = await db
+    .select({
+      id: decks.id,
+      title: decks.title,
+      description: decks.description,
+    })
+    .from(decks)
+    .where(eq(decks.shareToken, token))
+    .limit(1)
+  if (!deck) return null
+  const rows = await db
+    .select({ id: slides.id, type: slides.type, prompt: slides.prompt, config: slides.config })
+    .from(slides)
+    .where(eq(slides.deckId, deck.id))
+    .orderBy(asc(slides.position))
+  return { ...deck, slides: rows }
+}
+
+/** Save a shared deck into the signed-in creator's own library. The token is the only proof
+ *  of access, so it is re-resolved here rather than trusting a deck id from the client. */
+export async function copySharedDeck(token: string, ownerId: string): Promise<string> {
+  const [deck] = await db
+    .select({
+      id: decks.id,
+      title: decks.title,
+      description: decks.description,
+      status: decks.status,
+    })
+    .from(decks)
+    .where(eq(decks.shareToken, token))
+    .limit(1)
+  if (!deck) throw new Error('deck not found')
+  const rows = await db
+    .select({
+      position: slides.position,
+      type: slides.type,
+      prompt: slides.prompt,
+      config: slides.config,
+    })
+    .from(slides)
+    .where(eq(slides.deckId, deck.id))
+  return copyDeckRows(deck, rows, ownerId, deck.title)
 }

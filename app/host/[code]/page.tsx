@@ -33,6 +33,7 @@ export default async function HostSessionPage({ params }: { params: Promise<{ co
   return (
     <HostConsole
       code={session.code}
+      sessionId={session.id}
       // The join URL, resolved server-side. The console used to read window.location.host
       // during render, which is '' on the server — so the first thing painted on the wall
       // was "Join at /play" with the domain missing until hydration. This is the one line a

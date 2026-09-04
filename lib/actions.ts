@@ -140,3 +140,37 @@ export async function signOutAction() {
   await supabase.auth.signOut()
   redirect('/login')
 }
+
+// --- Deck library (M9) ---------------------------------------------------------------
+
+/** Copy a deck into the creator's own library and open the copy, which is where they were
+ *  heading — duplicating exists to edit the copy. */
+export async function duplicateDeckAction(deckId: string): Promise<void> {
+  const user = await requireUser()
+  const newId = await data.duplicateDeck(deckId, user.id)
+  revalidatePath('/dashboard')
+  redirect(editPath(newId))
+}
+
+/** Turn a deck's public link on or off. Calling it with `true` on an already-shared deck
+ *  rotates the token, which is how an old link is revoked. */
+export async function setDeckSharedAction(
+  deckId: string,
+  shared: boolean,
+): Promise<{ token: string | null }> {
+  const user = await requireUser()
+  const token = await data.setDeckShared(deckId, user.id, shared)
+  revalidatePath(editPath(deckId))
+  revalidatePath('/dashboard')
+  return { token }
+}
+
+/** Save someone else's shared deck into your own library. The token is the only credential,
+ *  so it is what gets resolved server-side — a deck id from the client would let anyone copy
+ *  any deck by guessing. */
+export async function copySharedDeckAction(token: string): Promise<void> {
+  const user = await requireUser()
+  const newId = await data.copySharedDeck(token, user.id)
+  revalidatePath('/dashboard')
+  redirect(editPath(newId))
+}

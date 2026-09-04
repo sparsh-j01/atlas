@@ -5,6 +5,7 @@ import { toEditable, type EditableSlide, type SlideConfig } from '@/lib/slides'
 import { PollCard } from '@/components/PollCard'
 import {
   inputClass,
+  textareaClass,
   OptionRows,
   SlideCardFooter,
   TimeLimitField,
@@ -69,7 +70,7 @@ function McqCard({
           the card and a single line clipped it mid-word — while the shorter explanation
           below already got two rows. Grows with `field-sizing`, falls back to two rows. */}
       <textarea
-        className={`${inputClass} w-full min-h-12 resize-y [field-sizing:content]`}
+        className={`${textareaClass} w-full min-h-12 resize-y [field-sizing:content]`}
         rows={2}
         placeholder="Question prompt"
         aria-label={`Question prompt for ${name}`}
@@ -139,7 +140,7 @@ function McqCard({
       <label className="flex flex-col gap-1 text-sm">
         <span className={capCls}>Explanation</span>
         <textarea
-          className={`${inputClass} w-full min-h-16 resize-y`}
+          className={`${textareaClass} w-full min-h-16 resize-y`}
           maxLength={EXPLANATION_MAX}
           placeholder="Why this answer is right. Shown after the reveal."
           aria-label={`Explanation for ${name}`}

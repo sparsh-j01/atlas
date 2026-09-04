@@ -1,7 +1,12 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
 import { listDecks } from '@/lib/decks'
-import { createDeckAction, deleteDeckAction, launchDeckAction } from '@/lib/actions'
+import {
+  createDeckAction,
+  deleteDeckAction,
+  duplicateDeckAction,
+  launchDeckAction,
+} from '@/lib/actions'
 import { DeleteButton } from '@/components/DeleteButton'
 import { btn, statusDotCls, tileCls } from '@/components/ui'
 
@@ -79,6 +84,12 @@ export default async function DashboardPage() {
                 <Link href={`/decks/${d.id}/edit`} className={btn('secondary', 'md')}>
                   Edit {srDeck(d.title)}
                 </Link>
+                {/* A plain form post, not a confirm: duplicating is additive and the copy
+                    opens in the editor, so the undo is deleting the thing you are looking
+                    at. Delete keeps its confirmation because that one is not reversible. */}
+                <form action={duplicateDeckAction.bind(null, d.id)}>
+                  <button className={btn('ghost', 'md')}>Duplicate {srDeck(d.title)}</button>
+                </form>
                 <DeleteButton
                   action={deleteDeckAction.bind(null, d.id)}
                   confirmText={`Delete "${d.title}" and all its slides?`}

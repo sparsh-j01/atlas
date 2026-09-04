@@ -6,7 +6,13 @@ import { SESSION_COOKIE_OPTIONS } from './cookie-options'
 // Refreshes the auth cookie on every request (Supabase SSR: without this, server
 // components can see an expired session) and gates the creator area. Not `server-only`
 // — middleware runs in its own runtime and imports only client-safe env.
-const CREATOR_PREFIXES = ['/dashboard', '/decks']
+// Every prefix under app/(creator). The real gate is requireUser() in the layout and in each
+// action — this list only buys the signed-out visitor a redirect that remembers where they
+// were going (`?next=`), instead of a bare bounce to /login from the server component.
+//
+// `/d` is deliberately absent: a shared deck is public by design, and gating it here would
+// send every recipient of a share link to a sign-in page.
+const CREATOR_PREFIXES = ['/dashboard', '/decks', '/results']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { DIFFICULTIES } from '@/lib/ai/blueprint'
 import { ACCEPT_ATTRIBUTE } from '@/lib/ingest/formats'
-import { btn, capCls, inputCls, panelCls } from '@/components/ui'
+import { btn, capCls, inputCls, panelCls, textareaCls } from '@/components/ui'
 
 // Both front doors in one place. A document deck and a topic deck differ only in where the
 // questions come from, so the count / difficulty / polls controls are shared and only the
@@ -215,8 +215,12 @@ export function DeckBuilder() {
             onChange={(e) => setTopic(e.target.value)}
             rows={4}
             maxLength={400}
-            placeholder="Photosynthesis for year 9 biology. Focus on the light-dependent reactions."
-            className={`${inputCls} w-full resize-y leading-relaxed`}
+            // The placeholder is the only worked example of a good prompt anyone sees, so it
+            // models the shape: subject, who it is for, then what to narrow to. Pitched at
+            // the audience this is actually built for — a B.Tech CSE cohort — not a school
+            // science class.
+            placeholder="Deadlocks in operating systems, for a 4th-semester B.Tech CSE class. Focus on the Coffman conditions and the banker's algorithm."
+            className={`${textareaCls} w-full resize-y leading-relaxed`}
           />
           <p className="text-sm text-dim">
             Written from the model&apos;s own knowledge, not from your material. Upload a

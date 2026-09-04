@@ -73,7 +73,16 @@ export function Podium({
                 }`}
               >
                 {e.nickname}
-                {mine && <span className="ml-1 text-sm font-normal text-pen lg:text-lg">you</span>}
+                {/* whitespace-nowrap because the `break-words` above applies to this span
+                    too, and on a phone the blocks are w-28 (112px, and narrower still once
+                    three of them plus gaps have to fit 360px). It was breaking the marker
+                    itself: "Ramaswamy y / ou". Three letters, and they are the only thing
+                    telling a player which block is theirs. */}
+                {mine && (
+                  <span className="ml-1 whitespace-nowrap text-sm font-normal text-pen lg:text-lg">
+                    you
+                  </span>
+                )}
               </span>
               {/* Playfair and --ink, per docs/design.md §4: a podium score is a figure at
                   rest, and this is the game's last frame. It was the smallest, dimmest text

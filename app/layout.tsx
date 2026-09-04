@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Caveat, DM_Sans, Playfair_Display } from 'next/font/google'
 import './globals.css'
 
@@ -37,6 +37,23 @@ export const metadata: Metadata = {
   // takes the bare default.
   title: { default: 'Atlas', template: '%s · Atlas' },
   description: 'Live in-class quizzes built from your own lecture material.',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  // The browser's own chrome is the one surface the design system cannot reach with a token.
+  // Cream here because that is the default ground; /play overrides it with the room's #111,
+  // which is where a phone actually spends the session.
+  //
+  // Deliberately NO `viewportFit` here. It belongs to /play alone (see app/play/layout.tsx):
+  // `cover` extends the layout viewport behind the notch and the home indicator, which is
+  // what an edge-anchored full-screen room wants and what a normal scrolling page does not.
+  // Setting it app-wide would push the landing page, login and the creator screens under the
+  // status bar on a notched phone, and docs/design.md §11 requires the landing page render
+  // unchanged. Next merges viewport field by field down the segment tree, so one route can
+  // opt in without the rest inheriting it.
+  themeColor: '#f7f3eb',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -35,7 +35,13 @@ export function SiteHeader({
           wide ? '' : 'mx-auto max-w-6xl lg:px-6'
         }`}
       >
-        <Link href={href} className="font-pen text-[30px] leading-none tracking-wide">
+        {/* shrink-0 and nowrap: a wordmark is never a thing that wraps. Once the creator
+            header grew nav links beside it, the flex row started taking the shortfall out
+            of this link and the ✦ dropped to a second line at 390px. */}
+        <Link
+          href={href}
+          className="font-pen shrink-0 whitespace-nowrap text-[30px] leading-none tracking-wide"
+        >
           ATLAS <span className="text-pen">✦</span>
         </Link>
         {children}

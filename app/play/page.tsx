@@ -50,6 +50,17 @@ function PlayRoom() {
   const [busy, setBusy] = useState(false)
 
   const [me, setMe] = useState<Joined | null>(null)
+  // Whether this phone yet knows which screen it belongs on. localStorage can only be read
+  // after mount, so until the reconnect effect below has answered — either "no saved seat"
+  // or "/state says you are on slide 3" — neither the join form nor the room is the right
+  // thing to draw. It starts false on the server and on the first client render, so the two
+  // agree and there is no hydration mismatch.
+  //
+  // Without it the join form painted with empty fields for the length of the /state round
+  // trip and then snapped to a live question with the clock already running. That is not a
+  // rare path: iOS Safari evicts and restores backgrounded tabs on its own, so it fires
+  // whenever a student checks a message mid-game, not only on a deliberate reload.
+  const [booted, setBooted] = useState(false)
   const [status, setStatus] = useState<Status>('lobby')
   const [slide, setSlide] = useState<SanitizedSlide | null>(null)
   const [deadline, setDeadline] = useState<number | null>(null)
@@ -188,18 +199,21 @@ function PlayRoom() {
   // Reconnect on mount: Broadcast is ephemeral, so the saved token buys back the live slide,
   // this phone's own pick, and its score from /state.
   useEffect(() => {
-    const raw = localStorage.getItem(STORE_KEY)
-    if (!raw) return
-    let saved: Joined
-    try {
-      saved = JSON.parse(raw)
-    } catch {
-      localStorage.removeItem(STORE_KEY)
-      return
-    }
     let cancelled = false
+    // Everything, including the localStorage read, runs inside the async body. Reading the
+    // store synchronously in the effect meant setBooted fired synchronously too on the "no
+    // saved seat" path, which is the cascading-render pattern react-hooks/set-state-in-effect
+    // exists to catch. One path in, one `finally` out.
     ;(async () => {
+      let saved: Joined | null = null
       try {
+        const raw = localStorage.getItem(STORE_KEY)
+        if (raw) saved = JSON.parse(raw) as Joined
+      } catch {
+        localStorage.removeItem(STORE_KEY)
+      }
+      try {
+        if (!saved) return
         const res = await fetch(`/api/sessions/${saved.code}/state`, {
           headers: { Authorization: `Bearer ${saved.clientToken}` },
         })
@@ -215,7 +229,14 @@ function PlayRoom() {
         setExplanation(data.explanation ?? null)
         setMe(saved)
       } catch {
-        // Offline on load — stay on the join form rather than pretending to be in a room.
+        // Offline on load — fall through to the join form rather than pretending to be in a
+        // room. The seat stays in localStorage, so the next load tries to redeem it again.
+      } finally {
+        // In `finally`, not on each path: no saved seat, a seat that turns out to be dead, a
+        // network failure and a successful restore all end the same way — this phone now
+        // knows which screen it is on. Missing one path would strand it on "Finding your
+        // room" for good, which is worse than the flash this replaces.
+        if (!cancelled) setBooted(true)
       }
     })()
     return () => {
@@ -303,13 +324,31 @@ function PlayRoom() {
     return () => clearInterval(id)
   }, [status, deadline])
 
+  // Same paper shell as the join form below, so redeeming a saved seat reads as the fields
+  // arriving rather than as a different screen. One tick for a first-time visitor.
+  if (!booted) {
+    return (
+      <div className="safe flex min-h-svh flex-col">
+        <SiteHeader />
+        <main
+          id="main"
+          className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6"
+        >
+          <p role="status" className="text-dim">
+            Finding your room…
+          </p>
+        </main>
+      </div>
+    )
+  }
+
   if (!me) {
     return (
       // The header is a SIBLING of <main>, not inside it. SiteHeader's first child is the
       // skip link, and a skip link rendered inside the landmark it targets sends you
       // backwards past itself. The other three states below render no header, so <main> is
       // the whole screen and needs no id.
-      <div className="flex min-h-screen flex-col">
+      <div className="safe flex min-h-svh flex-col">
         <SiteHeader />
         {/* Built for a phone, but it is a real URL someone opens on a laptop too, so the
             column is capped rather than stretched across a desktop viewport. */}
@@ -322,44 +361,66 @@ function PlayRoom() {
             <p className="mt-2 text-dim">The code is on the screen at the front.</p>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label htmlFor="code" className={capCls}>
-              Room code
-            </label>
-            <input
-              id="code"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="000000"
-              className={`${inputCls} w-full py-4 text-center tabular text-4xl tracking-[0.3em]`}
-            />
-          </div>
+          {/* A real <form>, so the phone keyboard's own Go key submits. Without it the two
+              fields had no submit relationship and the Join button sat at y≈597 on a 390×844
+              phone — under the keyboard, which covers from about 514px. Reaching it meant
+              dismissing the keyboard first, on the one screen where a student is already
+              behind the room. */}
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              join()
+            }}
+            className="flex flex-col gap-6"
+          >
+            <div className="flex flex-col gap-2">
+              <label htmlFor="code" className={capCls}>
+                Room code
+              </label>
+              <input
+                id="code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="off"
+                // The code is never the last field, so its Go key advances rather than
+                // submits — six digits typed, then the name, then one Go.
+                enterKeyHint="next"
+                placeholder="000000"
+                className={`${inputCls} w-full py-4 text-center tabular text-4xl tracking-[0.3em]`}
+              />
+            </div>
 
-          <div className="flex flex-col gap-2">
-            <label htmlFor="nickname" className={capCls}>
-              Nickname
-            </label>
-            <input
-              id="nickname"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              maxLength={24}
-              placeholder="Pick anything"
-              className={`${inputCls} w-full py-4 text-xl`}
-            />
-          </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="nickname" className={capCls}>
+                Nickname
+              </label>
+              <input
+                id="nickname"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                maxLength={24}
+                // A nickname is not a name the browser has stored and not a sentence, so
+                // neither autofill nor the keyboard's auto-capital belongs on it.
+                autoComplete="off"
+                autoCapitalize="none"
+                enterKeyHint="go"
+                placeholder="Pick anything"
+                className={`${inputCls} w-full py-4 text-xl`}
+              />
+            </div>
 
-          {error && (
-            <p role="alert" className="text-sm text-wrong">
-              {error}
-            </p>
-          )}
+            {error && (
+              <p role="alert" className="text-sm text-wrong">
+                {error}
+              </p>
+            )}
 
-          <button onClick={join} disabled={busy} className={`${btn('primary', 'xl')} w-full`}>
-            {busy ? 'Joining' : 'Join'}
-          </button>
+            <button type="submit" disabled={busy} className={`${btn('primary', 'xl')} w-full`}>
+              {busy ? 'Joining' : 'Join'}
+            </button>
+          </form>
         </main>
       </div>
     )
@@ -369,7 +430,7 @@ function PlayRoom() {
 
   if (status === 'ended') {
     return (
-      <main className="stage flex min-h-screen flex-col justify-center gap-10 p-6">
+      <main className="stage flex min-h-svh flex-col justify-center gap-10 p-6">
         <div className="text-center">
           <h1 className="font-display text-3xl">That is a wrap</h1>
           {myEntry ? (
@@ -392,7 +453,7 @@ function PlayRoom() {
   // Lobby, or between slides after a reveal with nothing to show yet.
   if (!slide) {
     return (
-      <main className="stage flex min-h-screen flex-col items-center justify-center gap-5 p-8 text-center">
+      <main className="stage flex min-h-svh flex-col items-center justify-center gap-5 p-8 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={avatarUrl(me.avatarSeed)}
@@ -423,7 +484,7 @@ function PlayRoom() {
     status === 'revealed' && picked && scored ? (picked === correctId ? 'correct' : 'wrong') : null
 
   return (
-    <main className="stage flex min-h-screen flex-col">
+    <main className="stage safe flex min-h-svh flex-col">
       {/* The same drain the projector shows, so the phone and the room share one clock. */}
       <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
         {fractionLeft !== null && (

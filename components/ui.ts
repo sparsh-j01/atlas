@@ -60,19 +60,39 @@ export function btn(variant: Variant = 'primary', size: Size = 'md') {
   ].join(' ')
 }
 
-// No `focus:outline-none` here. The base `:focus-visible` rule in globals.css is the
-// focus indicator for the whole app; a utility that removes the outline leaves a 1px
-// border-colour shift as the only cue, which fails WCAG 2.4.7 outright on the fields
-// that render with a transparent border (the deck title and description).
-// No width here, deliberately. It used to start with `w-full`, and Tailwind emits `.w-full`
-// AFTER `.w-24` / `.w-20` / `.w-36` at equal specificity, so a caller appending a width got
-// silently ignored and the field collapsed to its container instead: the deck builder's
-// Slides box rendered 74px (the width of the word "SLIDES") and Difficulty 114px (the width
-// of "DIFFICULTY"), which is why that row looked ragged. Every caller now states its own
-// width, so `${inputCls} w-24` means 96px.
-export const inputCls =
-  'rounded-pill border border-rule-strong bg-raised px-4 py-2.5 text-ink transition-colors ' +
+/**
+ * Everything a field shares except its radius and its width — the two properties a caller
+ * legitimately needs to decide.
+ *
+ * Both are held out on purpose, and for the same reason. This repo has no `tailwind-merge`,
+ * so class strings are concatenated raw and the CASCADE picks the winner, not the order you
+ * wrote them in. `rounded-pill` in a shared string beats a caller's `rounded-plate`, and
+ * `w-full` beat every `w-24` for months: the deck builder's Slides box rendered at 74px, the
+ * width of the word "SLIDES", and Difficulty at 114px, the width of "DIFFICULTY". A shared
+ * string must not carry a property its callers are expected to override — see
+ * docs/failure-patterns.md #55.
+ *
+ * No `focus:outline-none` either. The base `:focus-visible` rule in globals.css is the focus
+ * indicator for the whole app; a utility that removes the outline leaves a 1px border-colour
+ * shift as the only cue, which fails WCAG 2.4.7 outright on the fields that render with a
+ * transparent border (the deck title and description).
+ */
+const FIELD =
+  'border border-rule-strong bg-raised px-4 py-2.5 text-ink transition-colors ' +
   'hover:border-dim focus:border-pen'
+
+/** A single-line field. Pill, per docs/design.md §5. Callers add their own width. */
+export const inputCls = `rounded-pill ${FIELD}`
+
+/**
+ * A multi-line field. `rounded-plate` (20px), never the pill.
+ *
+ * 999px on a box that is one line tall is a pill; on the deck builder's four-row topic box
+ * it is a lozenge, and the curve cuts into the first line of text — the placeholder sat
+ * ~8px from a sloping edge while the label above it and the help text below it both started
+ * at the column's left edge, which is what read as broken alignment.
+ */
+export const textareaCls = `rounded-plate ${FIELD}`
 
 /** Flat bordered surface. Use where a card sits inside other content. */
 export const panelCls = 'rounded-plate border border-rule bg-raised'
