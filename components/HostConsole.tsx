@@ -115,6 +115,20 @@ export function HostConsole({
   // would only know the remaining milliseconds, not the share.
   const [windowMs, setWindowMs] = useState<number | null>(initialTimeLimitMs)
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const copyCode = useCallback(() => {
+    // ponytail: `navigator.clipboard` is undefined on an insecure origin, so on plain http
+    // over a LAN IP this no-ops instead of throwing. Upgrade path if a host ever presents
+    // off a non-HTTPS box: a hidden input + document.execCommand('copy') fallback.
+    navigator.clipboard?.writeText(code).then(() => setCopied(true), () => {})
+  }, [code])
+
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
   const [error, setError] = useState('')
 
   const call = useCallback(
@@ -362,9 +376,19 @@ export function HostConsole({
       <header className="flex flex-wrap items-end justify-between gap-8 border-b border-rule px-6 py-6 sm:px-10">
         <div>
           <div className={capCls}>Join at {joinHost}/play</div>
-          <div className="tabular mt-1 text-5xl leading-none tracking-[0.14em] text-pen sm:text-6xl">
-            {code}
+          <div className="mt-1 flex items-center gap-4">
+            <div className="tabular text-5xl leading-none tracking-[0.14em] text-pen sm:text-6xl">
+              {code}
+            </div>
+            <button type="button" onClick={copyCode} className={btn('secondary', 'sm')}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
           </div>
+          {/* The button's own label changes, which a screen reader only reads if focus
+              happens to be on it. This is the confirmation for everyone else. */}
+          <span aria-live="polite" className="sr-only">
+            {copied ? 'Room code copied' : ''}
+          </span>
         </div>
         <div className="flex items-end gap-8 sm:gap-10">
           <Stat value={roster.length} label={roster.length === 1 ? 'player' : 'players'} />
