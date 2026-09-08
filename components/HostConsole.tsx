@@ -359,8 +359,18 @@ export function HostConsole({
           <div className={capCls} suppressHydrationWarning>
             Join at {typeof window === 'undefined' ? '' : window.location.host}/play
           </div>
-          <div className="font-data mt-1 text-5xl leading-none tracking-[0.14em] text-lamp sm:text-6xl">
-            {code}
+            <div className="mt-1 flex items-center gap-3">
+            <div className="font-data text-5xl leading-none tracking-[0.14em] text-lamp sm:text-6xl">
+              {code}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(code)}
+              className="rounded-md border border-rule px-3 py-2 text-sm text-dim transition hover:text-lamp"
+            >
+              Copy
+            </button>
           </div>
         </div>
         <div className="flex items-end gap-8 sm:gap-10">
