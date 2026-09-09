@@ -63,8 +63,13 @@ export function assertSameSource(fullText: string, results: GradedResult[], labe
 export interface GradeRun {
   graded: QueryOutcome[]
   /** A negative query passes by ABSTAINING — the relevance floor should reject it rather
-   *  than the pipeline confidently answering from an unrelated passage. */
-  negatives: { abstained: boolean }[]
+   *  than the pipeline confidently answering from an unrelated passage.
+   *
+   *  `topSimilarity` is the score the floor actually compares against. It used to be dropped
+   *  here, which meant the one measurement needed to CALIBRATE the floor was the one the
+   *  artifact did not keep: a run could report 0/10 correct abstentions and give no way to
+   *  tell whether the floor was too low or the embedder had shifted under it. */
+  negatives: { queryId: string; abstained: boolean; topSimilarity: number | null }[]
 }
 
 // Generic in the result type so a caller can hand in the real `RetrievalResult` and have its
@@ -92,7 +97,12 @@ export async function gradeQueries<T extends GradedResult>(
 
     const ev = evidence.get(q.id)
     if (!ev) {
-      run.negatives.push({ abstained: !opts.isRelevant(results) })
+      const negSims = results.map((r) => r.similarity).filter((x): x is number => x !== null)
+      run.negatives.push({
+        queryId: q.id,
+        abstained: !opts.isRelevant(results),
+        topSimilarity: negSims.length > 0 ? Math.max(...negSims) : null,
+      })
       continue
     }
 

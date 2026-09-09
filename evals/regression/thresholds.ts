@@ -35,10 +35,32 @@
  *   4. Put the run ids it came from in `provenance`, so a future reader can check the
  *      number instead of trusting it.
  *
- * Not done yet, and deliberately: the 2A retrieval benchmark is frozen at run `2a97fb71`,
- * so there is nothing to take a spread from. Retrieval over a fixed corpus with fixed
- * embeddings is close to deterministic, so the spread may well be ~0 — but "probably zero"
- * is a guess, and guessed thresholds are the exact mistake the paragraph above records.
+ * DONE, 2026-09-09. Three runs — `2a97fb71` (2026-08-23), `73a192e1` and `2664d34d`
+ * (both 2026-09-09) — against identical corpusVersion `golden-corpus-v1`, goldenSetVersion
+ * `golden-queries-v1` and embedder `gemini-embedding-001`/768.
+ *
+ * Measured spread on all five metrics: EXACTLY 0. Not "close to zero" — the three artifacts
+ * agree bit-for-bit at full float precision, 17 days apart. Retrieval over a frozen corpus
+ * with frozen embeddings is deterministic, and that is now measured rather than assumed.
+ *
+ * Which leaves step 3 with a problem the list above did not anticipate: a tolerance set
+ * "wider than the spread" of zero is still zero, and a zero tolerance fails a run on float
+ * wobble in the last bit. So the tolerances below are NOT derived from noise — there is
+ * none. They are derived from the GRANULARITY of the graded set: the smallest real change
+ * one query can produce across the 40 graded queries (51 golden queries minus the 10
+ * `unanswerable` negatives, which are scored by abstention, not by rank).
+ *
+ *   recall@8, allEvidenceRecall@8   one query drops out of the top 8   = 1/40   = 0.025
+ *   MRR                             one query slips rank 1 → rank 2    = 0.5/40 = 0.0125
+ *
+ * So each threshold below means: ONE query may regress by a position, or fall out of the
+ * top 8, without failing the run. TWO may not. That is a deliberate choice of sensitivity,
+ * written down here so it can be argued with — not a noise floor, because the noise floor
+ * is zero and would arm nothing.
+ *
+ * These numbers stop being valid the moment the corpus, the golden set or the embedding
+ * model changes. All three are stamped into every artifact; when any of them moves the
+ * checker gets re-baselined, not re-tuned.
  */
 
 export interface Threshold {
@@ -62,36 +84,36 @@ export const RETRIEVAL_THRESHOLDS: Threshold[] = [
     path: 'runs.runA.pooled.hybrid.recallAt8',
     label: 'hybrid recall@8 (production top-k)',
     direction: 'higher_is_better',
-    tolerance: null,
-    provenance: '',
+    tolerance: 0.025,
+    provenance: 'runs 2a97fb71, 73a192e1, 2664d34d — measured spread 0; value is the 40-query granularity floor',
   },
   {
     path: 'runs.runA.pooled.hybrid.mrr',
     label: 'hybrid MRR',
     direction: 'higher_is_better',
-    tolerance: null,
-    provenance: '',
+    tolerance: 0.0125,
+    provenance: 'runs 2a97fb71, 73a192e1, 2664d34d — measured spread 0; value is the 40-query granularity floor',
   },
   {
     path: 'runs.runA.pooled.hybrid.allEvidenceRecallAt8',
     label: 'hybrid all-evidence recall@8',
     direction: 'higher_is_better',
-    tolerance: null,
-    provenance: '',
+    tolerance: 0.025,
+    provenance: 'runs 2a97fb71, 73a192e1, 2664d34d — measured spread 0; value is the 40-query granularity floor',
   },
   {
     path: 'runs.runA.pooled.vector.mrr',
     label: 'vector-only MRR',
     direction: 'higher_is_better',
-    tolerance: null,
-    provenance: '',
+    tolerance: 0.0125,
+    provenance: 'runs 2a97fb71, 73a192e1, 2664d34d — measured spread 0; value is the 40-query granularity floor',
   },
   {
     path: 'runs.runA.pooled.bm25.mrr',
     label: 'BM25-only MRR',
     direction: 'higher_is_better',
-    tolerance: null,
-    provenance: '',
+    tolerance: 0.0125,
+    provenance: 'runs 2a97fb71, 73a192e1, 2664d34d — measured spread 0; value is the 40-query granularity floor',
   },
 ]
 

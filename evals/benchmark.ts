@@ -40,7 +40,7 @@ export interface DocumentArmBenchmark {
   metrics: RetrievalMetrics
   categoryMetrics: Record<string, RetrievalMetrics>
   outcomes: QueryOutcome[]
-  negatives: { abstained: boolean }[]
+  negatives: { queryId: string; abstained: boolean; topSimilarity: number | null }[]
 }
 
 export interface FullBenchmarkRun {
@@ -117,7 +117,7 @@ function computeGate4(
   vectorOutcomes: QueryOutcome[],
   bm25Outcomes: QueryOutcome[],
   hybridOutcomes: QueryOutcome[],
-  negatives: { abstained: boolean }[],
+  negatives: { queryId: string; abstained: boolean; topSimilarity: number | null }[],
 ): Gate4Result {
   const bm25Map = new Map(bm25Outcomes.map((o) => [o.query.id, o]))
   const oracleOutcomes: QueryOutcome[] = vectorOutcomes.map((v) => {
@@ -456,7 +456,7 @@ async function main(): Promise<void> {
 
   function aggregatePooled(mode: EvalRunMode) {
     const pooledOutcomes: Record<EvalArm, QueryOutcome[]> = { vector: [], bm25: [], hybrid: [] }
-    const pooledNegatives: Record<EvalArm, { abstained: boolean }[]> = { vector: [], bm25: [], hybrid: [] }
+    const pooledNegatives: Record<EvalArm, { queryId: string; abstained: boolean; topSimilarity: number | null }[]> = { vector: [], bm25: [], hybrid: [] }
 
     for (const d of docResults) {
       for (const arm of ['vector', 'bm25', 'hybrid'] as EvalArm[]) {

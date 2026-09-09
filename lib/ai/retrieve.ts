@@ -54,8 +54,30 @@ export const BM25_LIMIT = 20
  * 1/(k+rank) sums with k=60, so the best possible value is about 0.033 — comparing that
  * against a 0.1 floor rejected every result, which dropped every slide. A fused rank score
  * carries no scale you can threshold; a cosine similarity does.
+ *
+ * 0.5 -> 0.62 on 2026-09-09. At 0.5 this check had NEVER FIRED: the benchmark's 10
+ * unanswerable queries were correctly refused 0 times out of 10 by the vector and hybrid
+ * arms. 0.5 was calibrated against `text-embedding-004`; under `gemini-embedding-001` the
+ * whole similarity distribution sits higher, so the floor was underneath every negative and
+ * the pipeline would confidently generate questions from unrelated passages for a subtopic
+ * the teacher's document does not cover. That is the hallucination this function exists to
+ * prevent, and the #1 product risk in CLAUDE.md.
+ *
+ * Calibrated on benchmark run `4a5f2810` (40 answerable + 10 unanswerable queries, 3 docs):
+ *
+ *   answerable   topSimilarity  0.6350 – 0.7749
+ *   unanswerable topSimilarity  0.5246 – 0.6793
+ *
+ * The bands OVERLAP by 0.0443, so no floor is clean and this number is a trade, not a
+ * solution. 0.62 keeps 40/40 answerable queries and refuses 8/10 unanswerable ones. 0.63
+ * refuses the same 8 with less headroom; 0.64 starts refusing real questions.
+ *
+ * ponytail: calibrated on the same 50 queries that measured it, so it is fitted to them —
+ * a held-out document is what would confirm it. Upgrade path if false refusals show up in
+ * the wild: per-document calibration, or a margin test (best vs. median similarity) rather
+ * than an absolute floor, which is what the overlap really argues for.
  */
-export const RELEVANCE_FLOOR = 0.5
+export const RELEVANCE_FLOOR = 0.62
 
 type ChunkRow = {
   id: string

@@ -23,15 +23,24 @@ describe('readPath', () => {
 })
 
 describe('shipped thresholds', () => {
-  it('are all report-only, because no variance has been measured yet', () => {
-    // The guard for the mistake this file was written to avoid. Arming a tolerance without
-    // a measured spread of THAT metric behind it is guessing, and the previous invented
-    // thresholds (recallAt5 0.85, mrr 0.8) were deleted for exactly that reason. These all
-    // guard retrieval metrics, so the spread has to come from repeated retrieval runs —
-    // the reliability benchmark measures the generation path and emits neither recall nor MRR.
+  it('never carries a tolerance without the runs it was derived from', () => {
+    // The guard for the mistake this file was written to avoid, restated as an invariant
+    // rather than a snapshot. It used to assert every tolerance was null, which pinned a
+    // transient state: the thresholds were armed on 2026-09-09 and the test failed for
+    // being out of date rather than for catching anything. What must stay true is the
+    // pairing — a number that can fail a run has to name the evidence behind it, and the
+    // previous invented thresholds (recallAt5 0.85, mrr 0.8) were deleted precisely
+    // because they could not.
     for (const t of RETRIEVAL_THRESHOLDS) {
-      expect(t.tolerance, `${t.label} has a tolerance but no measured variance`).toBeNull()
-      expect(t.provenance).toBe('')
+      if (t.tolerance === null) {
+        expect(t.provenance, `${t.label} is report-only but claims provenance`).toBe('')
+      } else {
+        expect(t.tolerance, `${t.label} has a non-positive tolerance`).toBeGreaterThan(0)
+        expect(
+          t.provenance,
+          `${t.label} is armed but names no run ids — a tolerance from nowhere is a guess`,
+        ).not.toBe('')
+      }
     }
   })
 
@@ -64,11 +73,24 @@ describe('checkThresholds', () => {
   }]
 
   it('never fails while a threshold is report-only', () => {
+    // Report-only semantics, tested against an explicitly report-only threshold rather than
+    // against whatever RETRIEVAL_THRESHOLDS happens to ship — those are armed now, and this
+    // test is about the null-tolerance branch, not about the shipped list.
+    const reportOnly: Threshold[] = [{ ...armed[0], tolerance: null, provenance: '' }]
     const current = { runs: { runA: { pooled: { hybrid: { mrr: 0.10, recallAt8: 0.1 } } } } }
-    const results = checkThresholds(RETRIEVAL_THRESHOLDS, baseline, current)
+    const results = checkThresholds(reportOnly, baseline, current)
     // A catastrophic drop, still not a failure — the delta is reported instead.
     expect(results.some((r) => r.regressed)).toBe(false)
-    expect(results.find((r) => r.label === 'hybrid MRR')!.delta).toBeCloseTo(-0.82, 5)
+    expect(results[0].armed).toBe(false)
+    expect(results[0].delta).toBeCloseTo(-0.82, 5)
+  })
+
+  it('the shipped thresholds do catch a catastrophic drop', () => {
+    // The other half, and the point of arming them: the real list must be able to fail.
+    // While all five were report-only this was impossible, and the checker was decoration.
+    const current = { runs: { runA: { pooled: { hybrid: { mrr: 0.10, recallAt8: 0.1 } } } } }
+    const results = checkThresholds(RETRIEVAL_THRESHOLDS, baseline, current)
+    expect(results.some((r) => r.regressed)).toBe(true)
   })
 
   it('fails an armed threshold only when it moves the wrong way past tolerance', () => {

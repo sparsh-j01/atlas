@@ -101,10 +101,16 @@ describe('gradeQueries', () => {
     const q = queries.find((x) => x.category === 'unanswerable')!
     const confident = await gradeQueries(stub(() => [0, 1], 0.9), [q], fullText, opts)
     expect(confident.graded).toHaveLength(0)
-    expect(confident.negatives).toEqual([{ abstained: false }])
+    expect(confident.negatives).toEqual([
+      { queryId: q.id, abstained: false, topSimilarity: 0.9 },
+    ])
 
     const floored = await gradeQueries(stub(() => [0, 1], 0.2), [q], fullText, opts)
-    expect(floored.negatives).toEqual([{ abstained: true }])
+    // topSimilarity is kept whether or not the query abstained: it is the number the floor
+    // was compared against, and without it a 0/10 abstention rate cannot be diagnosed.
+    expect(floored.negatives).toEqual([
+      { queryId: q.id, abstained: true, topSimilarity: 0.2 },
+    ])
   })
 
   it('keeps similarity null when the arm produces none, instead of reading it as 0', async () => {
