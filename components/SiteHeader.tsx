@@ -85,10 +85,19 @@ export function SiteFooter() {
         ATLAS <span className="text-pen">✦</span>
       </span>
       {/* The nav is desktop-only (no mobile menu on this site), so the footer is where
-          a phone finds the pricing page. */}
-      <Link href="/pricing" className="hover:underline md:hidden">
-        Pricing
-      </Link>
+          a phone finds the pricing page. The legal links live here at every width — they
+          have to be reachable from any page, and this is the only element every page shares. */}
+      <nav className="flex flex-wrap items-center gap-4">
+        <Link href="/pricing" className="hover:underline md:hidden">
+          Pricing
+        </Link>
+        <Link href="/legal/privacy" className="hover:underline">
+          Privacy
+        </Link>
+        <Link href="/legal/terms" className="hover:underline">
+          Terms
+        </Link>
+      </nav>
       <span className="hidden md:inline">Interactive learning, built for the classroom.</span>
       <span>© 2026 Atlas</span>
     </footer>

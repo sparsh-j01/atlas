@@ -420,6 +420,15 @@ function PlayRoom() {
             <button type="submit" disabled={busy} className={`${btn('primary', 'xl')} w-full`}>
               {busy ? 'Joining' : 'Join'}
             </button>
+
+            {/* Participants are the data principals here and never see the marketing footer,
+                so the notice has to be reachable from the one screen they all pass through. */}
+            <p className="text-center text-sm text-faint">
+              Your nickname and answers are shown to your teacher.{' '}
+              <a href="/legal/privacy" className="underline">
+                What we collect
+              </a>
+            </p>
           </form>
         </main>
       </div>
