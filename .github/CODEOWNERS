@@ -1,0 +1,4 @@
+# Owner review for the files that decide what CI runs and what the database schema becomes.
+# Enforced by branch protection on main (require code owner reviews).
+/.github/           @sparsh-j01
+/lib/db/migrations/ @sparsh-j01
