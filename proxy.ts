@@ -5,6 +5,13 @@ import { updateSession } from '@/lib/supabase/middleware'
 // role). Here it refreshes the Supabase session cookie + gates the creator area — see
 // lib/supabase/middleware.ts (updateSession).
 export async function proxy(request: NextRequest) {
+  // A path Next can't percent-decode (`/api/sessions/%ff/join`) fails inside its own router
+  // as a bare 500 before any handler runs, so it is refused here, where it can still be a 400.
+  try {
+    decodeURIComponent(request.nextUrl.pathname)
+  } catch {
+    return Response.json({ error: 'malformed URL' }, { status: 400 })
+  }
   return await updateSession(request)
 }
 
