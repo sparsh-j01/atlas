@@ -1,15 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // tesseract.js spawns a Node worker by resolving a path inside its own package. Bundling
-  // rewrites that path to "/ROOT/node_modules/tesseract.js/src/worker-script/node/index.js",
-  // which does not exist, and the spawn failure surfaces as an uncaughtException from the
-  // worker rather than a rejected promise — so the OCR stage hung for the full request
-  // budget instead of failing. Left external, Next resolves it with a native require and the
-  // worker path is correct. Found by running a real .pptx through the real route; no unit
-  // test could have seen it, because the bundler is not involved outside the app.
-  serverExternalPackages: ['tesseract.js'],
-
   async headers() {
     const isProd = process.env.NODE_ENV === 'production'
 
@@ -31,7 +22,10 @@ const nextConfig: NextConfig = {
               // generation to harden a route that holds no secret. What backs that trade is
               // that script access is no longer worth much here: the session cookie is
               // httpOnly (lib/supabase/cookie-options.ts) and no token is reachable from JS.
-              `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
+              // challenges.cloudflare.com is Turnstile, the bot check on the auth forms
+              // (components/Turnstile.tsx): its script, and the iframe it renders into.
+              `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${isProd ? '' : " 'unsafe-eval'"}`,
+              "frame-src https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline'",
               // api.dicebear.com serves every participant avatar (lib/avatars.ts). Without it
               // here the leaderboard, podium and host roster render broken images.
