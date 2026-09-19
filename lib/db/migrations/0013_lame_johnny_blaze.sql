@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "documents_owner_hash_live_idx" ON "documents" USING btree ("owner_id","content_hash") WHERE "documents"."content_hash" <> '';
