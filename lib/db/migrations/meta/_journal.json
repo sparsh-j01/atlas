@@ -71,6 +71,55 @@
       "when": 1788495791430,
       "tag": "0009_freezing_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791116811233,
+      "tag": "0010_magenta_tattoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791177399088,
+      "tag": "0011_security_boundaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791183558546,
+      "tag": "0012_document_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791196459228,
+      "tag": "0013_lame_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791201112639,
+      "tag": "0014_session_quiz_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791215163868,
+      "tag": "0015_quiz_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791236060442,
+      "tag": "0016_drop_last_topn",
+      "breakpoints": true
     }
   ]
 }
