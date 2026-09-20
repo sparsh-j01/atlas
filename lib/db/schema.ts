@@ -10,11 +10,15 @@ import {
   index,
   vector,
   real,
+  check,
+  primaryKey,
+  foreignKey,
 } from 'drizzle-orm/pg-core'
 import { sql, type InferSelectModel } from 'drizzle-orm'
 // Slide config shape lives in the pure lib/slides module (shared with the client editor),
 // so schema.ts stays the single place columns are declared without duplicating the type.
 import type { SlideConfig } from '@/lib/slides'
+import type { SlideRow } from '@/lib/results'
 
 // App data for authenticated creators; `id` mirrors auth.users.id (Supabase Auth),
 // row created on signup. RLS is ENABLED from creation (deny-all by default); the own-row
@@ -78,7 +82,7 @@ export const slides = pgTable(
       .notNull()
       .references(() => decks.id, { onDelete: 'cascade' }),
     position: integer('position').notNull(), // 0-based order within the deck
-    type: text('type').notNull(), // quiz_mcq (M2) | poll (M5) — see SLIDE_TYPES in lib/slides.ts
+    type: text('type').notNull(), // quiz_mcq — see SLIDE_TYPES in lib/slides.ts (polls removed 2026-10-05)
     prompt: text('prompt').notNull(),
     config: jsonb('config').$type<SlideConfig>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -106,18 +110,17 @@ export const sessions = pgTable(
     deckId: uuid('deck_id').references(() => decks.id, { onDelete: 'set null' }),
     hostId: uuid('host_id').references(() => profiles.id, { onDelete: 'cascade' }),
     code: text('code').notNull(), // 6-digit PIN, unique among non-ended (index below)
-    status: text('status').notNull().default('lobby'), // lobby | active | revealed | ended
-    hostToken: text('host_token').notNull(), // server-issued; gates reveal/advance
+    status: text('status').notNull().default('lobby'), // lobby | active | ended
+    hostToken: text('host_token').notNull(), // server-issued; gates start/end/kick
     currentSlideIndex: integer('current_slide_index').notNull().default(-1), // -1 in lobby
     currentSlideStartedAt: timestamp('current_slide_started_at', { withTimezone: true }),
-    // Slides whose answer key has already gone out to the room. Re-showing one must NOT
-    // reopen scoring: the correct option is public by then, so anyone who sat the question
-    // out could submit it for full points. advance/ consults this to re-show a revealed
-    // slide in its revealed state instead of flipping the session back to 'active'.
+    // Keep the questions and explanations students were actually assessed on, even when
+    // the teacher edits the deck for the next lecture. Server-only; never sent live.
+    slideSnapshot: jsonb('slide_snapshot').$type<SlideRow[]>(),
+    // Questions that were shown and have closed, so the review and the results can list a
+    // question nobody answered. Named for the reveal step it once tracked (removed
+    // 2026-10-05); renaming the column is a migration for no behaviour.
     revealedSlideIds: jsonb('revealed_slide_ids').$type<string[]>().notNull().default([]),
-    // Live-broadcast bookkeeping: leaky-bucket throttle + last-broadcast top-N for deltas.
-    lastBcast: timestamp('last_bcast', { withTimezone: true }),
-    lastTopn: jsonb('last_topn').$type<{ participantId: string; rank: number }[]>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
@@ -192,10 +195,23 @@ export const documents = pgTable(
     pageCount: integer('page_count').notNull(),
     contentHash: text('content_hash').notNull(),
     storagePath: text('storage_path').notNull(),
+    // Set while one request drives ingestion (lib/documents.ts → claimDocument). A column,
+    // not a held transaction, so each stage still commits as it finishes.
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('documents_owner_id_idx').on(t.ownerId), index('documents_deck_id_idx').on(t.deckId)],
+  (t) => [
+    index('documents_owner_id_idx').on(t.ownerId),
+    index('documents_deck_id_idx').on(t.deckId),
+    // One live document per owner per file. The upload-link route checks then inserts, so
+    // two drops of the same file at once both passed the check and made two rows over ONE
+    // storage object; deleting either removed the other's file. Tombstones clear
+    // content_hash, so a deleted file can be uploaded again.
+    uniqueIndex('documents_owner_hash_live_idx')
+      .on(t.ownerId, t.contentHash)
+      .where(sql`${t.contentHash} <> ''`),
+  ],
 ).enableRLS()
 
 export const documentPages = pgTable(
@@ -269,7 +285,10 @@ export const documentSections = pgTable(
     startOffset: integer('start_offset').notNull(),
     endOffset: integer('end_offset').notNull(),
   },
-  (t) => [uniqueIndex('document_sections_doc_offset_idx').on(t.documentId, t.startOffset)],
+  (t) => [
+    uniqueIndex('document_sections_doc_offset_idx').on(t.documentId, t.startOffset),
+    uniqueIndex('document_sections_id_document_idx').on(t.id, t.documentId),
+  ],
 ).enableRLS()
 
 export const chunks = pgTable(
@@ -295,6 +314,11 @@ export const chunks = pgTable(
   (t) => [
     uniqueIndex('chunks_doc_idx_idx').on(t.documentId, t.chunkIndex),
     index('chunks_section_id_idx').on(t.sectionId),
+    foreignKey({
+      name: 'chunks_section_document_fk',
+      columns: [t.sectionId, t.documentId],
+      foreignColumns: [documentSections.id, documentSections.documentId],
+    }).onDelete('cascade'),
   ],
 ).enableRLS()
 
@@ -368,6 +392,66 @@ export const ingestionJobs = pgTable(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
   (t) => [index('ingestion_jobs_doc_status_idx').on(t.documentId, t.status)],
+).enableRLS()
+
+// --- Limits and AI spend (2026-10-04) ---
+// All three are server-only: RLS on, no policies, written through Drizzle.
+
+// A creator's plan. Its own table rather than a `profiles.plan` column because
+// `profiles_update_own` (migration 0002) lets a signed-in teacher UPDATE their own profile row
+// through PostgREST with their own token — a plan column there is a self-serve upgrade to Pro.
+// No row means 'free'.
+export const entitlements = pgTable(
+  'entitlements',
+  {
+    ownerId: uuid('owner_id')
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    plan: text('plan').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [check('entitlements_plan_check', sql`${t.plan} in ('free', 'pro', 'university')`)],
+).enableRLS()
+
+// Fixed-window counters, one row per (key, window), identified by the moment the window ENDS.
+// Incremented with a single INSERT ... ON CONFLICT DO UPDATE ... RETURNING, which is atomic
+// across every serverless instance — no read-then-write. Keyed on the end, not the start, so
+// the daily purge (`expires_at < now()`) is right for every window length, including the
+// month-long once-per-month alert markers that share this table.
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    key: text('key').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.expiresAt] })],
+).enableRLS()
+
+// One row per AI deck run ('deck', the quota unit, written when the run is reserved) and per
+// provider call ('model' / 'embed', with tokens and estimated cost). Never deleted with the
+// deck, so deleting a deck cannot reset a quota. `owner_id` is SET NULL on account deletion,
+// not cascaded: the global spend cap sums these rows and must keep counting money spent.
+export const aiUsage = pgTable(
+  'ai_usage',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id').references(() => profiles.id, { onDelete: 'set null' }),
+    kind: text('kind').notNull(),
+    model: text('model'),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    costMicroUsd: integer('cost_micro_usd').notNull().default(0),
+    // False reserves the worst-case cost before a provider request. Unknown outcomes keep
+    // their reservation until reconciled; a crash must never refund potentially spent money.
+    settled: boolean('settled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('ai_usage_owner_kind_created_idx').on(t.ownerId, t.kind, t.createdAt),
+    index('ai_usage_created_idx').on(t.createdAt),
+    check('ai_usage_kind_check', sql`${t.kind} in ('deck', 'model', 'embed')`),
+  ],
 ).enableRLS()
 
 export type Document = InferSelectModel<typeof documents>
