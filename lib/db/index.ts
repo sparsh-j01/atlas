@@ -3,6 +3,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { serverEnv } from '@/lib/env.server'
 import * as schema from './schema'
+import { databaseTls } from './tls'
 
 type DB = PostgresJsDatabase<typeof schema>
 
@@ -18,7 +19,7 @@ type DB = PostgresJsDatabase<typeof schema>
 let instance: DB | null = null
 function connect(): DB {
   if (!instance) {
-    const client = postgres(serverEnv.databaseUrl, { prepare: false })
+    const client = postgres(serverEnv.databaseUrl, { prepare: false, ssl: databaseTls() })
     instance = drizzle(client, { schema })
   }
   return instance
