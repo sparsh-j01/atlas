@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "slide_snapshot" jsonb;
