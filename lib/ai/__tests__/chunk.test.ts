@@ -161,3 +161,17 @@ describe('chunkDocument boundaries', () => {
     expect(chunks.map((c) => c.sectionId)).toEqual(['first', 'second'])
   })
 })
+
+
+it('locates each chunk on its actual page within a multi-page section', async () => {
+  const text = 'Page one content.\n\nPage two content.'
+  const pages = [{ pageNumber: 1, offset: 0 }, { pageNumber: 2, offset: 19 }]
+  const sections = [section({ startOffset: 0, endOffset: text.length, pageStart: 1, pageEnd: 2 })]
+  const chunks = await chunkDocument(text, sections, { maxTokens: 5, pages })
+  expect(chunks.map((c) => [c.text, c.pageStart, c.pageEnd])).toEqual([
+    ['Page one content.', 1, 1], ['Page two content.', 2, 2],
+  ])
+  const spanning = await chunkDocument(text, sections, { pages })
+  expect(spanning.map((c) => [c.pageStart, c.pageEnd])).toEqual([[1, 2]])
+  expectSliceExact(text, chunks)
+})

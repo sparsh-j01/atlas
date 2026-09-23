@@ -1,5 +1,5 @@
 import { sha256 } from '@/lib/crypto'
-import type { StructureSection } from './structure'
+import { pageAt, type SourcePage, type StructureSection } from './structure'
 
 // Structure-aware chunking (M7 phase 4). Sections come from structure detection; this
 // module cuts each section into retrieval-sized pieces and records exactly where each
@@ -44,6 +44,8 @@ export interface ChunkResult {
 export interface ChunkOptions {
   /** Upper bound per chunk. A boundary, not a target — structure wins where it can. */
   maxTokens?: number
+  /** Original page offsets for exact chunk-level citations. */
+  pages?: Pick<SourcePage, 'pageNumber' | 'offset'>[]
   /** Tokens of the previous chunk repeated at the start of the next. The plan calls for
    *  benchmarking this rather than assuming 10%, so it is a real knob with a real
    *  implementation; 0 (no overlap) is the default because structure-aware cuts already
@@ -171,6 +173,7 @@ export async function chunkDocument(
   const maxTokens = options.maxTokens ?? MAX_TOKENS
   const overlapTokens = options.overlapTokens ?? 0
   const results: ChunkResult[] = []
+  const pages = options.pages?.length ? options.pages : null
 
   for (const section of sections) {
     const sectionId = section.id
@@ -187,8 +190,8 @@ export async function chunkDocument(
       const text = fullText.slice(span.start, span.end)
       results.push({
         sectionId,
-        pageStart: section.pageStart,
-        pageEnd: section.pageEnd,
+        pageStart: pages ? pageAt(pages, span.start) : section.pageStart,
+        pageEnd: pages ? pageAt(pages, span.end - 1) : section.pageEnd,
         charStart: span.start,
         charEnd: span.end,
         text,
