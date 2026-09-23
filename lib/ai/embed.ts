@@ -1,5 +1,6 @@
 import 'server-only'
 import { serverEnv } from '@/lib/env.server'
+import { completeAiCallAtCeiling, inputTokenCeiling, reserveAiCall, settleAiCall } from './budget'
 
 // Embedding seam for the RAG path (M7 phase 5). Same shape as the generation seam in
 // lib/ai/generate.ts: one narrow function, no vendor SDK, swap = one file.
@@ -45,21 +46,61 @@ export function embeddingConfig() {
   }
 }
 
-async function call(path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`${API_BASE}/${model()}:${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': serverEnv.geminiKey },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const snippet = (await res.text().catch(() => '')).slice(0, 300)
-    throw new Error(`embedding failed: ${res.status} ${snippet}`)
+export interface EmbedOptions {
+  deadline?: number
+  signal?: AbortSignal
+}
+
+export class EmbeddingDeadlineError extends Error {
+  constructor() { super('Embedding time budget exhausted'); this.name = 'EmbeddingDeadlineError' }
+}
+
+async function call(path: string, body: unknown, options: EmbedOptions): Promise<unknown> {
+  if ((options.deadline ?? Infinity) <= Date.now()) throw new EmbeddingDeadlineError()
+  const serialized = JSON.stringify(body)
+  // Reserved before fetch: no provider request starts without its row. This endpoint reports
+  // no token usage, so a success is charged at the reservation's ceiling rather than a
+  // characters/4 guess, which undercounts some languages.
+  const reservation = await reserveAiCall('embed', model(), inputTokenCeiling(serialized), 0)
+  // Measured after the reservation: waiting on the budget lock spends the same time budget.
+  const remaining = Math.min(30_000, (options.deadline ?? Date.now() + 30_000) - Date.now())
+  if (remaining <= 0) {
+    await settleAiCall(reservation, 0, 0) // never sent, so nothing was spent
+    throw new EmbeddingDeadlineError()
   }
-  return res.json()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), remaining)
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
+  let data: unknown
+  try {
+    const res = await fetch(`${API_BASE}/${model()}:${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': serverEnv.geminiKey },
+      body: serialized,
+      signal,
+    })
+    if (!res.ok) {
+      // A refusal is not billed (see lib/ai/gemini.ts), so its reservation is released. The
+      // body is never read: it names the model, tier and quota and has nowhere safe to go.
+      await res.body?.cancel()
+      await settleAiCall(reservation, 0, 0)
+      throw new Error(`embedding failed: ${res.status}`)
+    }
+    // The body can stall too; keep the timeout alive until it has been consumed.
+    data = await res.json()
+  } catch (error) {
+    // Aborted mid-flight is the uncertain case: the reservation stays charged to this month.
+    if (controller.signal.aborted) throw new EmbeddingDeadlineError()
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+  await completeAiCallAtCeiling(reservation)
+  return data
 }
 
 function assertWidth(values: unknown): number[] {
-  if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSION)
+  if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSION || !values.every((v) => typeof v === 'number' && Number.isFinite(v)))
     throw new Error(
       `embedder returned ${Array.isArray(values) ? values.length : 'no'} dimensions, expected ${EMBEDDING_DIMENSION}`,
     )
@@ -67,12 +108,12 @@ function assertWidth(values: unknown): number[] {
 }
 
 /** One text to one vector. */
-export async function embed(text: string, task: EmbedTask): Promise<number[]> {
-  const data = (await call('embedContent', {
-    content: { parts: [{ text }] },
-    taskType: task,
-    outputDimensionality: EMBEDDING_DIMENSION,
-  })) as { embedding?: { values?: unknown } }
+export async function embed(text: string, task: EmbedTask, options: EmbedOptions = {}): Promise<number[]> {
+  const data = (await call(
+    'embedContent',
+    { content: { parts: [{ text }] }, taskType: task, outputDimensionality: EMBEDDING_DIMENSION },
+    options,
+  )) as { embedding?: { values?: unknown } }
   return assertWidth(data.embedding?.values)
 }
 
@@ -84,19 +125,24 @@ export async function embed(text: string, task: EmbedTask): Promise<number[]> {
  * the free tier's rate limit. Order is preserved so callers can zip the result against
  * their input.
  */
-export async function embedBatch(texts: string[], task: EmbedTask): Promise<number[][]> {
+export async function embedBatch(texts: string[], task: EmbedTask, options: EmbedOptions = {}): Promise<number[][]> {
   const out: number[][] = []
+  const budget = { ...options, deadline: options.deadline ?? Date.now() + 30_000 }
   const m = `models/${model()}`
   for (let i = 0; i < texts.length; i += MAX_BATCH) {
     const slice = texts.slice(i, i + MAX_BATCH)
-    const data = (await call('batchEmbedContents', {
-      requests: slice.map((text) => ({
-        model: m,
-        content: { parts: [{ text }] },
-        taskType: task,
-        outputDimensionality: EMBEDDING_DIMENSION,
-      })),
-    })) as { embeddings?: { values?: unknown }[] }
+    const data = (await call(
+      'batchEmbedContents',
+      {
+        requests: slice.map((text) => ({
+          model: m,
+          content: { parts: [{ text }] },
+          taskType: task,
+          outputDimensionality: EMBEDDING_DIMENSION,
+        })),
+      },
+      budget,
+    )) as { embeddings?: { values?: unknown }[] }
     const got = data.embeddings ?? []
     if (got.length !== slice.length)
       throw new Error(`embedder returned ${got.length} vectors for ${slice.length} inputs`)
