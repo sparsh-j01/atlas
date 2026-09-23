@@ -37,11 +37,16 @@ export type GenerateArgs = {
   deadline?: number
   /** Abort signal for cancellation */
   signal?: AbortSignal
+  /** Images attached after the (last) user message, for OCR. `tokenCeiling` is the most the
+   *  provider can bill for that image; the spending guard reserves it instead of counting the
+   *  encoded bytes as tokens (see lib/ingest/ocr.ts → imageTokenCeiling). */
+  images?: { data: Uint8Array; mimeType: string; tokenCeiling: number }[]
 }
 
 export type GenerateResult =
   | { ok: true; input: unknown }
-  | { ok: false; error: string }
+  /** `budget`: refused by the monthly AI spending cap before any request was sent. */
+  | { ok: false; error: string; budget?: true }
 
 /**
  * One forced tool call. Implementations must:
