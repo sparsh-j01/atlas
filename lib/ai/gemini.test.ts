@@ -4,6 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // provider's request shape and its time budgeting stay unit-testable with no network.
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/env.server', () => ({ serverEnv: { geminiKey: 'test-key' } }))
+const RESERVATION = { id: 'r1', model: 'm', maximumMicroUsd: 100 }
+const budget = vi.hoisted(() => ({ reserve: vi.fn(), settle: vi.fn(async () => {}) }))
+vi.mock('./budget', () => ({
+  reserveAiCall: budget.reserve,
+  settleAiCall: budget.settle,
+  inputTokenCeiling: () => 1,
+}))
+budget.reserve.mockImplementation(async () => RESERVATION)
 
 const { geminiGenerate } = await import('./gemini')
 
@@ -31,6 +39,14 @@ const withCall = (a: unknown) => ({
 
 afterEach(() => vi.unstubAllGlobals())
 
+const QUOTA_BODY = {
+  error: {
+    message:
+      'Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, ' +
+      'limit: 20, model: gemini-3.5-flash',
+  },
+}
+
 describe('geminiGenerate request shape', () => {
   it('disables thinking — its tokens would otherwise eat maxOutputTokens before the tool call', async () => {
     const f = stubFetch(withCall({ prompt: 'q' }))
@@ -40,12 +56,13 @@ describe('geminiGenerate request shape', () => {
     expect(sent.generationConfig.maxOutputTokens).toBe(1000)
   })
 
-  it('sends thinkingConfig even with no token cap', async () => {
+  it('sends thinkingConfig, and a default output cap so the spend reservation has a bound', async () => {
     const f = stubFetch(withCall({}))
     await geminiGenerate()(args)
     const sent = sentBody(f)
     expect(sent.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
-    expect(sent.generationConfig.maxOutputTokens).toBeUndefined()
+    expect(sent.generationConfig.maxOutputTokens).toBe(8192)
+    expect(budget.reserve).toHaveBeenLastCalledWith('model', expect.any(String), 1, 8192)
   })
 
   it('forces the single named tool', async () => {
@@ -95,13 +112,6 @@ describe('upstream error bodies stay server-side', () => {
   // Two routes interpolate this error into a 502 they return to the browser, so whatever
   // ends up in `error` is published to any signed-in creator. Google's real 429 text names
   // the provider, the model id, the billing tier and the numeric rate limit.
-  const QUOTA_BODY = {
-    error: {
-      message:
-        'Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, ' +
-        'limit: 20, model: gemini-3.5-flash',
-    },
-  }
 
   it('reports the status without the provider body', async () => {
     stubFetch(QUOTA_BODY, 429)
@@ -118,4 +128,70 @@ describe('upstream error bodies stay server-side', () => {
       expect(error).not.toMatch(/quota|limit|free_tier|gemini-|googleapis/i)
     }
   })
+})
+
+describe('spend recording', () => {
+  afterEach(() => budget.settle.mockClear())
+
+  it('records every billed response, thinking tokens at the output rate, even one the tool check rejects', async () => {
+    stubFetch({
+      candidates: [{ content: { parts: [{ text: 'no tool call' }] }, finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 1200, candidatesTokenCount: 300, thoughtsTokenCount: 50 },
+    })
+    const res = await geminiGenerate()(args)
+    expect(res.ok).toBe(false)
+    expect(budget.settle).toHaveBeenCalledWith(RESERVATION, 1200, 350)
+  })
+
+  it('releases the reservation of a refused call, which reports no usage and is not billed', async () => {
+    // Kept charged, every free-tier 429 ate the worst-case price out of the monthly cap.
+    for (const status of [400, 403, 429, 500]) {
+      budget.settle.mockClear()
+      stubFetch(QUOTA_BODY, status)
+      await geminiGenerate()({ ...args, deadline: Date.now() + 3_500 })
+      expect(budget.settle).toHaveBeenCalledWith(RESERVATION, 0, 0)
+    }
+  })
+})
+
+describe('images (OCR)', () => {
+  const img = (n: number) => ({ data: new Uint8Array(n), mimeType: 'image/png', tokenCeiling: 1400 })
+
+  it('reserves each image at its own ceiling, never its encoded bytes as tokens', async () => {
+    // A 5-slide batch is ~2.5MB of base64; counted as tokens it reserved ~2.5M against a
+    // measured ~5.5k, and two concurrent batches tripped the monthly cap.
+    stubFetch(withCall({}))
+    budget.reserve.mockClear()
+    await geminiGenerate('gemini-2.5-flash-lite')({ ...args, images: [img(2_000_000), img(2_000_000)] })
+    expect(budget.reserve).toHaveBeenCalledWith('model', 'gemini-2.5-flash-lite', 1 + 2 * 1400, 8192)
+  })
+
+  it('attaches the images after the text of the last message', async () => {
+    const sent = stubFetch(withCall({}))
+    await geminiGenerate()({ ...args, images: [img(3)] })
+    const parts = sentBody(sent).contents[0].parts
+    expect(parts[0]).toEqual({ text: 'hi' })
+    expect(parts[1]).toEqual({ inlineData: { mimeType: 'image/png', data: 'AAAA' } })
+  })
+
+  it('refuses an image without a usable ceiling rather than reserving an unbounded call', async () => {
+    stubFetch(withCall({}))
+    const res = await geminiGenerate()({ ...args, images: [{ ...img(3), tokenCeiling: 0 }] })
+    expect(res).toEqual({ ok: false, error: 'Invalid image token ceiling' })
+  })
+
+  it('marks a refusal by the spending cap, so OCR can say "AI budget reached"', async () => {
+    stubFetch(withCall({}))
+    budget.reserve.mockRejectedValueOnce(new Error('cap'))
+    const res = await geminiGenerate()({ ...args, images: [img(3)] })
+    expect(res).toMatchObject({ ok: false, budget: true })
+  })
+})
+
+it('asks Flash-Lite for minimal thinking by level, since it rejects thinkingBudget 0 with a 400', async () => {
+  const sent = stubFetch(withCall({}))
+  await geminiGenerate('gemini-3.5-flash-lite')(args)
+  expect(sentBody(sent).generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' })
+  await geminiGenerate('gemini-3.7-flash')(args)
+  expect(sentBody(sent, 1).generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
 })

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { serverEnv } from '@/lib/env.server'
 import { logger } from '@/lib/logger'
+import { reserveAiCall, settleAiCall, inputTokenCeiling, type Reservation } from './budget'
 import type { GenerateArgs, GenerateFn, GenerateResult } from './generate'
 
 // Gemini implementation of the generation seam (lib/ai/generate.ts). Plain fetch — no SDK,
@@ -29,6 +30,7 @@ type Part = { text?: string; functionCall?: { name: string; args?: unknown } }
 type GeminiResponse = {
   candidates?: { content?: { parts?: Part[] }; finishReason?: string }[]
   promptFeedback?: { blockReason?: string }
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number }
 }
 
 /** The model this provider will ACTUALLY call, after the env override. Exported because a
@@ -38,13 +40,28 @@ export function geminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || MODEL_DEFAULT
 }
 
-export function geminiGenerate(): GenerateFn {
-  const model = geminiModel()
+/** `modelOverride` is for a caller with its own model choice (OCR runs on Flash-Lite, see
+ *  lib/ingest/ocr.ts → ocrModel); generation uses GEMINI_MODEL. */
+export function geminiGenerate(modelOverride?: string): GenerateFn {
+  const model = modelOverride ?? geminiModel()
 
   return async (args: GenerateArgs): Promise<GenerateResult> => {
+    const maxOutputTokens = args.maxOutputTokens ?? 8192
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 65536)
+      return { ok: false, error: 'Invalid output token limit' }
+    const images = args.images ?? []
+    if (!images.every((img) => Number.isSafeInteger(img.tokenCeiling) && img.tokenCeiling > 0))
+      return { ok: false, error: 'Invalid image token ceiling' }
+    const imageParts = images.map((img) => ({ inlineData: { mimeType: img.mimeType, data: Buffer.from(img.data).toString('base64') } }))
     const body = {
       systemInstruction: { parts: [{ text: args.system }] },
-      contents: args.messages.map((m) => ({ role: 'user', parts: [{ text: m.content }] })),
+      contents: args.messages.map((m, i) => ({
+        role: 'user',
+        parts: [
+          { text: m.content },
+          ...(i === args.messages.length - 1 ? imageParts : []),
+        ],
+      })),
       tools: [
         {
           functionDeclarations: [
@@ -65,8 +82,10 @@ export function geminiGenerate(): GenerateFn {
         // call returns finishReason MAX_TOKENS with no functionCall at all. Both phases are
         // structured extraction, so there is nothing to think about. 2.5 Flash accepts 0;
         // 2.5 Pro does not (min 128) — a Pro swap has to raise the caps instead.
-        thinkingConfig: { thinkingBudget: 0 },
-        ...(args.maxOutputTokens ? { maxOutputTokens: args.maxOutputTokens } : {}),
+        // Flash-Lite (OCR) answers 400 "invalid argument" to thinkingBudget 0 and takes the
+        // Gemini 3 thinkingLevel instead (probed 2026-10-05; 3.7 Flash accepts either).
+        thinkingConfig: model.includes('flash-lite') ? { thinkingLevel: 'minimal' } : { thinkingBudget: 0 },
+        maxOutputTokens,
       },
     }
 
@@ -75,74 +94,90 @@ export function geminiGenerate(): GenerateFn {
     const deadline = args.deadline ?? Date.now() + 2 * CALL_TIMEOUT_MS
     const budget = () => Math.min(CALL_TIMEOUT_MS, deadline - Date.now())
 
-    async function attempt(): Promise<{ response?: Response; error?: string; transient?: boolean }> {
-      const ms = budget()
-      if (ms < MIN_CALL_MS) return { error: 'out of time budget', transient: false }
+    const serialized = JSON.stringify(body)
+    // Text by its bytes (inputTokenCeiling), images by their own ceilings. Counting the base64
+    // as tokens reserved ~450x the real cost: a 5-slide batch held ~2.5M tokens against a
+    // measured ~5.5k, enough to trip the monthly cap on two concurrent batches.
+    const inputCeiling = images.length === 0
+      ? inputTokenCeiling(serialized)
+      : inputTokenCeiling(JSON.stringify({ ...body, contents: args.messages.map((m) => ({ role: 'user', parts: [{ text: m.content }] })) }))
+        + images.reduce((sum, img) => sum + img.tokenCeiling, 0)
+    async function attempt(): Promise<{ result?: GenerateResult; error?: string; transient?: boolean; budget?: true }> {
+      if (budget() < MIN_CALL_MS) return { error: 'out of time budget', transient: false }
+      if (args.signal?.aborted) return { error: 'aborted', transient: false }
+      let reservation: Reservation
       try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), ms)
-        
-        // Combine external signal with our timeout
-        if (args.signal) {
-          if (args.signal.aborted) {
-            clearTimeout(timeoutId)
-            return { error: 'aborted', transient: false }
-          }
-          args.signal.addEventListener('abort', () => controller.abort())
-        }
-        
+        reservation = await reserveAiCall('model', model, inputCeiling, maxOutputTokens)
+      } catch {
+        return { error: 'AI spending is paused. Try again later.', transient: false, budget: true }
+      }
+      // The budget lock may have waited. A call not sent can safely refund its reservation.
+      if (budget() < MIN_CALL_MS || args.signal?.aborted) {
+        await settleAiCall(reservation, 0, 0)
+        return { error: 'out of time budget', transient: false }
+      }
+      const controller = new AbortController()
+      const abort = () => controller.abort()
+      const timeoutId = setTimeout(abort, budget())
+      args.signal?.addEventListener('abort', abort, { once: true })
+      try {
         const response = await fetch(`${API_BASE}/${model}:generateContent`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': serverEnv.geminiKey },
-          body: JSON.stringify(body),
+          body: serialized,
           signal: controller.signal,
         })
-        clearTimeout(timeoutId)
-        if (response.ok) return { response }
-        // The upstream body is diagnostic-only and never leaves the server. Google's 429
-        // text names the provider, the exact model id, the billing tier and the numeric
-        // rate limit; two routes interpolate this error straight into a 502 they return to
-        // the browser, so anything put in the string here is published. Log it, return the
-        // status alone (the retry path below matches on '429', so it has to stay).
-        const snippet = (await response.text().catch(() => '')).slice(0, 300)
-        logger.error('gemini call failed', { model, status: response.status, upstream: snippet })
-        return {
-          error: `provider returned ${response.status}`,
-          transient: TRANSIENT_STATUS.has(response.status),
-        }
-      } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') {
-          return { error: 'aborted', transient: false }
-        }
-        logger.error('gemini request threw', { model, cause: String(e) })
+        if (response.ok) return { result: await parseResponse(response, reservation) }
+        // An error status is a definite outcome, not an uncertain one: Gemini bills the tokens a
+        // successful response reports in usageMetadata, and a refusal reports none. Release
+        // the reservation; keeping it charged every 429 (routine on the free tier) at the
+        // worst-case price. Never log the upstream body.
+        await response.body?.cancel()
+        await settleAiCall(reservation, 0, 0)
+        logger.error('gemini call failed', { model, status: response.status })
+        return { error: `provider returned ${response.status}`, transient: TRANSIENT_STATUS.has(response.status) }
+      } catch (error) {
+        if (controller.signal.aborted) return { error: 'aborted', transient: false }
+        logger.error('gemini request threw', { model, error })
         return { error: 'generation request failed', transient: true }
+      } finally {
+        // Covers response-body parsing too. Abort and error paths always release timers/listeners.
+        clearTimeout(timeoutId)
+        args.signal?.removeEventListener('abort', abort)
       }
     }
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
     const first = await attempt()
-    if (first.response) return parseResponse(first.response)
-    if (!first.transient) return { ok: false, error: first.error! }
+    if (first.result) return first.result
+    if (!first.transient) return { ok: false, error: first.error!, ...(first.budget ? { budget: true as const } : {}) }
     const delay = first.error?.includes('429') ? 15_000 : RETRY_DELAY_MS
     if (budget() - delay < MIN_CALL_MS)
       return { ok: false, error: `${first.error} (no time budget left to retry)` }
     await sleep(delay)
     const second = await attempt()
-    if (second.response) return parseResponse(second.response)
-    return { ok: false, error: second.error ?? first.error ?? 'generation failed twice' }
+    if (second.result) return second.result
+    return { ok: false, error: second.error ?? first.error ?? 'generation failed twice', ...(second.budget ? { budget: true as const } : {}) }
   }
 }
 
 /** A 200 body into the seam's result. Model-level failures (blocked, truncated, answered
  *  without the tool) are NOT retried — they're deterministic enough that a blind retry
  *  wastes budget; the orchestrator decides whether regeneration is worth a full call. */
-async function parseResponse(res: Response): Promise<GenerateResult> {
+async function parseResponse(res: Response, reservation: Reservation): Promise<GenerateResult> {
   let data: GeminiResponse
   try {
     data = (await res.json()) as GeminiResponse
   } catch {
     return { ok: false, error: 'provider returned an unreadable body' }
+  }
+
+  // Recorded before any of the checks below: a blocked, truncated or tool-less answer is
+  // billed exactly like a good one. Thinking tokens are billed at the output rate.
+  const usage = data.usageMetadata
+  if (usage && Number.isSafeInteger(usage.promptTokenCount) && Number.isSafeInteger(usage.candidatesTokenCount)) {
+    await settleAiCall(reservation, usage.promptTokenCount!, usage.candidatesTokenCount! + (usage.thoughtsTokenCount ?? 0))
   }
 
   const blocked = data.promptFeedback?.blockReason
