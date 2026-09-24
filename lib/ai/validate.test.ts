@@ -46,6 +46,21 @@ describe('finalizeSlides', () => {
     expect(result.dropped).toEqual([])
   })
 
+  it('says nothing about a failure a spare replaced, and names the reason when none could', () => {
+    const run = [
+      { subtopic: 'ZigBee routing', slide: null, reason: 'failed the answer check (not answerable from the document)' },
+      { subtopic: 'a', slide: quiz('Q a?') },
+      { subtopic: 'b', slide: quiz('Q b?') },
+      { subtopic: 'spare', slide: quiz('Q spare?') },
+    ]
+    const full = finalizeSlides(run, 3)
+    expect(full.ok && full.slides.length).toBe(3)
+    expect(full.ok && full.dropped).toEqual([])
+
+    const short = finalizeSlides(run, 4)
+    expect(short.ok && short.dropped).toEqual(['"ZigBee routing": failed the answer check (not answerable from the document)'])
+  })
+
   it('drops structurally-unusable entries with the subtopic named', () => {
     const result = finalizeSlides(
       [

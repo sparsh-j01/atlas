@@ -22,7 +22,8 @@ export function normalizePrompt(p: string): string {
     .replace(/[?!.]+$/, '')
 }
 
-export type ProducedSlide = { subtopic: string; slide: EditableSlide | null }
+/** `reason` says why `slide` is null, in words a teacher can act on. */
+export type ProducedSlide = { subtopic: string; slide: EditableSlide | null; reason?: string }
 
 export type FinalizedSlides =
   | { ok: true; slides: EditableSlide[]; dropped: string[] }
@@ -46,10 +47,11 @@ export function finalizeSlides(
   const accepted: EditableSlide[] = []
   const seenPrompts = new Set<string>()
 
-  for (const [i, p] of produced.entries()) {
-    const label = `slide ${i + 1} ("${p.subtopic}")`
+  for (const p of produced) {
+    // Named by topic, not number: with spares, "slide 9" of an 8-slide deck means nothing.
+    const label = `"${p.subtopic}"`
     if (!p.slide) {
-      dropped.push(`${label}: generation produced an unusable slide`)
+      dropped.push(`${label}: ${p.reason ?? 'generation produced an unusable slide'}`)
       continue
     }
     const errs = validateSlide(p.slide)
@@ -75,5 +77,6 @@ export function finalizeSlides(
         `Only ${accepted.length} of ${requestedCount} requested slides survived validation — need at least ${floor}.`,
       ],
     }
-  return { ok: true, slides: accepted, dropped }
+  // A failure a spare replaced is not news: the teacher got the deck they asked for.
+  return { ok: true, slides: accepted.slice(0, requestedCount), dropped: accepted.length >= requestedCount ? [] : dropped }
 }
