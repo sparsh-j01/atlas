@@ -12,7 +12,7 @@ const evidence = (text: string): RetrievalResult => ({
   score: 0.03,
   rank: 1,
   similarity: 0.8,
-  source: { page: 1, section: 'Photosynthesis', charStart: 0, charEnd: text.length },
+  source: { documentId: 'doc', filename: 'doc.pdf', page: 1, section: 'Photosynthesis', charStart: 0, charEnd: text.length },
 })
 
 /** A client that always answers with the given tool arguments, recording what it was sent. */
@@ -185,13 +185,13 @@ describe('verifySlide', () => {
     expect(await verifySlide(fn, base)).toEqual({ ok: true, failures: [] })
   })
 
-  it('matches a quote spanning two adjacent extracts', async () => {
+  it('rejects a quote stitched from two separate extracts', async () => {
     const { fn } = fakeClient({ ...pass, supporting_quote: 'in the leaf. Glucose is then stored' })
     const v = await verifySlide(fn, {
       ...base,
       evidence: [evidence('Photosynthesis happens in the leaf.'), evidence('Glucose is then stored as starch.')],
     })
-    expect(v.ok).toBe(true)
+    expect(v.ok).toBe(false)
   })
 
   it('keeps a real rejection reason instead of adding a quote complaint on top', async () => {
@@ -214,4 +214,20 @@ describe('verifySlide', () => {
     expect(n('  A\u2019s  \u201Cquote\u201D \u2014 here ')).toBe('a\'s "quote" - here')
     expect(n('paraphrased text')).not.toBe(n('text paraphrased'))
   })
+})
+
+
+it('requires an explicit topic-adherence verdict when a subtopic is provided', async () => {
+  const { fn } = fakeClient({ ...pass, matches_subtopic: false })
+  const result = await verifySlide(fn, { ...base, subtopic: 'Glucose production' })
+  expect(result.ok).toBe(false)
+  expect(result.failures).toContain('question does not test the requested subtopic')
+})
+
+it('checks explanations and forwards them as quoted data', async () => {
+  const { fn, calls } = fakeClient({ ...pass, matches_subtopic: true, explanation_supported: false })
+  const result = await verifySlide(fn, { ...base, subtopic: 'Photosynthesis', explanation: 'An unsupported claim.' })
+  expect(result.ok).toBe(false)
+  expect(result.failures).toContain('explanation unsupported')
+  expect(calls[0].messages[0].content).toContain('Explanation: "An unsupported claim."')
 })
