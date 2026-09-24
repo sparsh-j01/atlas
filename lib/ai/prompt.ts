@@ -10,7 +10,6 @@ Rules you always follow:
 - Every question is self-contained: never reference other slides, never say "according to the passage above", never number questions.
 - Plain text only: no markdown, no LaTeX, no emoji, no surrounding quotation marks.
 - A quiz question has EXACTLY ONE correct option. Distractors are plausible but clearly wrong to someone who knows the material.
-- A poll is an opinion or experience question with no correct answer. Never mark a poll option correct.
 - Keep prompts under 200 characters and option texts under 80 characters.
 - Never ask the same thing twice in different words within one deck.`
 
