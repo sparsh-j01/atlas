@@ -184,3 +184,13 @@ describe('detectSections', () => {
     expect(await detectSections(clientReturning({}), '', [])).toEqual([])
   })
 })
+
+
+it('retains a preamble before the first detected heading', async () => {
+  const { fullText, pages } = makePages(['Introductory fact.\n\nMain heading\nBody text.'])
+  const start = fullText.indexOf('Main heading')
+  const sections = await detectSections(clientReturning({ sections: [{ heading: 'Main heading', start_offset: start }] }), fullText, pages)
+  expect(sections.map((s) => fullText.slice(s.startOffset, s.endOffset)).join('')).toBe(fullText)
+  expect(sections[0].startOffset).toBe(0)
+  expect(sections[1].startOffset).toBe(start)
+})

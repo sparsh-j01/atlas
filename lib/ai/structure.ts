@@ -153,7 +153,7 @@ export function parseSections(
 }
 
 /** Page number containing an absolute offset. */
-function pageAt(pages: SourcePage[], offset: number): number {
+export function pageAt(pages: Pick<SourcePage, 'pageNumber' | 'offset'>[], offset: number): number {
   let page = pages[0].pageNumber
   for (const p of pages) {
     if (offset >= p.offset) page = p.pageNumber
@@ -211,7 +211,12 @@ export async function detectSections(
     }
 
     // Each section runs to the start of the next one, and the last runs to the window end.
-    const starts = parsed.value
+    // A valid first heading can occur after a preamble. Keep that prefix indexed too.
+    // In a later window that prefix is the previous window's last section carrying on, so it
+    // keeps that heading rather than inventing one the blueprint would read as a topic.
+    const starts = parsed.value[0].startOffset > 0
+      ? [{ heading: sections.at(-1)?.heading ?? `Page ${firstPage} introduction`, startOffset: 0 }, ...parsed.value]
+      : parsed.value
     for (const [i, s] of starts.entries()) {
       const startOffset = w.start + s.startOffset
       const endOffset = i + 1 < starts.length ? w.start + starts[i + 1].startOffset : w.end
