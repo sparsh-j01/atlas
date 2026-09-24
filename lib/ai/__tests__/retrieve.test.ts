@@ -11,7 +11,7 @@ const result = (similarity: number | null): RetrievalResult => ({
   score: 0.03,
   rank: 1,
   similarity,
-  source: { page: 1, section: 'S', charStart: 0, charEnd: 4 },
+  source: { documentId: 'doc', filename: 'doc.pdf', page: 1, section: 'S', charStart: 0, charEnd: 4 },
 })
 
 describe('hasRelevantContext', () => {
