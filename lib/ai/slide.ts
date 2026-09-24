@@ -11,7 +11,6 @@ import {
   TIME_MAX_MS,
   TIME_MIN_MS,
 } from '../mcq'
-import { CHART_KINDS, POLL_DEFAULTS } from '../poll'
 import type { EditableSlide, SlideType } from '../slides'
 import type { ToolSpec } from './generate'
 import type { Difficulty } from './blueprint'
@@ -21,19 +20,18 @@ import type { Difficulty } from './blueprint'
 export const SLIDE_TOOL: ToolSpec = {
   name: 'emit_slide',
   description:
-    'Emit ONE slide for a live classroom game. Quiz questions need exactly one option' +
-    ' marked correct; polls are opinion questions where no option may be marked correct.',
+    'Emit ONE quiz question for a live classroom game, with exactly one option marked correct.',
   inputSchema: {
     type: 'object',
     properties: {
-      prompt: { type: 'string', description: 'The question or poll prompt.' },
+      prompt: { type: 'string', description: 'The question.' },
       options: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
             text: { type: 'string' },
-            // Polls omit this entirely; quizzes set it on EXACTLY ONE option.
+            // Set on EXACTLY ONE option.
             is_correct: { type: 'boolean' },
           },
           required: ['text'],
@@ -41,11 +39,10 @@ export const SLIDE_TOOL: ToolSpec = {
       },
       explanation: {
         type: 'string',
-        description: 'Quiz only: one sentence on why the answer is right, shown at reveal.',
+        description: 'One sentence on why the answer is right, shown in the review.',
       },
-      time_limit_ms: { type: 'integer', description: 'Answer window. Default 20000 (quiz) / 30000 (poll).' },
-      points: { type: 'integer', description: 'Quiz only. Default 1000.' },
-      chart: { type: 'string', enum: [...CHART_KINDS], description: 'Poll only. Default bar.' },
+      time_limit_ms: { type: 'integer', description: 'Answer window. Default 20000.' },
+      points: { type: 'integer', description: 'Default 1000.' },
     },
     required: ['prompt', 'options'],
   },
@@ -88,7 +85,7 @@ function isIntInRange(v: unknown, min: number, max: number): v is number {
 
 /** Raw tool arguments → an editor draft, or null when structurally unusable (caller
  *  regenerates once, then drops the entry). */
-export function generatedToEditable(raw: unknown, want: { type: SlideType }): EditableSlide | null {
+export function generatedToEditable(raw: unknown): EditableSlide | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
 
@@ -108,18 +105,6 @@ export function generatedToEditable(raw: unknown, want: { type: SlideType }): Ed
   const timeLimitMs = isIntInRange(r.time_limit_ms, TIME_MIN_MS, TIME_MAX_MS)
     ? r.time_limit_ms
     : undefined
-
-  if (want.type === 'poll') {
-    return {
-      type: 'poll',
-      prompt,
-      options: parsedOptions.map(({ text }) => ({ id: crypto.randomUUID(), text })),
-      chart: (CHART_KINDS as readonly string[]).includes(r.chart as string)
-        ? (r.chart as (typeof CHART_KINDS)[number])
-        : POLL_DEFAULTS.chart,
-      timeLimitMs: timeLimitMs ?? POLL_DEFAULTS.timeLimitMs,
-    }
-  }
 
   const explanationRaw = typeof r.explanation === 'string' ? r.explanation.trim() : ''
   return {
