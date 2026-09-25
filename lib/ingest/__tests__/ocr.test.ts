@@ -1,19 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_OCR_CHARS, OCR_UNREADABLE_TYPES, canOcr, isUsableOcrText, normalizeOcrText } from '../ocr'
+import { MIN_OCR_CHARS, canOcr, isUsableOcrText, normalizeOcrText } from '../ocr'
 
 describe('canOcr', () => {
-  it('accepts the raster formats a slide deck actually embeds', () => {
-    for (const t of ['image/png', 'image/jpeg', 'image/gif', 'image/bmp', 'image/tiff', 'image/webp'])
-      expect(canOcr(t), t).toBe(true)
+  it('accepts the inline image types Gemini reads', () => {
+    for (const t of ['image/png', 'image/jpeg', 'image/webp']) expect(canOcr(t), t).toBe(true)
   })
 
-  it('refuses vector metafiles, which have no raster to read', () => {
-    // EMF and WMF are drawing instructions, not pixels. Handing them to tesseract wastes
-    // the budget and returns nothing.
-    expect(canOcr('image/x-emf')).toBe(false)
-    expect(canOcr('image/x-wmf')).toBe(false)
-    expect(canOcr('image/svg+xml')).toBe(false)
-    expect(OCR_UNREADABLE_TYPES).toContain('image/x-emf')
+  it('refuses formats Gemini does not take inline, and vector metafiles with no raster', () => {
+    for (const t of ['image/gif', 'image/bmp', 'image/tiff', 'image/x-emf', 'image/x-wmf', 'image/svg+xml'])
+      expect(canOcr(t), t).toBe(false)
   })
 
   it('refuses anything that is not an image at all', () => {
@@ -29,7 +24,7 @@ describe('isUsableOcrText', () => {
     expect(isUsableOcrText('Figure 3: ATP synthase')).toBe(true)
   })
 
-  it('rejects the confident nonsense tesseract returns for a photograph', () => {
+  it('rejects the stray marks a photograph or gradient comes back as', () => {
     // Storing this would put text into retrieval that the document does not contain.
     expect(isUsableOcrText('~ | !! .. ,, ~~ || ^^')).toBe(false)
     expect(isUsableOcrText('|][{}!@#$%^&*()_+|][{}')).toBe(false)
