@@ -138,6 +138,17 @@ describe('image metadata', () => {
     ])
   })
 
+  it('types media with an uninformative extension by its bytes', () => {
+    // A real exported deck stored every slide as ppt/media/imageN.bin; typed by extension,
+    // OCR skipped all of them and the deck failed with no text.
+    const zip = deck([pictureShape('rId2') + pictureShape('rId3')], [
+      { path: 'ppt/slides/_rels/slide1.xml.rels', data: relsXml({ rId2: '../media/image1.bin', rId3: '../media/image2.bin' }) },
+      { path: 'ppt/media/image1.bin', data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]) },
+      { path: 'ppt/media/image2.bin', data: 'not an image' },
+    ])
+    expect(extractPptx(zip).assets.map((a) => a.mimeType)).toEqual(['image/png', 'application/octet-stream'])
+  })
+
   it('ignores a relationship pointing outside ppt/media', () => {
     const zip = deck([pictureShape('rId9')], [
       { path: 'ppt/slides/_rels/slide1.xml.rels', data: relsXml({ rId9: '../../../etc/passwd' }) },

@@ -25,7 +25,7 @@ export const NOTES_LABEL = 'Speaker notes:'
 
 const CELL_SEPARATOR = ' | '
 
-export type UnreadReason = 'parse_error' | 'empty' | 'image_only'
+export type UnreadReason = 'parse_error' | 'empty' | 'image_only' | 'image_too_large' | 'ai_budget'
 
 export interface PptxPage {
   pageNumber: number
@@ -63,9 +63,21 @@ const MEDIA_TYPES: Record<string, string> = {
   wmf: 'image/x-wmf',
 }
 
-function mimeOf(path: string): string {
+/** Raster signatures, for media whose extension says nothing. */
+const MEDIA_MAGIC: [string, number[]][] = [
+  ['image/png', [0x89, 0x50, 0x4e, 0x47]],
+  ['image/jpeg', [0xff, 0xd8, 0xff]],
+  ['image/gif', [0x47, 0x49, 0x46, 0x38]],
+]
+
+/** Extension first, then the bytes. Some exporters write real PNGs as ppt/media/imageN.bin:
+ *  a real 25-slide deck arrived with every slide stored that way, so every image was typed
+ *  application/octet-stream, OCR skipped them all, and the deck failed with no text. */
+export function mimeOf(path: string, bytes?: Uint8Array): string {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
-  return MEDIA_TYPES[ext] ?? 'application/octet-stream'
+  if (MEDIA_TYPES[ext]) return MEDIA_TYPES[ext]
+  const sniffed = bytes && MEDIA_MAGIC.find(([, magic]) => magic.every((b, i) => bytes[i] === b))
+  return sniffed ? sniffed[0] : 'application/octet-stream'
 }
 
 /** slide2.xml must sort before slide10.xml. Lexicographic order puts them the other way
@@ -233,7 +245,7 @@ export function extractPptx(data: Uint8Array): PptxDocument {
           pageNumber,
           assetIndex: assets.filter((a) => a.pageNumber === pageNumber).length,
           entryPath: target,
-          mimeType: mimeOf(target),
+          mimeType: mimeOf(target, byPath.get(target)!.bytes),
         })
       })
 
