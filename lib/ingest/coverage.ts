@@ -29,6 +29,8 @@ const REASON_TEXT: Record<UnreadReason, string> = {
   parse_error: 'could not be read',
   empty: 'has no text on it',
   image_only: 'is an image with no text we could recognise',
+  image_too_large: 'has an image too large to read',
+  ai_budget: "is an image we couldn't read: this month's AI budget is used up",
 }
 
 export interface CoverageReport {
@@ -39,19 +41,19 @@ export interface CoverageReport {
   message: string
 }
 
-export function buildCoverageReport(totalPages: number, unread: UnreadPage[]): CoverageReport {
+export function buildCoverageReport(totalPages: number, unread: UnreadPage[], unit: 'page' | 'slide' = 'slide'): CoverageReport {
   const sorted = [...unread].sort((a, b) => a.pageNumber - b.pageNumber)
   return {
     totalPages,
     readPages: totalPages - sorted.length,
     unread: sorted,
-    message: describeCoverage(sorted),
+    message: describeCoverage(sorted, unit),
   }
 }
 
-function describeCoverage(unread: UnreadPage[]): string {
+function describeCoverage(unread: UnreadPage[], unit: 'page' | 'slide'): string {
   if (unread.length === 0) return ''
-  const detail = unread.map((u) => `slide ${u.pageNumber} — ${REASON_TEXT[u.reason]}`).join(' · ')
-  const count = unread.length === 1 ? '1 slide' : `${unread.length} slides`
+  const detail = unread.map((u) => `${unit} ${u.pageNumber} — ${REASON_TEXT[u.reason]}`).join(' · ')
+  const count = `${unread.length} ${unit}${unread.length === 1 ? '' : 's'}`
   return `${count} produced no text: ${detail}`
 }

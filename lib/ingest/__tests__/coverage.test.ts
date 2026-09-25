@@ -103,3 +103,9 @@ describe('deriveSlideSections', () => {
     expect(heading.endsWith('...')).toBe(true)
   })
 })
+
+
+it('describes unread PDF pages as pages', () => {
+  expect(buildCoverageReport(2, [{ pageNumber: 2, reason: 'empty' }], 'page').message)
+    .toBe('1 page produced no text: page 2 — has no text on it')
+})
