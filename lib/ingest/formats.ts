@@ -57,20 +57,10 @@ export const PDF_FORMAT: FormatSpec = {
       if (pageCount === 0) return { ok: false, error: 'That PDF has no pages.' }
       if (pageCount > maxPages) return { ok: false, error: `Too many pages. Maximum ${maxPages}.` }
 
-      // Sample rather than scan: a text PDF shows a text layer within its first few pages,
-      // and parsing 200 pages here would duplicate the extraction stage's work inside the
-      // upload request.
-      for (let i = 1; i <= Math.min(pageCount, 5); i++) {
-        const content = await (await doc.getPage(i)).getTextContent()
-        const hasText = content.items.some(
-          (item) => 'str' in item && typeof item.str === 'string' && item.str.trim().length > 0,
-        )
-        if (hasText) return { ok: true, pageCount }
-      }
-      return {
-        ok: false,
-        error: 'That PDF has no selectable text. Scanned or image-only files are not supported yet.',
-      }
+      // The metadata probe cannot establish text coverage: image-only opening pages
+      // say nothing about later pages. Extraction checks all pages once, records missing
+      // text, and rejects a fully scanned document before indexing.
+      return { ok: true, pageCount }
     } catch (error) {
       // Covers encrypted files, truncated files and malformed xref tables alike: the parser
       // refused it, so we refuse it, without leaking parser internals to the caller.

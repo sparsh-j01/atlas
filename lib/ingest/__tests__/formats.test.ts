@@ -79,7 +79,7 @@ describe('pptx probe', () => {
 
   it('accepts an image-only deck, because OCR runs later', async () => {
     // The PDF path rejects this outright; the PPTX path does not, because the images are
-    // already image files and tesseract can read them.
+    // already image files and the OCR stage can read them.
     const zip = deck([pictureShape('rId2')], [
       { path: 'ppt/slides/_rels/slide1.xml.rels', data: relsXml({ rId2: '../media/image1.png' }) },
       { path: 'ppt/media/image1.png', data: 'PNG' },
