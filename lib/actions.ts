@@ -7,6 +7,7 @@ import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import * as data from '@/lib/decks'
 import { createSessionFromDeck } from '@/lib/sessions'
+import { deleteDocument } from '@/lib/documents'
 import {
   blankSlide,
   isSlideType,
@@ -31,14 +32,28 @@ export async function deleteDeckAction(deckId: string) {
   revalidatePath('/dashboard')
 }
 
+export async function deleteDocumentAction(documentId: string) {
+  const user = await requireUser()
+  // Throws if storage refuses the remove; DeleteButton turns that into "did not go through".
+  await deleteDocument(documentId, user.id)
+  revalidatePath('/dashboard')
+}
+
 export async function updateDeckAction(
   deckId: string,
   patch: { title?: string; description?: string | null },
 ) {
   const user = await requireUser()
-  // Title can't be blank; fall back rather than persist an empty title.
-  const clean = { ...patch }
-  if (clean.title !== undefined && !clean.title.trim()) clean.title = 'Untitled deck'
+  // Picked field by field, never spread: `patch` is client input, and a spread let
+  // `{ status: 'ready' }` past setDeckStatusAction's ready gate. A NUL byte is a Postgres
+  // error in a text column and can't be typed, so it is dropped.
+  const clean: { title?: string; description?: string | null } = {}
+  if (typeof patch?.title === 'string') {
+    const title = patch.title.replaceAll('\0', '')
+    clean.title = title.trim() ? title : 'Untitled deck' // blank falls back rather than persisting
+  }
+  if (typeof patch?.description === 'string') clean.description = patch.description.replaceAll('\0', '')
+  else if (patch?.description === null) clean.description = null
   await data.updateDeck(deckId, user.id, clean)
   revalidatePath(editPath(deckId))
   revalidatePath('/dashboard')
@@ -50,9 +65,10 @@ export async function addSlideAction(deckId: string, type: SlideType) {
   // session engine dispatches on — check it against the known set rather than trusting it.
   if (!isSlideType(type)) throw new Error('unknown slide type')
   const stored = toStoredSlide(blankSlide(type)) // blank template — filled in, then saved (validated)
-  await data.addSlide(deckId, user.id, { type, prompt: stored.prompt, config: stored.config })
+  const slide = await data.addSlide(deckId, user.id, { type, prompt: stored.prompt, config: stored.config })
   revalidatePath(editPath(deckId))
   revalidatePath('/dashboard') // slide count is rendered on the dashboard
+  return slide.id
 }
 
 export async function saveSlideAction(
@@ -66,8 +82,8 @@ export async function saveSlideAction(
   if (errors.length) return { errors }
   // `type` is written alongside `config`, not left as whatever the row already had. Nothing
   // in the database ties the two together (type is text, config is jsonb), so writing them
-  // in one statement is what keeps them from disagreeing — a draft can't leave a poll config
-  // filed under a quiz type for the session engine to trip over later.
+  // in one statement is what keeps them from disagreeing — a draft can't leave a config
+  // filed under the wrong type for the session engine to trip over later.
   await data.updateSlide(deckId, slideId, user.id, { type: draft.type, ...toStoredSlide(draft) })
   revalidatePath(editPath(deckId))
   return { errors: [] }
@@ -93,6 +109,8 @@ export async function setDeckStatusAction(
   status: 'draft' | 'ready',
 ): Promise<{ error?: string }> {
   const user = await requireUser()
+  // Crosses the client boundary into a column the launch gate reads; anything else is refused.
+  if (status !== 'draft' && status !== 'ready') return { error: 'Unknown status.' }
   if (status === 'ready') {
     const dw = await data.getDeckWithSlides(deckId, user.id)
     if (!dw) return { error: 'Deck not found.' }
