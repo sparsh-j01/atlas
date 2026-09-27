@@ -19,26 +19,42 @@ const allSql = readdirSync(MIGRATIONS_DIR)
 
 const combined = allSql.map((m) => m.sql).join('\n')
 
+/** The policies left after every migration has run, in order: CREATE adds, DROP removes.
+ *  Parsed one statement at a time — matching across the whole file lets a lazy regex run
+ *  from one statement's name into a later statement's role list. Counting CREATEs alone
+ *  reported policies that migration 0011 drops, so the final state is what gets checked. */
+const norm = (t: string) => t.replace(/"/g, '')
+const finalPolicies = new Map<string, { name: string; table: string; roles: string; restrictive: boolean; statement: string }>()
+for (const statement of combined.match(/(?:CREATE|DROP) POLICY[\s\S]*?;/g) ?? []) {
+  const name = statement.match(/POLICY\s+(?:IF EXISTS\s+)?"([^"]+)"/)?.[1] ?? ''
+  const table = norm(statement.match(/\sON\s+([\w."]+)/)?.[1] ?? '')
+  if (statement.startsWith('DROP')) {
+    finalPolicies.delete(`${table}:${name}`)
+    continue
+  }
+  const roles = statement.match(/\bTO\s+([\w,\s]+?)(?:\s+USING|\s+WITH|\s*$)/)?.[1]?.trim() ?? ''
+  finalPolicies.set(`${table}:${name}`, { name, table, roles, restrictive: /\bAS RESTRICTIVE\b/.test(statement), statement })
+}
+const policyStatements = [...finalPolicies.values()]
+const permissive = policyStatements.filter((p) => !p.restrictive)
+
+// Restrictive policies only take access away, so naming anon in one grants nothing. Each is
+// listed here by name: a new restrictive policy has to be added deliberately, not waved through.
+const RESTRICTIVE_GUARDS = ['documents_objects_no_client_insert', 'documents_objects_no_client_update', 'documents_objects_no_client_delete']
+
 describe('document_assets tenant isolation', () => {
   it('has row level security enabled', () => {
     expect(combined).toMatch(/ALTER TABLE "document_assets" ENABLE ROW LEVEL SECURITY/)
   })
 
-  it('resolves ownership back to documents.owner_id, not to a column of its own', () => {
+  it('ends with one read-only policy, ownership resolved back to documents.owner_id', () => {
     // An owner_id column on this table would be a second source of truth that could drift
-    // from the document's. Ownership is joined, exactly as every other M7 table does it.
-    const policy = combined.match(/CREATE POLICY "document_assets_all_own"[\s\S]*?;/)?.[0] ?? ''
-    expect(policy).toBeTruthy()
-    expect(policy).toContain('FROM "documents" d')
-    expect(policy).toContain('d.owner_id = auth.uid()')
-    // Both directions: USING gates reads, WITH CHECK gates writes. One without the other
-    // leaves half the table open.
-    expect(policy).toContain('USING')
-    expect(policy).toContain('WITH CHECK')
-  })
-
-  it('grants the policy to authenticated only', () => {
-    expect(combined).toMatch(/CREATE POLICY "document_assets_all_own" ON "document_assets" FOR ALL TO authenticated/)
+    // from the document's. Read-only since 0011: writes are server-only (see below).
+    const assetPolicies = policyStatements.filter((p) => p.table === 'document_assets')
+    expect(assetPolicies.map((p) => p.name)).toEqual(['document_assets_read_own'])
+    expect(assetPolicies[0].statement).toMatch(/FOR SELECT TO authenticated/)
+    expect(assetPolicies[0].statement).toContain('FROM documents d')
+    expect(assetPolicies[0].statement).toContain('d.owner_id = auth.uid()')
   })
 
   it('cascades from the document, so deleting a document takes its assets with it', () => {
@@ -48,16 +64,22 @@ describe('document_assets tenant isolation', () => {
   })
 })
 
-/** Every CREATE POLICY statement, parsed one at a time. Matching across the whole file
- *  lets a lazy regex run from one statement's name into a later statement's role list,
- *  which reports a policy as granting anon when it does not. */
-const policyStatements = (combined.match(/CREATE POLICY[\s\S]*?;/g) ?? [])
-  .map((statement) => ({
-    statement,
-    name: statement.match(/CREATE POLICY\s+"([^"]+)"/)?.[1] ?? '',
-    table: statement.match(/\sON\s+([\w."]+)/)?.[1] ?? '',
-    roles: statement.match(/\bTO\s+([\w,\s]+?)(?:\s+USING|\s+WITH|\s*$)/)?.[1]?.trim() ?? '',
-  }))
+describe('server-managed tables (security review F01/F07)', () => {
+  it('revokes every client write on the workflow, content and accounting tables', () => {
+    // RLS let an owner UPDATE their own document row, storage_path included, which the
+    // service role then trusted to download or delete another creator's file.
+    const revoke = combined.match(/REVOKE INSERT, UPDATE, DELETE[\s\S]*?;/)?.[0] ?? ''
+    for (const table of ['documents', 'document_pages', 'document_assets', 'document_sections', 'chunks', 'embeddings', 'generation_sources', 'ingestion_jobs', 'ai_usage', 'entitlements', 'rate_limits'])
+      expect(revoke, table).toMatch(new RegExp(`\\b${table}\\b`))
+    expect(revoke).toMatch(/FROM anon, authenticated, PUBLIC/)
+  })
+
+  it('leaves no client write policy on those tables', () => {
+    for (const p of permissive.filter((p) => !p.table.startsWith('realtime.') && !p.table.startsWith('storage.')))
+      if (['documents', 'document_pages', 'document_assets', 'document_sections', 'chunks', 'embeddings', 'generation_sources', 'ingestion_jobs'].includes(p.table))
+        expect(p.statement, p.name).toMatch(/FOR SELECT/)
+  })
+})
 
 describe('no anon policy on a data table', () => {
   it('parsed every policy in the schema', () => {
@@ -75,22 +97,22 @@ describe('no anon policy on a data table', () => {
     // realtime.messages is deliberately excluded and deliberately different: anonymous
     // participants MUST receive broadcasts and write presence to play, and migration 0005
     // grants exactly that, scoped to session: topics. That is the transport, not the data.
-    for (const p of policyStatements) {
+    for (const p of permissive) {
       if (p.table.startsWith('realtime.')) continue
       expect(p.roles, `policy "${p.name}" on ${p.table}`).toBe('authenticated')
     }
   })
 
-  it('confirms realtime is the ONLY place anon is granted anything', () => {
-    // If a future migration adds an anon grant somewhere else, this is what notices.
-    const withAnon = policyStatements.filter((p) => /\banon\b/.test(p.roles))
-    expect(withAnon.map((p) => p.table)).toEqual(['realtime.messages', 'realtime.messages'])
+  it('names every restrictive policy, and each one only denies the documents bucket', () => {
+    const restrictive = policyStatements.filter((p) => p.restrictive)
+    expect(restrictive.map((p) => p.name).sort()).toEqual([...RESTRICTIVE_GUARDS].sort())
+    for (const p of restrictive) expect(p.statement, p.name).toContain("bucket_id <> 'documents'")
   })
 
-  it('gives the new asset table no anon access of any kind', () => {
-    const assetPolicies = policyStatements.filter((p) => p.table === '"document_assets"')
-    expect(assetPolicies).toHaveLength(1)
-    expect(assetPolicies[0].roles).toBe('authenticated')
+  it('confirms realtime is the ONLY place anon is granted anything', () => {
+    // If a future migration adds an anon grant somewhere else, this is what notices.
+    const withAnon = permissive.filter((p) => /\banon\b/.test(p.roles))
+    expect(withAnon.map((p) => p.table)).toEqual(['realtime.messages', 'realtime.messages'])
   })
 })
 
