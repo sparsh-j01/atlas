@@ -1,6 +1,7 @@
 import 'server-only'
 
-import { and, eq, sql } from 'drizzle-orm'
+import { after } from 'next/server'
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { db } from '@/lib/db'
 import {
@@ -14,17 +15,30 @@ import {
   type Document,
   type IngestionJob,
 } from '@/lib/db/schema'
-import { advanceDocument, failDocument, type IngestionState } from '@/lib/documents'
+import { advanceDocument, claimDocument, failDocument, releaseDocument, type IngestionState } from '@/lib/documents'
 import { chunkDocument, type IdentifiedSection } from '@/lib/ai/chunk'
 import { detectSections, type SourcePage } from '@/lib/ai/structure'
-import { embedBatch, embeddingConfig } from '@/lib/ai/embed'
+import { embedBatch, embeddingConfig, EmbeddingDeadlineError } from '@/lib/ai/embed'
 import { geminiGenerate } from '@/lib/ai/gemini'
 import { logger } from '@/lib/logger'
 import { extractPptx } from '@/lib/ingest/pptx'
 import { deriveSlideSections } from '@/lib/ingest/sections'
 import { isTextPoor } from '@/lib/ingest/coverage'
-import { canOcr, createTesseractEngine, isUsableOcrText, type OcrEngine } from '@/lib/ingest/ocr'
+import {
+  MAX_IMAGE_TILES,
+  canOcr,
+  imageDimensions,
+  imageTiles,
+  imageTokenCeiling,
+  isUsableOcrText,
+  ocrModel,
+  planBatches,
+  transcribeBatch,
+  withDiagram,
+  type OcrImage,
+} from '@/lib/ingest/ocr'
 import { readZipEntries } from '@/lib/ingest/zip'
+import { documentStoragePath } from '@/lib/storage-path'
 
 // Document ingestion pipeline (M7 phases 1-5, extended for PPTX + OCR in M7.5).
 //
@@ -62,10 +76,21 @@ const STRUCTURE_TIMEOUT_MS = 60_000
 // A stage is only STARTED with at least this much budget left; otherwise the run parks and
 // the next call resumes. Better to stop cleanly between stages than to be killed mid-stage.
 const MIN_STAGE_BUDGET_MS = 5_000
-// One image is only STARTED with this much budget left. Recognition runs 1-3s for a slide
-// screenshot, so this leaves room to finish it and commit before the function is killed.
-const OCR_IMAGE_BUDGET_MS = 12_000
-const OCR_IMAGE_TIMEOUT_MS = 20_000
+/** One background run: the work budget, inside the hard stop. Both process and confirm declare
+ *  `maxDuration = 300` (Vercel Hobby's maximum with fluid compute; Next needs the literal in
+ *  the route file). A stage is only started with budget left, but one that is already
+ *  running, or an AI call it is waiting on, can overrun the budget up to the hard stop. */
+export const RUN_BUDGET_MS = 240_000
+export const RUN_MAX_DURATION_MS = 300_000
+/** Past the deadline far enough that the lease outlives the invocation itself: 240s budget →
+ *  lease to 315s, past the 300s kill. A run must never be writing after its lease lapses, or a
+ *  Resume could start a second driver beside it. (It was deadline + 15s while the budget sat
+ *  10s under maxDuration; a 280s budget under 300s would have left a 5s overlap.) */
+const LEASE_MARGIN_MS = RUN_MAX_DURATION_MS - RUN_BUDGET_MS + 15_000
+// A round of OCR requests is only STARTED with this much budget left: one Gemini call can take
+// its 30s timeout plus a retry delay, and the run must still commit before the hard stop.
+const OCR_ROUND_BUDGET_MS = 40_000
+const OCR_CONCURRENCY = 2
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
@@ -147,11 +172,26 @@ async function readPages(documentId: string): Promise<{ fullText: string; pages:
 
 // --- Stages ------------------------------------------------------------------
 
+/** Source bytes already in hand for the current run, by document id. /confirm downloads the
+ *  file to check it and passes it in, and extraction and OCR reuse it, so one run fetches the
+ *  file once instead of three times. Cleared when the run ends; a resumed run fetches fresh. */
+const runBytes = new Map<string, Buffer | null>()
+
 /** The stored source bytes. Every stage that needs the original file goes through here. */
 async function download(doc: Document): Promise<Buffer> {
+  const held = runBytes.get(doc.id)
+  if (held) return held
+  const bytes = await fetchStored(doc)
+  if (runBytes.has(doc.id)) runBytes.set(doc.id, bytes) // only inside a run, see runIngestion
+  return bytes
+}
+
+async function fetchStored(doc: Document): Promise<Buffer> {
   const admin = createAdminClient()
-  const { data, error } = await admin.storage.from('documents').download(doc.storagePath)
-  if (error || !data) throw new Error(`download failed: ${error?.message ?? 'no data'}`)
+  const path = documentStoragePath(doc)
+  if (!path) throw new Error('storage path does not match the document owner, hash and type')
+  const { data, error } = await admin.storage.from('documents').download(path)
+  if (error || !data) throw new Error('Document download failed')
   return Buffer.from(await data.arrayBuffer())
 }
 
@@ -174,6 +214,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedPages> {
     pages: Array.from({ length: totalPages }, (_, i) => ({
       pageNumber: i + 1,
       rawText: text[i] ?? '',
+      unreadReason: text[i]?.trim() ? undefined : 'empty',
     })),
     assets: [],
   }
@@ -231,16 +272,22 @@ async function extract(doc: Document): Promise<void> {
 }
 
 /**
- * Recover text from embedded images, for the pages that need it.
+ * Recover text from embedded images, for the pages that need it, with Gemini vision.
  *
- * Budget-aware and resumable at the level of a single image: each recognised image is
- * committed on its own, so running out of time is a pause rather than a loss, and the next
- * call skips everything already marked done. A 40-slide deck at 1-3 seconds an image does
- * not fit in one 60-second invocation, which is why this stage can park mid-way and the
- * others cannot.
+ * Images go in batches (planBatches: at most BATCH_MAX_IMAGES and BATCH_MAX_BYTES each), two
+ * requests at a time. Each finished image is committed on its own, so running out of budget
+ * is a pause rather than a loss and a resumed run skips everything already read.
  *
- * A no-op for every PDF: nothing is text-poor because nothing has assets, so the loop
- * finds no work and the stage advances immediately.
+ * Outcomes per image: done (text, or null when what came back was not language), skipped
+ * (not text-poor, a format Gemini does not take, too large to bound, or the AI budget ran
+ * out), failed (missing from the archive, unreadable header, or its request failed). Skipped
+ * and failed pages surface in the coverage report with their reason; one bad image never
+ * fails the deck. The exception is a deck with NO text anywhere whose images were refused by
+ * the AI budget: that fails with AI_BUDGET_REACHED and leaves the images pending, so a Resume
+ * once the budget allows picks them up (eng review 2026-10-05, Issue 9A).
+ *
+ * A no-op for every PDF: nothing is text-poor because nothing has assets, so the stage finds
+ * no work and advances immediately.
  */
 async function ocrPass(doc: Document, deadline: number): Promise<StageResult> {
   const pending = await db
@@ -264,14 +311,10 @@ async function ocrPass(doc: Document, deadline: number): Promise<StageResult> {
     isTextPoor(textByPage.get(a.pageNumber) ?? '', assetsByPage.get(a.pageNumber) ?? 0),
   )
 
-  // Everything else is deliberately not-OCR'd, and says so rather than staying `pending`
+  // Everything else is deliberately not read, and says so rather than staying `pending`
   // forever and re-querying on every resume.
-  const skipped = pending.filter((a) => !wanted.includes(a))
-  for (const a of skipped) await setAssetOcr(a.id, 'skipped', null)
-  if (wanted.length === 0) return { done: true }
-
+  for (const a of pending) if (!wanted.includes(a) || !canOcr(a.mimeType)) await setAssetOcr(a.id, 'skipped', null)
   const readable = wanted.filter((a) => canOcr(a.mimeType))
-  for (const a of wanted) if (!canOcr(a.mimeType)) await setAssetOcr(a.id, 'skipped', null)
   if (readable.length === 0) {
     await applyOcrToPages(doc.id)
     return { done: true }
@@ -280,50 +323,90 @@ async function ocrPass(doc: Document, deadline: number): Promise<StageResult> {
   const buffer = await download(doc)
   const entries = new Map(readZipEntries(new Uint8Array(buffer)).map((e) => [e.path, e.bytes]))
 
-  let engine: OcrEngine | null = null
-  try {
-    for (const asset of readable) {
-      // Park BETWEEN images, never mid-recognition: a killed invocation would otherwise
-      // leave the asset `pending` and redo it, which is correct but wasted.
-      if (deadline - Date.now() < OCR_IMAGE_BUDGET_MS) {
-        await applyOcrToPages(doc.id)
-        return { done: false }
-      }
-
-      const bytes = entries.get(asset.entryPath)
-      if (!bytes) {
-        // The extraction stage recorded it, so the archive had it. Missing now means the
-        // stored object changed underneath us — record it rather than failing the deck.
-        await setAssetOcr(asset.id, 'failed', null)
-        continue
-      }
-
-      engine ??= await createTesseractEngine()
-      try {
-        const text = await withTimeout(
-          engine.recognize(bytes, asset.mimeType),
-          OCR_IMAGE_TIMEOUT_MS,
-          `OCR of ${asset.entryPath}`,
-        )
-        const usable = isUsableOcrText(text)
-        await setAssetOcr(asset.id, 'done', usable ? text : null)
-      } catch (error) {
-        // One unreadable image must not fail an otherwise fine deck. It is recorded as
-        // failed, which is visible in the coverage report — not silently treated as empty.
-        logger.warn('ocr failed for one image', {
-          documentId: doc.id,
-          entryPath: asset.entryPath,
-          message: error instanceof Error ? error.message : String(error),
-        })
-        await setAssetOcr(asset.id, 'failed', null)
-      }
+  type Item = { asset: (typeof readable)[number]; bytes: Uint8Array; image: OcrImage }
+  const items: Item[] = []
+  const tooLarge: number[] = []
+  for (const asset of readable) {
+    const bytes = entries.get(asset.entryPath)
+    // The extraction stage recorded it, so the archive had it: missing now means the stored
+    // object changed underneath us. An unreadable header means its cost cannot be bounded.
+    const dims = bytes ? imageDimensions(bytes, asset.mimeType) : null
+    if (!bytes || !dims) {
+      await setAssetOcr(asset.id, 'failed', null)
+      continue
     }
-  } finally {
-    await engine?.close().catch(() => {})
+    if (imageTiles(dims) > MAX_IMAGE_TILES) {
+      await setAssetOcr(asset.id, 'skipped', null)
+      tooLarge.push(asset.pageNumber)
+      continue
+    }
+    items.push({ asset, bytes, image: { bytes, mimeType: asset.mimeType, tokenCeiling: imageTokenCeiling(dims) } })
+  }
+  await markPagesUnread(doc.id, tooLarge, 'image_too_large')
+
+  const generate = geminiGenerate(ocrModel())
+  const batches = planBatches(items)
+  const refused: Item[] = []
+  const failed: Item[] = []
+  for (let i = 0; i < batches.length; i += OCR_CONCURRENCY) {
+    // Park BETWEEN rounds, never mid-request: a killed invocation would leave its images
+    // pending and redo them, which is correct but paid for twice.
+    if (deadline - Date.now() < OCR_ROUND_BUDGET_MS) {
+      await applyOcrToPages(doc.id)
+      return { done: false }
+    }
+    await Promise.all(
+      batches.slice(i, i + OCR_CONCURRENCY).map(async (batch) => {
+        const result = await transcribeBatch(generate, batch.map((b) => b.image), deadline)
+        if (!result.ok) {
+          if (!result.budget) logger.warn('ocr batch failed', { documentId: doc.id })
+          return void (result.budget ? refused : failed).push(...batch)
+        }
+        for (const [j, b] of batch.entries())
+          await setAssetOcr(b.asset.id, 'done', isUsableOcrText(result.texts[j]) ? withDiagram(result.texts[j], result.diagrams[j]) : null)
+      }),
+    )
+  }
+
+  if (refused.length > 0 || failed.length > 0) {
+    // Nothing readable anywhere: fail the stage and leave these images `pending`, so a retry
+    // re-reads them. Reporting "no readable text" here would send the teacher off to fix a
+    // file that is fine (the provider refused, or the month's budget ran out).
+    const anyText = pages.some((p) => p.rawText.trim().length > 0) || (await hasOcrText(doc.id))
+    if (!anyText)
+      throw refused.length > 0
+        ? new IngestionError('AI_BUDGET_REACHED', 'AI budget reached before any text was read')
+        : new IngestionError('OCR_FAILED', 'every OCR request failed')
+    for (const f of failed) await setAssetOcr(f.asset.id, 'failed', null)
+    for (const r of refused) await setAssetOcr(r.asset.id, 'skipped', null)
+    await markPagesUnread(doc.id, refused.map((r) => r.asset.pageNumber), 'ai_budget')
   }
 
   await applyOcrToPages(doc.id)
   return { done: true }
+}
+
+/** Say WHY a text-less page stayed unread. Pages with digital text are never unread. A page
+ *  whose other image is read after all is cleared again by applyOcrToPages. */
+async function markPagesUnread(documentId: string, pageNumbers: number[], reason: 'image_too_large' | 'ai_budget'): Promise<void> {
+  if (pageNumbers.length === 0) return
+  await db
+    .update(documentPages)
+    .set({ unreadReason: reason })
+    .where(and(
+      eq(documentPages.documentId, documentId),
+      inArray(documentPages.pageNumber, [...new Set(pageNumbers)]),
+      sql`length(trim(${documentPages.rawText})) = 0`,
+    ))
+}
+
+async function hasOcrText(documentId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: documentAssets.id })
+    .from(documentAssets)
+    .where(and(eq(documentAssets.documentId, documentId), eq(documentAssets.ocrStatus, 'done'), isNotNull(documentAssets.ocrText)))
+    .limit(1)
+  return Boolean(row)
 }
 
 async function setAssetOcr(id: string, status: string, text: string | null): Promise<void> {
@@ -379,6 +462,9 @@ async function applyOcrToPages(documentId: string): Promise<void> {
 async function structure(doc: Document, deadline: number): Promise<void> {
   const { fullText, pages } = await readPages(doc.id)
   if (pages.length === 0) throw new Error('no extracted pages to analyse')
+  // Every page empty even after OCR: retrying cannot help, so it gets its own code rather
+  // than STRUCTURE_DETECTION_FAILED's "Try again".
+  if (!fullText.trim()) throw new IngestionError('NO_READABLE_TEXT', 'no text on any page, even after OCR')
 
   const sections =
     doc.sourceType === 'pptx'
@@ -398,7 +484,7 @@ async function structure(doc: Document, deadline: number): Promise<void> {
 }
 
 async function chunk(doc: Document): Promise<void> {
-  const { fullText } = await readPages(doc.id)
+  const { fullText, pages } = await readPages(doc.id)
   const sections = await db
     .select()
     .from(documentSections)
@@ -414,7 +500,7 @@ async function chunk(doc: Document): Promise<void> {
     startOffset: s.startOffset,
     endOffset: s.endOffset,
   }))
-  const results = await chunkDocument(fullText, identified)
+  const results = await chunkDocument(fullText, identified, { pages })
   if (results.length === 0) throw new Error('chunking produced nothing')
 
   await db.transaction(async (tx) => {
@@ -436,42 +522,41 @@ async function chunk(doc: Document): Promise<void> {
   })
 }
 
-async function embedAll(doc: Document): Promise<void> {
+async function embedAll(doc: Document, deadline: number): Promise<StageResult> {
+  const cfg = embeddingConfig()
   const rows = await db
-    .select({ id: chunks.id, text: chunks.text })
+    .select({ id: chunks.id, text: chunks.text, embeddingId: embeddings.id })
     .from(chunks)
+    .leftJoin(embeddings, and(
+      eq(embeddings.chunkId, chunks.id),
+      eq(embeddings.provider, cfg.provider),
+      eq(embeddings.model, cfg.model),
+      eq(embeddings.version, cfg.version),
+      eq(embeddings.dimension, cfg.dimension),
+    ))
     .where(eq(chunks.documentId, doc.id))
     .orderBy(chunks.chunkIndex)
   if (rows.length === 0) throw new Error('no chunks to embed')
 
-  // One batched call per 100 chunks rather than one HTTP round trip per chunk, which
-  // turned a 300-chunk PDF into 300 serial requests against a free-tier rate limit.
-  const vectors = await embedBatch(
-    rows.map((r) => r.text),
-    'RETRIEVAL_DOCUMENT',
-  )
-  const cfg = embeddingConfig()
-
-  // Re-embedding under the SAME provider/model/version recomputes the same answer, so
-  // replace rather than collide with the unique index — that is what makes this stage
-  // re-entrant after a partial failure. A new model version writes new rows instead and
-  // leaves the previous population addressable, which is what re-embedding needs.
-  await db
-    .insert(embeddings)
-    .values(
-      rows.map((r, i) => ({
-        chunkId: r.id,
-        provider: cfg.provider,
-        model: cfg.model,
-        version: cfg.version,
-        dimension: cfg.dimension,
-        vector: vectors[i],
-      })),
-    )
-    .onConflictDoUpdate({
+  const pending = rows.filter((row) => !row.embeddingId)
+  for (let i = 0; i < pending.length; i += 100) {
+    if (deadline - Date.now() < MIN_STAGE_BUDGET_MS) return { done: false }
+    const batch = pending.slice(i, i + 100)
+    let vectors: number[][]
+    try {
+      vectors = await embedBatch(batch.map((r) => r.text), 'RETRIEVAL_DOCUMENT', { deadline: deadline - 2_000 })
+    } catch (error) {
+      if (error instanceof EmbeddingDeadlineError) return { done: false }
+      throw error
+    }
+    // Commit every batch. A continuation skips these rows instead of spending again.
+    await db.insert(embeddings).values(batch.map((r, j) => ({
+      chunkId: r.id, ...cfg, vector: vectors[j],
+    }))).onConflictDoNothing({
       target: [embeddings.chunkId, embeddings.provider, embeddings.model, embeddings.version],
-      set: { vector: sql`excluded.vector`, createdAt: new Date() },
     })
+  }
+  return { done: true }
 }
 
 export interface Stage {
@@ -485,7 +570,7 @@ export const STAGES: Stage[] = [
   { from: 'ocr', to: 'structuring', run: (doc, d) => ocrPass(doc, d) },
   { from: 'structuring', to: 'chunking', run: (doc, d) => structure(doc, d) },
   { from: 'chunking', to: 'embedding', run: (doc) => chunk(doc) },
-  { from: 'embedding', to: 'ready', run: (doc) => embedAll(doc) },
+  { from: 'embedding', to: 'ready', run: (doc, d) => embedAll(doc, d) },
 ]
 
 /** A failed state resumes at the stage that failed. */
@@ -495,6 +580,13 @@ export const RESUME_AT: Partial<Record<IngestionState, IngestionState>> = {
   failed_structuring: 'structuring',
   failed_chunking: 'chunking',
   failed_embedding: 'embedding',
+}
+
+/** A stage failure that knows a more specific code than its stage's default in FAILURE_OF. */
+export class IngestionError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+  }
 }
 
 export const FAILURE_OF: Record<string, { state: IngestionState; code: string }> = {
@@ -516,6 +608,7 @@ export async function runIngestion(
   // Injected the same way detectSections() takes its client: so the driver's transition and
   // resume behaviour can be tested without standing up storage, Gemini and a database.
   stages: Stage[] = STAGES,
+  prefetched?: Buffer,
 ): Promise<IngestionOutcome> {
   const loaded = await loadJob(jobId)
   if (!loaded) return { status: 'failed_extraction', done: false, paused: false, errorCode: 'JOB_NOT_FOUND' }
@@ -526,77 +619,116 @@ export async function runIngestion(
 
   if (doc.status === 'ready') return { status: 'ready', done: true, paused: false }
 
-  // A retry re-enters at the stage that FAILED, but the row still carries `failed_<stage>`.
-  // Move it onto that stage before running anything, because every stage finishes by calling
-  // advanceDocument(expected: state), whose WHERE pins the current status — against a row
-  // still reading `failed_ocr` that matches nothing, and the stage's work is thrown away
-  // with "document is no longer in state ocr" after it has already been done.
-  //
-  // Conditional on the failed value, so it stays the same claim-the-work lock the rest of
-  // the pipeline uses: two concurrent retries cannot both take it.
-  if (state !== doc.status) {
-    doc = await advanceDocument(doc.id, doc.status as IngestionState, state, job.id)
-  }
-
-  while (state !== 'ready') {
-    const stage = stages.find((s) => s.from === state)
-    if (!stage) {
-      // An internal invariant, not a user-actionable failure: the state name is a detail of
-      // the pipeline, so it goes to the log rather than into the response.
-      logger.error('ingestion reached a state with no stage', { documentId: doc.id, jobId: job.id, state })
-      return { status: state, done: false, paused: false, errorCode: 'UNKNOWN_ERROR' }
+  // One driver at a time; see claimDocument. A second Process click while this one works
+  // gets the current state back as a pause and polls again, rather than paying for the stage.
+  const lease = await claimDocument(doc.id, new Date(deadline + LEASE_MARGIN_MS))
+  if (!lease) return { status: doc.status as IngestionState, done: false, paused: true }
+  runBytes.set(doc.id, prefetched ?? null)
+  try {
+    // A retry re-enters at the stage that FAILED, but the row still carries `failed_<stage>`.
+    // Move it onto that stage before running anything, because every stage finishes by calling
+    // advanceDocument(expected: state), whose WHERE pins the current status — against a row
+    // still reading `failed_ocr` that matches nothing, and the stage's work is thrown away
+    // with "document is no longer in state ocr" after it has already been done.
+    //
+    // Conditional on the failed value, so it stays the same claim-the-work lock the rest of
+    // the pipeline uses: two concurrent retries cannot both take it.
+    if (state !== doc.status) {
+      doc = await advanceDocument(doc.id, doc.status as IngestionState, state, job.id)
     }
 
-    if (deadline - Date.now() < MIN_STAGE_BUDGET_MS)
-      return { status: state, done: false, paused: true }
+    while (state !== 'ready') {
+      const stage = stages.find((s) => s.from === state)
+      if (!stage) {
+        // An internal invariant, not a user-actionable failure: the state name is a detail of
+        // the pipeline, so it goes to the log rather than into the response.
+        logger.error('ingestion reached a state with no stage', { documentId: doc.id, jobId: job.id, state })
+        return { status: state, done: false, paused: false, errorCode: 'UNKNOWN_ERROR' }
+      }
 
-    const startedAt = Date.now()
-    try {
-      const result = await stage.run(doc, deadline)
-      // A stage that ran out of budget partway has COMMITTED what it finished and asks to
-      // be re-entered. Park without advancing: the document keeps this state, and the next
-      // call resumes the same stage and skips the work already done. Only the ocr stage
-      // uses this — the others are all-or-nothing and return nothing.
-      if (result && result.done === false) {
-        logger.info('ingestion stage paused mid-way', {
+      if (deadline - Date.now() < MIN_STAGE_BUDGET_MS)
+        return { status: state, done: false, paused: true }
+
+      const startedAt = Date.now()
+      try {
+        const result = await stage.run(doc, deadline)
+        // A stage that ran out of budget partway has COMMITTED what it finished and asks to
+        // be re-entered. Park without advancing: the document keeps this state, and the next
+        // call resumes the same stage and skips the work already done. OCR and embedding
+        // checkpoint individual images or batches before pausing.
+        if (result && result.done === false) {
+          logger.info('ingestion stage paused mid-way', {
+            documentId: doc.id,
+            jobId: job.id,
+            stage: state,
+            durationMs: Date.now() - startedAt,
+          })
+          return { status: state, done: false, paused: true }
+        }
+        // Conditional on the state we started from, so this doubles as the stage lock: if a
+        // concurrent driver already advanced past it, no row comes back and we stop rather
+        // than marching a document through a stage twice. Every stage deletes what it is
+        // about to write first, so the losing worker leaves nothing behind.
+        doc = await advanceDocument(doc.id, state, stage.to, job.id)
+        // One structured line per stage, to stdout, which is what Vercel actually captures.
+        // The replaced observability module accumulated traces in a module-level Map — in a
+        // serverless runtime that is a per-invocation object nobody can ever read back.
+        logger.info('ingestion stage complete', {
           documentId: doc.id,
           jobId: job.id,
           stage: state,
+          next: stage.to,
           durationMs: Date.now() - startedAt,
         })
-        return { status: state, done: false, paused: true }
+        state = stage.to
+      } catch (error) {
+        const stageFailure = FAILURE_OF[state] ?? { state: 'failed_extraction' as IngestionState, code: 'UNKNOWN_ERROR' }
+        const failure = error instanceof IngestionError ? { ...stageFailure, code: error.code } : stageFailure
+        logger.error('ingestion stage failed', {
+          documentId: doc.id,
+          jobId: job.id,
+          stage: state,
+          code: failure.code,
+          durationMs: Date.now() - startedAt,
+          // Security review F05: a failed insert's message carries its SQL parameters, which
+          // here are the document's own text. The logger keeps only the SQLSTATE/category.
+          error,
+        })
+        const landed = await failDocument(doc.id, state, failure.state, job.id, failure.code, 'Document processing failed.')
+        // Not ours any more: a concurrent driver advanced it, or it was deleted. Report a pause
+        // so the browser polls again and sees the real state (or the 404), rather than showing
+        // a failure for a document that is in fact progressing.
+        if (!landed) return { status: state, done: false, paused: true }
+        return { status: failure.state, done: false, paused: false, errorCode: failure.code }
       }
-      // Conditional on the state we started from, so this doubles as the stage lock: if a
-      // concurrent driver already advanced past it, no row comes back and we stop rather
-      // than marching a document through a stage twice. Every stage deletes what it is
-      // about to write first, so the losing worker leaves nothing behind.
-      doc = await advanceDocument(doc.id, state, stage.to, job.id)
-      // One structured line per stage, to stdout, which is what Vercel actually captures.
-      // The replaced observability module accumulated traces in a module-level Map — in a
-      // serverless runtime that is a per-invocation object nobody can ever read back.
-      logger.info('ingestion stage complete', {
-        documentId: doc.id,
-        jobId: job.id,
-        stage: state,
-        next: stage.to,
-        durationMs: Date.now() - startedAt,
-      })
-      state = stage.to
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const failure = FAILURE_OF[state] ?? { state: 'failed_extraction' as IngestionState, code: 'UNKNOWN_ERROR' }
-      logger.error('ingestion stage failed', {
-        documentId: doc.id,
-        jobId: job.id,
-        stage: state,
-        code: failure.code,
-        durationMs: Date.now() - startedAt,
-        message,
-      })
-      await failDocument(doc.id, failure.state, job.id, failure.code, message)
-      return { status: failure.state, done: false, paused: false, errorCode: failure.code }
     }
-  }
 
-  return { status: 'ready', done: true, paused: false }
+    return { status: 'ready', done: true, paused: false }
+  } finally {
+    runBytes.delete(doc.id)
+    await releaseDocument(doc.id, lease)
+  }
+}
+
+/**
+ * Run ingestion in the background: after the response is sent, inside the same invocation,
+ * for up to RUN_BUDGET_MS. The browser only polls GET /process for status, so closing the tab
+ * no longer stops processing (it used to: the page drove every stage).
+ *
+ * A run that pauses on its budget, or is killed at the hard stop, is picked up by an explicit
+ * Resume: GET reports `stalled` once nothing holds the lease, and the page or the dashboard
+ * POSTs /process again (eng review 2026-10-05, Issue 3A). Nothing restarts it unattended.
+ * ponytail: no scheduler. Every-minute resume needs Vercel Pro cron or Supabase pg_cron; add
+ * it only if logs show files stalling under the 300s budget.
+ */
+export function startIngestion(jobId: string, prefetched?: Buffer): void {
+  after(async () => {
+    try {
+      await runIngestion(jobId, Date.now() + RUN_BUDGET_MS, STAGES, prefetched)
+    } catch (error) {
+      // runIngestion turns stage failures into document state; reaching here means loading
+      // the job or the lease itself failed. The lease, if taken, lapses on its own.
+      logger.error('ingestion run threw', { jobId, error })
+    }
+  })
 }

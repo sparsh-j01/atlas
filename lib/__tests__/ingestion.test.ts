@@ -12,7 +12,7 @@ const jobRow = {
   document: { id: 'doc-1', status: 'uploaded', sourceType: 'pdf', storagePath: 'o/x.pdf' },
 }
 
-const state = { docStatus: 'uploaded', advanced: [] as string[], failed: null as unknown }
+const state = { docStatus: 'uploaded', advanced: [] as string[], failed: null as unknown, lease: null as Date | null }
 
 vi.mock('@/lib/db', () => {
   const chain = {
@@ -30,13 +30,26 @@ vi.mock('@/lib/documents', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/documents')>()
   return {
     ...actual,
+    // Like the real conditional UPDATE: free, or lapsed, or nothing.
+    claimDocument: vi.fn(async (_id: string, until: Date) => {
+      if (state.lease && state.lease > new Date()) return null
+      state.lease = until
+      return until
+    }),
+    releaseDocument: vi.fn(async (_id: string, until: Date) => {
+      if (state.lease === until) state.lease = null
+    }),
     advanceDocument: vi.fn(async (id: string, expected: string, next: string) => {
       state.advanced.push(`${expected}->${next}`)
       state.docStatus = next
       return { ...jobRow.document, id, status: next }
     }),
-    failDocument: vi.fn(async (id: string, s: string, _j: string, code: string) => {
+    // Conditional, like the real one: lands only if the document is still in `expected`.
+    failDocument: vi.fn(async (id: string, expected: string, s: string, _j: string, code: string) => {
+      if (state.docStatus !== expected) return false
       state.failed = { state: s, code }
+      state.docStatus = s
+      return true
     }),
   }
 })
@@ -56,6 +69,7 @@ beforeEach(() => {
   state.docStatus = 'uploaded'
   state.advanced = []
   state.failed = null
+  state.lease = null
 })
 
 /** A stage list that records what ran, without touching storage, Gemini or a database. */
@@ -194,6 +208,22 @@ describe('stage failure', () => {
     expect(state.failed).toEqual({ state: 'failed_ocr', code: 'OCR_FAILED' })
   })
 
+  it('reports a pause, not a failure, when another driver already moved the document on', async () => {
+    // Two tabs driving one upload: this driver's ocr stage throws (here, on the winner's rows)
+    // after the other driver has advanced the document to structuring. Stamping failed_ocr
+    // over that would undo the winner's progress and burn a retry attempt.
+    const { stages } = fakeStages({
+      ocr: async () => {
+        state.docStatus = 'structuring'
+        throw new Error('duplicate key value violates unique constraint')
+      },
+    })
+    const outcome = await runIngestion('job-1', far(), stages)
+    expect(outcome).toEqual({ status: 'ocr', done: false, paused: true })
+    expect(state.failed).toBeNull()
+    expect(state.docStatus).toBe('structuring')
+  })
+
   it('never returns the raw exception text to the caller', async () => {
     // The message can carry provider, path and quota detail; only the code is public.
     const secret = 'GEMINI quota exceeded for project 12345 tier free'
@@ -205,6 +235,9 @@ describe('stage failure', () => {
     const outcome = await runIngestion('job-1', far(), stages)
     expect(JSON.stringify(outcome)).not.toContain(secret)
     expect(outcome.errorCode).toBe('STRUCTURE_DETECTION_FAILED')
+    // Nor stored: a failed insert's message carries the document's own text (F05).
+    const { failDocument } = await import('../documents')
+    expect(vi.mocked(failDocument).mock.lastCall?.[5]).toBe('Document processing failed.')
   })
 
   it('resumes a failed document at the stage that failed', async () => {
@@ -220,6 +253,28 @@ describe('stage failure', () => {
     await runIngestion('job-1', far(), stages)
     expect(ran[0]).toBe('ocr')
     expect(ran).not.toContain('uploaded')
+  })
+})
+
+describe('one driver at a time (security review F06)', () => {
+  it('runs no stage and reports a pause while another request holds the document', async () => {
+    state.lease = new Date(Date.now() + 30_000)
+    const { stages, ran } = fakeStages()
+    const outcome = await runIngestion('job-1', far(), stages)
+    expect(ran).toEqual([])
+    expect(outcome).toMatchObject({ done: false, paused: true })
+  })
+
+  it('takes over a lapsed lease, and gives the lease back however the run ends', async () => {
+    state.lease = new Date(Date.now() - 1_000)
+    const done = fakeStages()
+    expect((await runIngestion('job-1', far(), done.stages)).done).toBe(true)
+    expect(state.lease).toBeNull()
+
+    state.docStatus = 'uploaded'
+    const failing = fakeStages({ chunking: async () => { throw new Error('boom') } })
+    await runIngestion('job-1', far(), failing.stages)
+    expect(state.lease).toBeNull()
   })
 })
 
