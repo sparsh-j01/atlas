@@ -10,6 +10,7 @@ import {
   signUpSchema,
 } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
+import { checkLimit, clientIp, waitMessage } from '@/lib/rate-limit'
 
 /**
  * Every auth call that used to run in the browser.
@@ -56,6 +57,30 @@ async function origin(): Promise<string> {
   return h.get('origin') ?? `https://${h.get('host') ?? ''}`
 }
 
+/**
+ * One attempt against this caller's IP and the address being acted on. Returns the refusal copy,
+ * or null to go ahead.
+ *
+ * Ours, in front of Supabase's own limits, because those cannot tell teachers apart here: every
+ * call in this file comes from the server, so Supabase sees one IP for everybody. The copy is the
+ * same whether or not the address has an account — a limit must not become an enumeration oracle.
+ */
+async function paced(perAddress: 'signInPerEmail' | 'emailPerAddress', email: string): Promise<string | null> {
+  const ip = clientIp(await headers())
+  const [byIp, byAddress] = await Promise.all([
+    checkLimit('authPerIp', ip),
+    checkLimit(perAddress, email.trim().toLowerCase()),
+  ])
+  const refused = !byIp.ok ? byIp : !byAddress.ok ? byAddress : null
+  return refused ? waitMessage(refused.retryAfterSec) : null
+}
+
+/** The Turnstile token, if the form sent one. Checked by Supabase itself once CAPTCHA is on in
+ *  the dashboard; until then it is ignored. Length-bounded because it is caller input. */
+function captchaFrom(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 && v.length <= 4096 ? v : undefined
+}
+
 const confirmUrl = async (next: string) =>
   `${await origin()}/auth/confirm?next=${encodeURIComponent(next)}`
 
@@ -65,12 +90,15 @@ export async function signUpAction(form: FormData): Promise<AuthResult> {
     password: String(form.get('password') ?? ''),
   })
   if (!parsed.success) return { error: firstError(parsed.error) }
+  const wait = await paced('emailPerAddress', parsed.data.email)
+  if (wait) return { error: wait }
 
   const supabase = await createClient()
   const { error } = await supabase.auth.signUp({
     ...parsed.data,
     options: {
       emailRedirectTo: await confirmUrl(nextPathSchema.parse(form.get('next'))),
+      captchaToken: captchaFrom(form.get('captchaToken')),
     },
   })
   // No branch on "user already exists": Supabase deliberately returns the same shape for a
@@ -85,9 +113,14 @@ export async function signInAction(form: FormData): Promise<AuthResult> {
   const next = String(form.get('next') ?? '')
   const parsed = signInSchema.safeParse({ email, password })
   if (!parsed.success) return { error: firstError(parsed.error) }
+  const wait = await paced('signInPerEmail', parsed.data.email)
+  if (wait) return { error: wait }
 
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword(parsed.data)
+  const { error } = await supabase.auth.signInWithPassword({
+    ...parsed.data,
+    options: { captchaToken: captchaFrom(form.get('captchaToken')) },
+  })
   // The session cookie is written by this response, httpOnly — the caller only gets a path.
   if (!error) return { redirectTo: nextPathSchema.parse(next) }
 
@@ -98,26 +131,31 @@ export async function signInAction(form: FormData): Promise<AuthResult> {
   return { error: error.message }
 }
 
-export async function resendConfirmationAction(email: string, next: string): Promise<AuthResult> {
+export async function resendConfirmationAction(email: string, next: string, captchaToken?: string): Promise<AuthResult> {
   const parsed = emailSchema.safeParse(email)
   if (!parsed.success) return { error: firstError(parsed.error) }
+  const wait = await paced('emailPerAddress', parsed.data)
+  if (wait) return { error: wait }
 
   const supabase = await createClient()
   await supabase.auth.resend({
     type: 'signup',
     email: parsed.data,
-    options: { emailRedirectTo: await confirmUrl(nextPathSchema.parse(next)) },
+    options: { emailRedirectTo: await confirmUrl(nextPathSchema.parse(next)), captchaToken: captchaFrom(captchaToken) },
   })
   return { done: 'verify' }
 }
 
-export async function requestPasswordResetAction(email: string): Promise<AuthResult> {
+export async function requestPasswordResetAction(email: string, captchaToken?: string): Promise<AuthResult> {
   const parsed = emailSchema.safeParse(email)
   if (!parsed.success) return { error: firstError(parsed.error) }
+  const wait = await paced('emailPerAddress', parsed.data)
+  if (wait) return { error: wait }
 
   const supabase = await createClient()
   await supabase.auth.resetPasswordForEmail(parsed.data, {
     redirectTo: `${await origin()}/auth/confirm?next=/reset-password`,
+    captchaToken: captchaFrom(captchaToken),
   })
   // Sent or not, the same answer: whether an address has an account is not ours to tell.
   return { done: 'reset' }
