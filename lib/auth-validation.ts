@@ -50,10 +50,20 @@ export const signInSchema = z.object({ email: emailSchema, password: currentPass
  */
 export const nextPathSchema = z
   .string()
-  .refine(
-    (v) => v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') && !v.includes('\n'),
-    'Redirect target must be a path on this origin.',
-  )
+  .transform((value) => {
+    const origin = 'https://redirect.invalid'
+    // Reject browser-normalized control characters and backslashes before parsing.
+    // Also reject their encoded forms so another decode cannot turn a safe path into a host.
+    if (!value.startsWith('/') || /[\u0000-\u0020\u007f\\]/.test(value) || /%(?:0[0-9a-f]|1[0-9a-f]|7f|5c)/i.test(value))
+      return '/dashboard'
+    try {
+      const url = new URL(value, origin)
+      if (url.origin !== origin || url.pathname.startsWith('//')) return '/dashboard'
+      return `${url.pathname}${url.search}${url.hash}`
+    } catch {
+      return '/dashboard'
+    }
+  })
   .catch('/dashboard')
 
 /** The email link's own parameters. `type` is an allowlist because it is passed straight to

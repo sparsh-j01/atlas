@@ -14,7 +14,8 @@ describe('nextPathSchema', () => {
   })
 
   // The whole point of the schema: each of these reads as relative and is not.
-  it.each(['//evil.example', '/\\evil.example', 'https://evil.example', 'dashboard', ''])(
+  // Browsers drop tab/CR/LF inside a URL, so `/\t/evil.example` arrives as `//evil.example`.
+  it.each(['//evil.example', '/\\evil.example', 'https://evil.example', 'dashboard', '', '/\t/evil.example', '/\r/evil.example', '/%5Cevil.example'])(
     'falls back to the dashboard for %j',
     (value) => {
       expect(nextPathSchema.parse(value)).toBe('/dashboard')
