@@ -4,8 +4,9 @@ import { cache } from 'react'
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 import { QueryBuilder } from 'drizzle-orm/pg-core'
 import { db } from '@/lib/db'
-import { decks, sessions, slides } from '@/lib/db/schema'
+import { decks, documents, generationSources, sessions, slides } from '@/lib/db/schema'
 import type { SlideConfig } from '@/lib/slides'
+import { isShareToken, isUuid } from '@/lib/ids'
 
 // Every function is owner-scoped in its WHERE — this is the real access boundary (Drizzle
 // connects as postgres and bypasses RLS; the RLS policies are defense-in-depth). Slide ops
@@ -66,6 +67,7 @@ export const getDeckWithSlides = cache(async function getDeckWithSlides(
   deckId: string,
   ownerId: string,
 ) {
+  if (!isUuid(deckId)) return null
   const [deck] = await db
     .select()
     .from(decks)
@@ -76,10 +78,39 @@ export const getDeckWithSlides = cache(async function getDeckWithSlides(
   return { deck, slides: rows }
 })
 
+/** Where each generated slide's evidence came from, as "week2.pdf, slide 12" labels: the two
+ *  best-supported distinct places per slide. A deck built from several files is only
+ *  reviewable if each question says which file to check it against (eng review 2026-10-05).
+ *  Owner-scoped through the deck; hand-made slides have no rows and get no label. */
+export async function getSlideSources(deckId: string, ownerId: string): Promise<Record<string, string[]>> {
+  if (!isUuid(deckId)) return {}
+  const rows = await db
+    .select({
+      slideId: generationSources.generatedSlideId,
+      page: generationSources.page,
+      filename: documents.filename,
+      sourceType: documents.sourceType,
+    })
+    .from(generationSources)
+    .innerJoin(slides, eq(slides.id, generationSources.generatedSlideId))
+    .innerJoin(decks, and(eq(decks.id, slides.deckId), eq(decks.ownerId, ownerId)))
+    .innerJoin(documents, eq(documents.id, generationSources.documentId))
+    .where(eq(slides.deckId, deckId))
+    .orderBy(sql`${generationSources.supportScore} desc nulls last`)
+  const labels: Record<string, string[]> = {}
+  for (const r of rows) {
+    const label = `${r.filename}, ${r.sourceType === 'pptx' ? 'slide' : 'page'} ${r.page}`
+    const list = (labels[r.slideId] ??= [])
+    if (list.length < 2 && !list.includes(label)) list.push(label)
+  }
+  return labels
+}
+
 // Guard for every deck mutation: the deck must be the caller's AND not currently live. A
 // non-ended session freezes the deck so its slides can't shift under a running game
 // (docs/schema.md) — one check all mutators route through, rather than per-action guards.
 async function assertDeckEditable(deckId: string, ownerId: string): Promise<void> {
+  if (!isUuid(deckId)) throw new Error('deck not found')
   const [deck] = await db
     .select({ id: decks.id })
     .from(decks)
@@ -117,9 +148,12 @@ export async function updateDeck(
   patch: { title?: string; description?: string | null; status?: string },
 ): Promise<void> {
   await assertDeckEditable(deckId, ownerId)
+  // Columns named, not `...patch`: a spread writes any key the object happens to carry, and
+  // `{ ownerId }` from a client patch handed the deck to another creator. Drizzle skips the
+  // undefined ones, so a title-only patch still leaves the rest alone.
   await db
     .update(decks)
-    .set({ ...patch, updatedAt: new Date() })
+    .set({ title: patch.title, description: patch.description, status: patch.status, updatedAt: new Date() })
     .where(and(eq(decks.id, deckId), eq(decks.ownerId, ownerId)))
 }
 
@@ -156,6 +190,7 @@ export async function updateSlide(
   patch: { type: string; prompt: string; config: SlideConfig },
 ): Promise<void> {
   await assertDeckEditable(deckId, ownerId)
+  if (!isUuid(slideId)) return // same as an unknown slide: nothing to update
   await db
     .update(slides)
     .set({ type: patch.type, prompt: patch.prompt, config: patch.config })
@@ -165,6 +200,7 @@ export async function updateSlide(
 
 export async function deleteSlide(deckId: string, slideId: string, ownerId: string): Promise<void> {
   await assertDeckEditable(deckId, ownerId)
+  if (!isUuid(slideId)) return // same as an unknown slide: nothing to delete
   await db.delete(slides).where(and(eq(slides.id, slideId), eq(slides.deckId, deckId)))
   await touchDeck(deckId, ownerId)
 }
@@ -273,6 +309,7 @@ export async function setDeckShared(
   shared: boolean,
 ): Promise<string | null> {
   // Ownership only, not editability: sharing changes nothing a live session reads.
+  if (!isUuid(deckId)) throw new Error('deck not found')
   const [deck] = await db
     .select({ id: decks.id })
     .from(decks)
@@ -308,7 +345,7 @@ export async function getSharedDeck(token: string): Promise<SharedDeck | null> {
   // A blank token must never match. `shareToken` is NULL on unshared decks so SQL's
   // three-valued logic already excludes them from `= ''`, but an empty string reaching a
   // lookup at all is a bug worth failing loudly on rather than relying on that.
-  if (!token) return null
+  if (!isShareToken(token)) return null
   const [deck] = await db
     .select({
       id: decks.id,
@@ -330,6 +367,7 @@ export async function getSharedDeck(token: string): Promise<SharedDeck | null> {
 /** Save a shared deck into the signed-in creator's own library. The token is the only proof
  *  of access, so it is re-resolved here rather than trusting a deck id from the client. */
 export async function copySharedDeck(token: string, ownerId: string): Promise<string> {
+  if (!isShareToken(token)) throw new Error('deck not found')
   const [deck] = await db
     .select({
       id: decks.id,
