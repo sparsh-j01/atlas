@@ -5,8 +5,8 @@
 // Stored option shape mirrors lib/realtime/question.ts (`is_correct`) so M3 can feed a
 // saved slide into a live session with no translation.
 export type McqOption = { id: string; text: string; is_correct: boolean }
-// `explanation` is optional teaching copy shown to the room AFTER the reveal — never
-// before, since it gives the answer away. M6's emit_slide tool emits one per generated
+// `explanation` is optional teaching copy shown in each student's review AFTER the quiz —
+// never during it, since it gives the answer away. M6's emit_slide tool emits one per generated
 // question, so the field lands here now rather than needing a schema change later.
 export type McqConfig = {
   options: McqOption[]
@@ -14,7 +14,7 @@ export type McqConfig = {
   points: number
   explanation?: string
 }
-// The slide-type union lives in lib/slides.ts (M5 added poll). It imports this module, not
+// The slide-type union lives in lib/slides.ts. It imports this module, not
 // the other way round — everything here stays MCQ-specific or structurally typed, so there
 // is no cycle.
 
@@ -51,9 +51,8 @@ export function blankMcq(): EditableMcq {
 
 /**
  * The rules every option-based slide shares: a prompt, 2–6 options with text and no
- * duplicates, and a sane answer window. MCQ and poll both start here and append their own,
- * so a fix to (say) duplicate detection lands on both types instead of only the one someone
- * remembered to edit (failure-patterns #4).
+ * duplicates, and a sane answer window. Any future option-based type starts here and appends
+ * its own, so a fix to (say) duplicate detection lands on every type (failure-patterns #4).
  */
 export function validateOptionSlide(s: {
   prompt: string
@@ -96,8 +95,8 @@ export function validateMcq(m: EditableMcq): string[] {
 
   if (!(m.points >= 0 && m.points <= POINTS_MAX)) errors.push(`Points must be 0–${POINTS_MAX}.`)
 
-  // Optional, but bounded: it goes on a projector at the reveal, and an unbounded blob
-  // would push the results off screen.
+  // Optional, but bounded: it is shown on a phone in the review, where an unbounded blob
+  // would bury the question it explains.
   if ((m.explanation?.trim().length ?? 0) > EXPLANATION_MAX)
     errors.push(`Explanation must be ${EXPLANATION_MAX} characters or fewer.`)
 
@@ -108,13 +107,11 @@ export function validateMcq(m: EditableMcq): string[] {
 // Pure so they're unit-tested here; the DB-backed slide loader (lib/realtime/live-slide.ts)
 // is the server-only wrapper around them.
 //
-// Typed STRUCTURALLY rather than against McqConfig, so M5's poll config flows through the
-// same three functions with no per-type branching at the call sites — a poll's options are
-// an MCQ's minus `is_correct`, which is precisely what each of these already tolerates.
-// It also keeps this module free of any import from lib/slides.ts (which imports this one).
+// Typed STRUCTURALLY rather than against McqConfig, which keeps this module free of any
+// import from lib/slides.ts (which imports this one).
 
 /** Options as clients may see them — the answer key is stripped. This is the anti-cheat
- *  boundary: everything a participant receives before reveal comes through here. */
+ *  boundary: every question a participant receives during the quiz comes through here. */
 export function sanitizeOptions(c: { options: { id: string; text: string }[] }): {
   id: string
   text: string
@@ -122,10 +119,8 @@ export function sanitizeOptions(c: { options: { id: string; text: string }[] }):
   return c.options.map(({ id, text }) => ({ id, text }))
 }
 
-/** null if nothing is marked correct — which is every poll slide (no option carries
- *  `is_correct` at all), and unreachable for a saved MCQ (validateMcq enforces exactly one).
- *  Callers treat null as "nothing to disclose" rather than throwing mid-game, so the reveal
- *  and /state paths need no slide-type check to stay correct on an unscored slide. */
+/** null if nothing is marked correct — unreachable for a saved MCQ (validateMcq enforces
+ *  exactly one). Callers treat null as "nothing to disclose" rather than throwing mid-game. */
 export function correctOptionId(c: { options: { id: string; is_correct?: boolean }[] }): string | null {
   return c.options.find((o) => o.is_correct)?.id ?? null
 }
@@ -144,8 +139,8 @@ export function toStored(m: EditableMcq): { prompt: string; config: McqConfig } 
       options: m.options.map((o) => ({ id: o.id, text: o.text.trim(), is_correct: o.is_correct })),
       timeLimitMs: m.timeLimitMs,
       points: m.points,
-      // Omitted entirely when blank, so an empty string never reaches the reveal payload
-      // and renders as an empty box on the projector.
+      // Omitted entirely when blank, so an empty string never reaches the review and
+      // renders as an empty explanation box.
       ...(explanation ? { explanation } : {}),
     },
   }
