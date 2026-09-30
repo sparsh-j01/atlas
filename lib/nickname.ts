@@ -87,6 +87,7 @@ export function sanitizeNickname(raw: unknown): NicknameCheck {
   if (typeof raw !== 'string') return { ok: false, error: 'nickname is required' }
   const nickname = raw
     .replace(/[​-‏‪-‮⁠﻿]/g, '') // zero-width + directional marks
+    .replace(/[\0-\x08\x0e-\x1f\x7f-\x9f]/g, '') // control chars bar whitespace; NUL also fails the insert
     .replace(/\s+/g, ' ')
     .trim()
   if (!nickname) return { ok: false, error: 'Pick a nickname.' }

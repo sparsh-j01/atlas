@@ -59,6 +59,12 @@ describe('sanitizeNickname', () => {
     expect(sanitizeNickname('  Ravi   K.  ')).toEqual({ ok: true, nickname: 'Ravi K.' })
   })
 
+  it('drops control characters (a NUL fails the insert) but keeps tabs as spaces', () => {
+    expect(sanitizeNickname('ab\0cd\x7f')).toEqual({ ok: true, nickname: 'abcd' })
+    expect(sanitizeNickname('a \0 b\tc')).toEqual({ ok: true, nickname: 'a b c' })
+    expect(sanitizeNickname('\0\x01').ok).toBe(false)
+  })
+
   it('rejects a name that is only invisible characters', () => {
     // Renders as a blank row on the projector, which is its own kind of griefing.
     expect(sanitizeNickname('​​​').ok).toBe(false)
