@@ -4,6 +4,7 @@ import { SUPABASE_URL } from '@/lib/env'
 import { serverEnv } from '@/lib/env.server'
 import { openHostChannel, openSessionChannel } from './channels'
 import type { EventName } from './events'
+import { logger } from '@/lib/logger'
 
 // Server → clients broadcast over Supabase Realtime via the REST endpoint (`httpSend`),
 // so route handlers publish without opening a WebSocket (right primitive for serverless).
@@ -61,10 +62,10 @@ async function publish(
   try {
     const res = await channel.httpSend(event, payload as object)
     if (!res.success) {
-      console.error(`[broadcast] ${event} failed (${res.status}): ${res.error}`)
+      logger.error('broadcast failed', { event, status: res.status })
     }
   } catch (e) {
-    console.error(`[broadcast] ${event} threw:`, e)
+    logger.error('broadcast threw', { event, error: e })
   } finally {
     // removeChannel() RESOLVES with 'ok' | 'timed out' | 'error' (it never rejects), and it only
     // tears the channel out of the shared client's registry when the leave acks 'ok'. On a
