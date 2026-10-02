@@ -5,24 +5,17 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 export const sessionChannel = (code: string) => `session:${code}`
 
 /**
- * The presenter's own channel: live counters that ONLY the host screen renders.
+ * The presenter's own channel: what ONLY the host screen renders, today the full ranking
+ * after each question (the room gets the top 10 on sessionChannel()).
  *
  * Why two channels rather than one. Supabase counts and bills Realtime per *delivered copy*,
- * so a broadcast to a 100-phone room is ~101 messages, not 1. `answered:count` and
- * `results:update` fire repeatedly while a question is open and no participant reads either —
- * `app/play/page.tsx` has no handler for them. Sending them room-wide meant 100 phones
- * downloading, decoding and discarding two events a second. On here they cost 2 messages
- * instead of 102, which is most of this app's message bill.
- *
- * Everything the ROOM needs — slide:show, slide:reveal, leaderboard:update, session:ended,
- * participant:kicked — stays on sessionChannel(). The split is by audience, not importance.
+ * so a broadcast to a 100-phone room is ~101 messages, not 1. Data no phone draws goes here.
+ * The split is by audience, not importance.
  *
  * Kept under the `session:` prefix on purpose: migration 0005's RLS policies match
  * `realtime.topic() LIKE 'session:%'`, so this topic inherits them with no migration —
  * everyone may receive, only the service role may broadcast. Nothing here is secret anyway:
- * an answered count is already projected on the wall, and `results:update` only ever fires
- * for a poll, whose distribution is public by design. A scored quiz never sends it (see
- * isScored), so the anti-herding rule doesn't depend on channel access.
+ * names and scores are on the projector.
  */
 export const hostChannel = (code: string) => `session:${code}:host`
 
