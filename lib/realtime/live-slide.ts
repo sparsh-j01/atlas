@@ -1,11 +1,10 @@
 import 'server-only'
-import { and, asc, count, eq } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { answers, slides } from '@/lib/db/schema'
+import { sessions, slides } from '@/lib/db/schema'
 import { sanitizeOptions } from '@/lib/mcq'
 import { pointsOf, type SlideConfig } from '@/lib/slides'
-import { tallyMcq } from './aggregate'
-import type { AggregateMcq, SanitizedSlide } from './events'
+import type { SanitizedSlide } from './events'
 
 // The live session's view of a saved slide — replaces the M1 hardcoded question, so every
 // route now reads prompt/options/answer-key off the deck row the host launched.
@@ -21,6 +20,13 @@ const liveColumns = {
   config: slides.config,
 }
 
+// Presentation order, defined once. The room is SHOWN slides from the launch snapshot
+// (session-progress.ts → sessionSlides, sorted by position) and currentSlideLateral picks
+// the slide an answer is JUDGED against from the live deck. The two agree because a deck
+// cannot be edited while one of its sessions is open (assertDeckEditable in lib/decks.ts)
+// and both order by position, which (deck_id, position) keeps unique.
+const presentationOrder = asc(slides.position)
+
 /** The deck's slide at `index` in presentation order, or null past the end.
  *  Ordered-offset rather than `position = index`: deleting a slide leaves a gap in
  *  `position` (lib/decks.ts doesn't renumber), so the nth slide isn't necessarily
@@ -31,10 +37,23 @@ export async function slideAt(deckId: string, index: number): Promise<LiveSlide 
     .select(liveColumns)
     .from(slides)
     .where(eq(slides.deckId, deckId))
-    .orderBy(asc(slides.position))
+    .orderBy(presentationOrder)
     .limit(1)
     .offset(index)
   return row ?? null
+}
+
+/** currentSlide() as a LATERAL subquery, for a query that already has `sessions` in FROM —
+ *  so the answer route reads room, caller and live slide in one round trip instead of three.
+ *  Join it with `eq(sub.index, sessions.currentSlideIndex)`. The same nth-in-presentation-order
+ *  rule as slideAt, so gaps in `position` are fine; the lobby's -1 and an index past the end
+ *  match no row (the left join comes back null), and a deck-less session has no slides. */
+export function currentSlideLateral() {
+  return db
+    .select({ ...liveColumns, index: sql<number>`row_number() over (order by ${presentationOrder}) - 1`.as('index') })
+    .from(slides)
+    .where(eq(slides.deckId, sessions.deckId))
+    .as('live_slide')
 }
 
 /** The slide a session is on, or null when it has none (lobby, past the end, or a
@@ -47,23 +66,6 @@ export function currentSlide(session: {
   return slideAt(session.deckId, session.currentSlideIndex)
 }
 
-export async function slideCount(deckId: string): Promise<number> {
-  const [row] = await db.select({ n: count() }).from(slides).where(eq(slides.deckId, deckId))
-  return row.n
-}
-
-/** Count the responses to one slide. Computed on read — no stored counter, so there's no
- *  concurrent-increment race. Shared by reveal, by advance re-showing a revealed slide, and
- *  by the live poll feed. Type-agnostic: quiz and poll answers are both `{ optionId }`, so
- *  one tally serves both. */
-export async function tallySlideAnswers(sessionId: string, slideId: string): Promise<AggregateMcq> {
-  const rows = await db
-    .select({ response: answers.response })
-    .from(answers)
-    .where(and(eq(answers.sessionId, sessionId), eq(answers.slideId, slideId)))
-  return tallyMcq(rows.map((r) => ({ optionId: r.response.optionId })))
-}
-
 /** The slide as clients may see it BEFORE reveal — the answer key is stripped. */
 export function sanitizeSlide(s: LiveSlide): SanitizedSlide {
   return {
@@ -71,7 +73,6 @@ export function sanitizeSlide(s: LiveSlide): SanitizedSlide {
     type: s.type,
     prompt: s.prompt,
     options: sanitizeOptions(s.config),
-    points: pointsOf(s.config), // 0 on an unscored type — a poll config has no points field
-    ...('chart' in s.config ? { chart: s.config.chart } : {}),
+    points: pointsOf(s.config),
   }
 }
