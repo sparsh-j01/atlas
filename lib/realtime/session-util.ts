@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
+import { isRoomCode } from '@/lib/ids'
 
 /** 6-digit PIN as a zero-padded string. Uniqueness among live sessions is enforced by
  *  the partial unique index; the start endpoint retries on the rare collision. */
@@ -17,6 +18,7 @@ export function newToken(): string {
 }
 
 export async function findLiveSession(code: string) {
+  if (!isRoomCode(code)) return null
   const rows = await db
     .select()
     .from(sessions)
