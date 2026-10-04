@@ -1,9 +1,8 @@
-// The anti-cheat gate for answer submission. Answers are open ONLY while the question is
-// live — status 'active' with a started clock. Once the host reveals (status flips to
-// 'revealed', which broadcasts correctOptionId) or the session ends, the window is closed,
-// so a participant still inside their per-answer timer can't read the revealed correct
-// option and submit it for credit. Kept dependency-free (no db/server-only) so it stays a
-// pure, unit-testable predicate shared by the answer route and future advance logic.
+// The gate for answer submission. Answers are open ONLY while a question is live — status
+// 'active' with a started clock — never in the lobby or after the end, when the review has
+// put every answer key on the participants' phones. Each question's own deadline is
+// withinAnswerWindow below. Kept dependency-free (no db/server-only) so it stays a pure,
+// unit-testable predicate.
 export function answersOpen<T extends { status: string; currentSlideStartedAt: Date | null }>(
   session: T,
 ): session is T & { currentSlideStartedAt: Date } {
@@ -21,8 +20,8 @@ export function answersOpen<T extends { status: string; currentSlideStartedAt: D
  * Safe to give away: `scoreAnswer` clamps the speed ratio to [0,1], so an answer inside the
  * grace scores the FLOOR (base * (1 - SPEED_FACTOR)), never more. Nobody can gain by
  * answering late — the grace only turns "rejected" into "accepted, slowest possible score".
- * The reveal-gate is untouched: once the host reveals, `answersOpen` is false and nothing
- * here is reached, so the answer key still can't be read and then submitted.
+ * No answer key is public while a question is open (the review comes after the end), so
+ * the grace cannot be used to read the key and then submit it.
  */
 export const ANSWER_GRACE_MS = 750
 
