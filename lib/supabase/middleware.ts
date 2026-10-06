@@ -12,7 +12,7 @@ import { SESSION_COOKIE_OPTIONS } from './cookie-options'
 //
 // `/d` is deliberately absent: a shared deck is public by design, and gating it here would
 // send every recipient of a share link to a sign-in page.
-const CREATOR_PREFIXES = ['/dashboard', '/decks', '/results']
+const CREATOR_PREFIXES = ['/dashboard', '/decks', '/results', '/usage']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -36,13 +36,19 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  // getUser() (not getSession) revalidates the token against Supabase — the refresh.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims(), not getUser(): this runs on EVERY request, host-console actions mid-game
+  // included, and getUser() is a round trip to Supabase Auth each time. This project signs
+  // sessions with an asymmetric key (ES256, checked 2026-10-04), so getClaims() verifies the
+  // signature locally against the cached JWKS — no network call — and still refreshes an
+  // expired token on the way (the cookie write in setAll above). On an HS256 token it falls
+  // back to getUser() by itself, so a key rotation back to symmetric costs speed, not safety.
+  // What it gives up: a session revoked server-side still passes HERE until it expires (≤1h).
+  // That is fine because this is only the redirect hint; requireUser() still calls getUser().
+  const { data } = await supabase.auth.getClaims()
+  const signedIn = Boolean(data?.claims)
 
   const path = request.nextUrl.pathname
-  if (!user && CREATOR_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) {
+  if (!signedIn && CREATOR_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', path)
