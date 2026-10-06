@@ -5,14 +5,8 @@ import { answers, decks, participants, sessions, slides } from '@/lib/db/schema'
 import { getDeckWithSlides } from '@/lib/decks'
 import { isUniqueViolation, newCode, newToken } from '@/lib/realtime/session-util'
 import { shapeResults, type SessionResults } from '@/lib/results'
-import { timingSafeEqual } from 'node:crypto'
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return timingSafeEqual(bufA, bufB)
-}
+import { constantTimeEqual } from '@/lib/crypto'
+import { isRoomCode, isUuid } from '@/lib/ids'
 
 /** Why a deck can't go live yet, or null if it can. A `ready` deck is already all-valid
  *  (setDeckStatusAction gates that), so this is the belt-and-suspenders launch gate. */
@@ -35,7 +29,7 @@ async function liveSessionForDeck(deckId: string): Promise<Launched | null> {
 }
 
 /** Open a lobby session for one of the host's ready decks. Returns the join code and the
- *  host token that authorizes advance/reveal. Throws a user-facing message if the deck
+ *  host token that authorizes start/end/kick. Throws a user-facing message if the deck
  *  isn't the host's or isn't launchable.
  *
  *  A deck gets at most ONE live room: a double-clicked Present would otherwise open a
@@ -58,7 +52,10 @@ export async function createSessionFromDeck(deckId: string, hostId: string): Pro
     try {
       const [row] = await db
         .insert(sessions)
-        .values({ deckId, hostId, code: newCode(), hostToken, status: 'lobby' })
+        .values({
+          deckId, hostId, code: newCode(), hostToken, status: 'lobby',
+          slideSnapshot: dw.slides.map(({ id, type, prompt, config, position }) => ({ id, type, prompt, config, position })),
+        })
         .returning({ id: sessions.id, code: sessions.code })
       return { sessionId: row.id, code: row.code, hostToken }
     } catch (e) {
@@ -77,11 +74,12 @@ export async function createSessionFromDeck(deckId: string, hostId: string): Pro
 /** The live session for a code, but only if the caller holds its host token — the server
  *  side of the httpOnly cookie set at launch. Empty token matches nothing (host_token is
  *  always a uuid), so a non-host gets null → 404. */
-export async function getHostedSession(code: string, hostToken: string) {
+export async function getHostedSession(code: string, hostToken: string, includeEnded = false) {
+  if (!isRoomCode(code)) return null
   const [row] = await db
     .select()
     .from(sessions)
-    .where(and(eq(sessions.code, code), ne(sessions.status, 'ended')))
+    .where(and(eq(sessions.code, code), includeEnded ? eq(sessions.hostToken, hostToken) : ne(sessions.status, 'ended')))
     .limit(1)
   if (!row) return null
   
@@ -150,6 +148,7 @@ export async function getSessionResults(
   sessionId: string,
   ownerId: string,
 ): Promise<SessionResultsPage | null> {
+  if (!isUuid(sessionId)) return null
   const [session] = await db
     .select()
     .from(sessions)
@@ -165,7 +164,7 @@ export async function getSessionResults(
 
   // The deck may be gone (ON DELETE SET NULL). Both reads below are scoped by the session,
   // so they return the game's own rows either way.
-  const deckRows = session.deckId
+  const deckRows = session.slideSnapshot ?? (session.deckId
     ? await db
         .select({
           id: slides.id,
@@ -177,7 +176,7 @@ export async function getSessionResults(
         .from(slides)
         .where(eq(slides.deckId, session.deckId))
         .orderBy(asc(slides.position))
-    : []
+    : [])
 
   const [deck] = session.deckId
     ? await db
