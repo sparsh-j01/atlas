@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { correctOptionId, isValidOptionId, sanitizeOptions, type McqConfig } from './mcq'
-import type { PollConfig } from './poll'
 import {
   blankSlide,
   explanationOf,
@@ -11,6 +10,7 @@ import {
   toStoredSlide,
   validateSlide,
   type EditableSlide,
+  type SlideConfig,
 } from './slides'
 
 const mcqConfig = (): McqConfig => ({
@@ -23,154 +23,123 @@ const mcqConfig = (): McqConfig => ({
   explanation: 'Paris is the capital.',
 })
 
-const pollConfig = (): PollConfig => ({
+// What a poll row looked like before polls were removed (2026-10-05): no is_correct, no
+// points. One of these left in the database must fail closed, never reach a live room.
+const legacyPollConfig = {
   options: [
     { id: 'a', text: 'Recursion' },
     { id: 'b', text: 'Pointers' },
   ],
   timeLimitMs: 30_000,
   chart: 'donut',
-})
+} as unknown as SlideConfig
 
 describe('isScored', () => {
   it('is true only for the quiz type', () => {
     expect(isScored('quiz_mcq')).toBe(true)
-    expect(isScored('poll')).toBe(false)
   })
 
-  // This predicate decides whether a running tally may be broadcast while the window is open.
-  // An unknown type has to fall to "unscored" — which is the side that leaks nothing, because
-  // an unscored slide has no answer key to protect in the first place.
+  // An unknown type has to fall to "unscored" — the side that grades nothing against an
+  // answer key it does not have.
   it('fails safe on an unrecognised type', () => {
-    for (const t of ['word_cloud', 'scale', '', 'QUIZ_MCQ']) expect(isScored(t)).toBe(false)
+    for (const t of ['poll', 'word_cloud', 'scale', '', 'QUIZ_MCQ']) expect(isScored(t)).toBe(false)
   })
 })
 
 describe('pointsOf / explanationOf', () => {
-  it('reads MCQ points and returns 0 for a type that has none', () => {
+  it('reads MCQ points', () => {
     expect(pointsOf(mcqConfig())).toBe(1_000)
-    expect(pointsOf(pollConfig())).toBe(0)
   })
 
-  it('reads the explanation only where one can exist', () => {
+  it('reads the explanation, and undefined when none was saved', () => {
     expect(explanationOf(mcqConfig())).toBe('Paris is the capital.')
-    // Key genuinely absent, which is what toStored writes for a blank explanation — so `in`
-    // is the honest check rather than a truthiness test on a property that may not exist.
+    // Key genuinely absent, which is what toStored writes for a blank explanation.
     const noExplanation: McqConfig = {
       options: mcqConfig().options,
       timeLimitMs: 20_000,
       points: 1_000,
     }
     expect(explanationOf(noExplanation)).toBeUndefined()
-    expect(explanationOf(pollConfig())).toBeUndefined()
   })
 })
 
-// The live-session views are typed structurally so one implementation serves every
-// option-based type. These are the anti-cheat helpers, so "works on a poll" has to be proven,
-// not assumed from the fact that it compiles.
-describe('live-session views accept a poll config', () => {
-  it('sanitizeOptions strips to id + text', () => {
-    expect(sanitizeOptions(pollConfig())).toEqual([
-      { id: 'a', text: 'Recursion' },
-      { id: 'b', text: 'Pointers' },
+// The anti-cheat helpers: what a participant may see before the quiz ends.
+describe('live-session views', () => {
+  it('sanitizeOptions strips the answer key to id + text', () => {
+    expect(sanitizeOptions(mcqConfig())).toEqual([
+      { id: '1', text: 'Paris' },
+      { id: '2', text: 'London' },
     ])
   })
 
-  it('correctOptionId is null for a poll — nothing to disclose at reveal', () => {
-    expect(correctOptionId(pollConfig())).toBeNull()
+  it('correctOptionId names the marked option', () => {
     expect(correctOptionId(mcqConfig())).toBe('1')
   })
 
-  it('isValidOptionId still rejects anything not on the slide', () => {
-    expect(isValidOptionId(pollConfig(), 'a')).toBe(true)
-    expect(isValidOptionId(pollConfig(), '1')).toBe(false) // an id from the MCQ above
+  it('isValidOptionId rejects anything not on the slide', () => {
+    expect(isValidOptionId(mcqConfig(), '1')).toBe(true)
+    expect(isValidOptionId(mcqConfig(), 'a')).toBe(false)
     for (const junk of [null, undefined, 1, {}, [], true, '']) {
-      expect(isValidOptionId(pollConfig(), junk)).toBe(false)
+      expect(isValidOptionId(mcqConfig(), junk)).toBe(false)
     }
   })
 })
 
 describe('per-type dispatch', () => {
-  it('isSlideType accepts only the known set', () => {
+  it('isSlideType accepts only the quiz type', () => {
     expect(isSlideType('quiz_mcq')).toBe(true)
-    expect(isSlideType('poll')).toBe(true)
-    for (const junk of ['word_cloud', '', null, 7, {}]) expect(isSlideType(junk)).toBe(false)
+    // A stale editor tab or script still asking for a poll is refused at the action.
+    for (const junk of ['poll', 'word_cloud', '', null, 7, {}]) expect(isSlideType(junk)).toBe(false)
   })
 
   it('blankSlide tags the draft with its own type', () => {
     expect(blankSlide('quiz_mcq').type).toBe('quiz_mcq')
-    expect(blankSlide('poll').type).toBe('poll')
   })
 
-  // The wire that must not cross: a poll draft validated by the MCQ rules would demand a
-  // correct option that a poll can never have, and an MCQ validated as a poll would skip the
-  // answer-key check entirely and let a broken question reach a live room.
-  it('validateSlide picks the rules matching the draft', () => {
-    const poll: EditableSlide = {
-      type: 'poll',
-      prompt: 'Which topic was hardest?',
-      options: [
-        { id: 'a', text: 'Recursion' },
-        { id: 'b', text: 'Pointers' },
-      ],
-      timeLimitMs: 30_000,
-      chart: 'bar',
-    }
-    expect(validateSlide(poll)).toEqual([])
+  it('validateSlide enforces the answer key and refuses NUL bytes', () => {
+    const mcq: EditableSlide = { type: 'quiz_mcq', prompt: 'Capital of France?', ...mcqConfig() }
+    expect(validateSlide(mcq)).toEqual([])
+    // A NUL anywhere — prompt or a nested option — is a Postgres error on save, so it fails here.
+    expect(validateSlide({ ...mcq, prompt: 'a\0b' })).toHaveLength(1)
+    expect(validateSlide({ ...mcq, options: [mcq.options[0], { id: '2', text: 'x\0', is_correct: false }] })).toHaveLength(1)
 
-    const mcqMissingKey: EditableSlide = {
-      type: 'quiz_mcq',
-      prompt: 'Capital of France?',
-      options: [
-        { id: '1', text: 'Paris', is_correct: false },
-        { id: '2', text: 'London', is_correct: false },
-      ],
-      timeLimitMs: 20_000,
-      points: 1_000,
+    const missingKey: EditableSlide = {
+      ...mcq,
+      options: mcq.options.map((o) => ({ ...o, is_correct: false })),
     }
-    expect(validateSlide(mcqMissingKey)).toContain('Mark exactly one option correct.')
+    expect(validateSlide(missingKey)).toContain('Mark exactly one option correct.')
   })
 
-  it('toStoredSlide writes the config shape for the draft type', () => {
-    const stored = toStoredSlide({ type: 'poll', prompt: ' p ', ...pollConfig() })
-    expect(stored.config).toMatchObject({ chart: 'donut', timeLimitMs: 30_000 })
-    expect(stored.config).not.toHaveProperty('points')
+  it('toStoredSlide trims the prompt and keeps the MCQ config', () => {
+    const stored = toStoredSlide({ type: 'quiz_mcq', prompt: ' p ', ...mcqConfig() })
+    expect(stored.config).toMatchObject({ points: 1_000, timeLimitMs: 20_000 })
     expect(stored.prompt).toBe('p')
   })
 })
 
 describe('toEditable — the type/config trust boundary', () => {
-  it('round-trips a row whose type and config agree', () => {
-    expect(toEditable({ type: 'poll', prompt: 'p', config: pollConfig() })).toMatchObject({
-      type: 'poll',
-      chart: 'donut',
-    })
+  it('round-trips a quiz row', () => {
     expect(toEditable({ type: 'quiz_mcq', prompt: 'q', config: mcqConfig() })).toMatchObject({
       type: 'quiz_mcq',
       points: 1_000,
     })
   })
 
-  // Nothing in the database enforces the pairing — `type` is text and `config` is jsonb — so
-  // a mismatch is reachable by a migration, a hand-run statement, or M6's generator. It has
-  // to fail closed: the deck ready-gate calls this, and a null is what keeps the slide out of
-  // a live room instead of crashing mid-game on a missing field.
-  it('returns null when type and config disagree', () => {
-    expect(toEditable({ type: 'quiz_mcq', prompt: 'p', config: pollConfig() })).toBeNull()
-    expect(toEditable({ type: 'poll', prompt: 'p', config: mcqConfig() })).toBeNull()
+  // Nothing in the database enforces the pairing — `type` is text and `config` is jsonb. The
+  // deck ready-gate calls this, and a null is what keeps the slide out of a live room.
+  it('returns null for a leftover poll row, or a quiz type holding a poll config', () => {
+    expect(toEditable({ type: 'poll', prompt: 'p', config: legacyPollConfig })).toBeNull()
+    expect(toEditable({ type: 'quiz_mcq', prompt: 'p', config: legacyPollConfig })).toBeNull()
   })
 
-  // The discriminating key alone isn't enough: validateSlide iterates `options`, so a config
-  // missing it would throw out of the ready-gate rather than fail it.
+  // validateSlide iterates `options`, so a config missing it would throw out of the
+  // ready-gate rather than fail it.
   it('returns null when the config has no option list', () => {
-    const noOptions = { chart: 'bar', timeLimitMs: 30_000 } as unknown as PollConfig
-    expect(toEditable({ type: 'poll', prompt: 'p', config: noOptions })).toBeNull()
     expect(toEditable({ type: 'quiz_mcq', prompt: 'q', config: { ...mcqConfig(), options: null as never } })).toBeNull()
   })
 
   it('returns null for a type this build does not know', () => {
-    expect(toEditable({ type: 'word_cloud', prompt: 'p', config: pollConfig() })).toBeNull()
+    expect(toEditable({ type: 'word_cloud', prompt: 'p', config: mcqConfig() })).toBeNull()
     expect(toEditable({ type: '', prompt: 'p', config: mcqConfig() })).toBeNull()
   })
 })
