@@ -9,18 +9,11 @@ import {
   type SlideRow,
 } from './results'
 import type { McqConfig } from './mcq'
-import type { PollConfig } from './poll'
 
 const mcq = (opts: [string, string, boolean][]): McqConfig => ({
   options: opts.map(([id, text, is_correct]) => ({ id, text, is_correct })),
   timeLimitMs: 20_000,
   points: 1000,
-})
-
-const poll = (opts: [string, string][]): PollConfig => ({
-  options: opts.map(([id, text]) => ({ id, text })),
-  timeLimitMs: 30_000,
-  chart: 'bar',
 })
 
 const quizSlide: SlideRow = {
@@ -34,14 +27,14 @@ const quizSlide: SlideRow = {
   ]),
 }
 
-const pollSlide: SlideRow = {
+const quiz2: SlideRow = {
   id: 's2',
-  type: 'poll',
-  prompt: 'How was the pace?',
+  type: 'quiz_mcq',
+  prompt: 'What is a race condition?',
   position: 1,
-  config: poll([
-    ['p1', 'Too fast'],
-    ['p2', 'Just right'],
+  config: mcq([
+    ['p1', 'Unsynchronised access to shared state', true],
+    ['p2', 'A CPU running too fast', false],
   ]),
 }
 
@@ -90,17 +83,6 @@ describe('shapeResults', () => {
     expect(shapeResults([], tied, []).participants.map((p) => p.nickname)).toEqual(['Ali', 'Zoya'])
   })
 
-  it('does not score a poll, and reports no correct answers for it', () => {
-    const r = shapeResults([pollSlide], people, [
-      ans({ slideId: 's2', participantId: 'a', optionId: 'p1' }),
-      ans({ slideId: 's2', participantId: 'b', optionId: 'p1' }),
-    ])
-    const q = r.questions[0]
-    expect(q.scored).toBe(false)
-    expect(q.correct).toBe(0)
-    expect(q.options.find((o) => o.id === 'p1')!.count).toBe(2)
-  })
-
   // The three consequences of answers.slide_id having no foreign key.
   it('keeps a deleted slide as a numbered question with no prompt', () => {
     const r = shapeResults([quizSlide], people, [
@@ -112,6 +94,8 @@ describe('shapeResults', () => {
       [2, 'gone', null],
     ])
     expect(r.questions[1].answered).toBe(1)
+    // No slide, no answer key: it cannot be graded, so it is reported unscored.
+    expect(r.questions[1].scored).toBe(false)
   })
 
   it('counts an answer whose option was removed by a later edit, rather than dropping it', () => {
@@ -138,7 +122,7 @@ describe('shapeResults', () => {
   })
 
   it('skips a slide added after the session ran', () => {
-    const added: SlideRow = { ...pollSlide, id: 's9', position: 5 }
+    const added: SlideRow = { ...quiz2, id: 's9', position: 5 }
     const r = shapeResults(
       [quizSlide, added],
       people,
@@ -149,7 +133,7 @@ describe('shapeResults', () => {
   })
 
   it('keeps a question that was revealed but that nobody answered', () => {
-    const r = shapeResults([quizSlide, pollSlide], people, [], ['s1', 's2'])
+    const r = shapeResults([quizSlide, quiz2], people, [], ['s1', 's2'])
     expect(r.questions.map((q) => [q.slideId, q.answered])).toEqual([
       ['s1', 0],
       ['s2', 0],
@@ -158,12 +142,12 @@ describe('shapeResults', () => {
   })
 
   it('omits a slide the host skipped without revealing and nobody answered', () => {
-    const r = shapeResults([quizSlide, pollSlide], people, [], ['s1'])
+    const r = shapeResults([quizSlide, quiz2], people, [], ['s1'])
     expect(r.questions.map((q) => q.slideId)).toEqual(['s1'])
   })
 
   it('orders questions by deck position, not by answer arrival', () => {
-    const r = shapeResults([pollSlide, quizSlide], people, [
+    const r = shapeResults([quiz2, quizSlide], people, [
       ans({ slideId: 's2', participantId: 'a', optionId: 'p1' }),
       ans({ slideId: 's1', participantId: 'a', optionId: 'o1' }),
     ])
@@ -209,24 +193,24 @@ describe('csvCell', () => {
 })
 
 describe('toGradebookCsv', () => {
-  const results = shapeResults([quizSlide, pollSlide], people, [
+  const results = shapeResults([quizSlide, quiz2], people, [
     ans({ slideId: 's1', participantId: 'a', optionId: 'o1', isCorrect: true, pointsAwarded: 900 }),
-    ans({ slideId: 's2', participantId: 'a', optionId: 'p2' }),
+    ans({ slideId: 's2', participantId: 'a', optionId: 'p2', isCorrect: false }),
     ans({ slideId: 's1', participantId: 'b', optionId: 'o2', isCorrect: false }),
   ])
   const lines = toGradebookCsv(results).split('\r\n')
 
   it('puts the question text in the column header', () => {
     expect(lines[0]).toContain('Q1: Which conditions cause deadlock?')
-    expect(lines[0]).toContain('Q2: How was the pace?')
+    expect(lines[0]).toContain('Q2: What is a race condition?')
   })
 
-  it('writes points for a scored question and the chosen option for a poll', () => {
-    expect(lines[1]).toBe('Priyanka,1,1800,2,1,900,Just right')
+  it('writes the points awarded in each question\'s cell', () => {
+    expect(lines[1]).toBe('Priyanka,1,1800,2,1,900,0')
   })
 
   it('leaves an unanswered cell blank', () => {
-    // Arjun answered the quiz and skipped the poll.
+    // Arjun answered the first question and skipped the second.
     expect(lines[2]).toBe('Arjun,2,900,1,0,0,')
   })
 
@@ -234,9 +218,9 @@ describe('toGradebookCsv', () => {
     expect(toGradebookCsv(results).charCodeAt(0)).toBe(0xfeff)
   })
 
-  it('names a removed option rather than leaving the cell blank', () => {
-    const r = shapeResults([pollSlide], people, [
-      ans({ slideId: 's2', participantId: 'a', optionId: 'abcdef1234-gone' }),
+  it('names the chosen option on a deleted slide rather than leaving the cell blank', () => {
+    const r = shapeResults([], people, [
+      ans({ slideId: 'gone', participantId: 'a', optionId: 'abcdef1234-gone' }),
     ])
     expect(toGradebookCsv(r).split('\r\n')[1]).toContain('(removed option abcdef12)')
   })

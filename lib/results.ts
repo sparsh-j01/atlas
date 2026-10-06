@@ -24,13 +24,11 @@
  * still counts toward the total and is reported as `strayCount` rather than silently
  * dropped, because a tally that quietly loses answers is worse than one that says it did.
  *
- * ponytail: the honest fix is snapshotting each slide into the session at launch, which
- * makes results immutable and removes all three cases. That is a migration plus a write on
- * the hot launch path, and it only matters once decks are edited between runs often enough
- * for "Slide removed" to show up in front of someone. Upgrade path if it does: a
- * `session_slides` table written by createSessionFromDeck, read here instead of `decks`.
+ * Sessions launched since migration 0014 carry `sessions.slide_snapshot`, which
+ * getSessionResults reads instead of the live deck, so none of the three can happen to them.
+ * These paths remain for older sessions, whose snapshot is null.
  */
-import { isScored, type SlideType } from './slides'
+import { explanationOf, isScored, type SlideType } from './slides'
 import type { SlideConfig } from './slides'
 
 export type ResultOption = {
@@ -52,9 +50,11 @@ export type QuestionResult = {
   /** Answers pointing at an option id the slide no longer has. Counted, never dropped. */
   strayCount: number
   answered: number
-  /** Scored slides only; 0 on a poll, which has nothing to be right about. */
+  /** Scored slides only; 0 on a question whose slide was deleted from the deck. */
   correct: number
   avgResponseMs: number | null
+  timeLimitMs: number | null
+  explanation: string | null
 }
 
 export type ParticipantResult = {
@@ -108,9 +108,7 @@ function optionsOf(config: SlideConfig): { id: string; text: string; isCorrect: 
   return config.options.map((o) => ({
     id: o.id,
     text: o.text,
-    // Only an McqOption carries is_correct; a PollOption has no such field, so this is the
-    // structural check rather than a slide-type branch (lib/poll.ts explains why).
-    isCorrect: 'is_correct' in o && o.is_correct === true,
+    isCorrect: o.is_correct === true,
   }))
 }
 
@@ -180,6 +178,8 @@ export function shapeResults(
       avgResponseMs: rows.length
         ? Math.round(rows.reduce((n, r) => n + r.responseMs, 0) / rows.length)
         : null,
+      timeLimitMs: slide?.config.timeLimitMs ?? null,
+      explanation: slide ? explanationOf(slide.config) ?? null : null,
     }
   })
 
@@ -259,9 +259,9 @@ export function csvCell(value: string | number | null | undefined): string {
  * the column HEADER — `Q3: Which set of conditions…` — so the file explains itself without a
  * second sheet and stays valid single-header CSV.
  *
- * A scored cell is the points awarded; a poll cell is the option they chose, because points
- * are meaningless there and the choice is the whole content. Cells stay consistent down a
- * column, which is the axis a spreadsheet sorts and charts on.
+ * A scored cell is the points awarded; an unscored one (its slide since deleted, so there is
+ * no key to grade against) is the option they chose. Cells stay consistent down a column,
+ * which is the axis a spreadsheet sorts and charts on.
  */
 export function toGradebookCsv(results: SessionResults): string {
   const { questions, participants } = results
