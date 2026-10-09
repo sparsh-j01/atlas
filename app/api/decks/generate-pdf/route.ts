@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { decks, documents, generationSources, slides as slidesTable } from '@/lib/db/schema'
 import { getAuthUser } from '@/lib/auth'
+import { DELETED, getDocument } from '@/lib/documents'
 import { toStoredSlide, validateSlide, type EditableSlide } from '@/lib/slides'
 import {
   GEN_LIMITS,
@@ -11,16 +12,19 @@ import {
   isDifficulty,
   isSlideCount,
   parseBlueprint,
+  spareSlots,
   type BlueprintSlide,
 } from '@/lib/ai/blueprint'
 import { SLIDE_TOOL, buildSlideMessages, generatedToEditable } from '@/lib/ai/slide'
-import { finalizeSlides, GEN_MAX_ATTEMPTS } from '@/lib/ai/validate'
+import { finalizeSlides, GEN_MAX_ATTEMPTS, type ProducedSlide } from '@/lib/ai/validate'
 import { createGenerateClient } from '@/lib/ai/generate'
 import { SYSTEM_PROMPT, fenceTag } from '@/lib/ai/prompt'
 import { createRetriever, hasRelevantContext, type RetrievalResult } from '@/lib/ai/retrieve'
 import { verifySlide } from '@/lib/ai/verify'
-import { mapPool } from '@/lib/ai/pool'
+import { fillPool } from '@/lib/ai/pool'
 import { logger } from '@/lib/logger'
+import { checkLimit, tooMany } from '@/lib/rate-limit'
+import { refuse, startAiDeck } from '@/lib/usage'
 
 // Document → grounded draft deck (M7 flow B). The PDF sibling of app/api/decks/generate.
 //
@@ -50,11 +54,13 @@ import { logger } from '@/lib/logger'
 
 export const maxDuration = 60
 const TIME_BUDGET_MS = 52_000 // headroom under maxDuration for auth, DB and the response
-const GENERATIONS_PER_HOUR = 10
 const BLUEPRINT_MAX_TOKENS = 1_500
 const SLIDE_MAX_TOKENS = 1_000
 const SLIDE_CONCURRENCY = 5
 const EVIDENCE_TOP_K = 8
+/** Source files per deck (eng review 2026-10-05). Keeps the blueprint prompt and retrieval
+ *  fast and each file's share of questions meaningful. */
+const MAX_FILES = 5
 
 function bad(status: number, error: string) {
   return NextResponse.json({ error }, { status })
@@ -66,6 +72,8 @@ export async function POST(req: Request) {
   const user = await getAuthUser()
   if (!user) return bad(401, 'Sign in to generate a deck.')
   const ownerId = user.id
+  const burst = await checkLimit('aiPerUser', ownerId)
+  if (!burst.ok) return tooMany(burst.retryAfterSec)
 
   let body: unknown
   try {
@@ -75,8 +83,14 @@ export async function POST(req: Request) {
   }
   const b = (body ?? {}) as Record<string, unknown>
 
-  const documentId = typeof b.documentId === 'string' ? b.documentId : ''
-  if (!documentId) return bad(400, 'documentId is required.')
+  // Up to MAX_FILES source files per deck (2026-10-05). `documentId` (one file) is still
+  // accepted, for the evals and any caller built before multi-file decks.
+  const rawIds = Array.isArray(b.documentIds) ? b.documentIds : typeof b.documentId === 'string' ? [b.documentId] : []
+  const documentIds = [...new Set(rawIds.filter((v): v is string => typeof v === 'string'))]
+  if (documentIds.length === 0 || documentIds.length !== rawIds.length)
+    return bad(400, 'Choose at least one file.')
+  if (documentIds.length > MAX_FILES) return bad(400, `A deck can be built from at most ${MAX_FILES} files.`)
+  const documentId = documentIds[0] // the log key, and the deck's sourceRef
 
   const rawSlideCount = b.slideCount === undefined ? 8 : b.slideCount
   if (!isSlideCount(rawSlideCount))
@@ -84,33 +98,25 @@ export async function POST(req: Request) {
   const slideCount: number = rawSlideCount
   const rawDifficulty = b.difficulty === undefined ? 'medium' : b.difficulty
   if (!isDifficulty(rawDifficulty)) return bad(400, 'Difficulty must be easy, medium or hard.')
-  const includePolls = b.includePolls === undefined ? true : b.includePolls === true
 
-  const [document] = await db
-    .select()
-    .from(documents)
-    .where(and(eq(documents.id, documentId), eq(documents.ownerId, ownerId)))
-    .limit(1)
-  // Same 404 for "no such document" and "not yours" — never confirm another owner's id exists.
-  if (!document) return bad(404, 'Document not found.')
-  if (document.status !== 'ready')
-    return bad(409, `Document is still being processed (status: ${document.status}).`)
-
-  // Rate limit counts decks created in the last hour and the reservation row IS a deck, so
-  // in-flight runs are visible to the count. See app/api/decks/generate for the full note.
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(decks)
-    .where(and(eq(decks.ownerId, ownerId), eq(decks.sourceType, 'pdf'), gt(decks.createdAt, hourAgo)))
-  if (n >= GENERATIONS_PER_HOUR)
-    return bad(429, `Generation limit reached (${GENERATIONS_PER_HOUR}/hour). Try again later.`)
+  const files = await Promise.all(documentIds.map((id) => getDocument(id, ownerId)))
+  // Same 404 for "no such document" and "not yours": never confirm another owner's id exists.
+  if (files.some((d) => !d)) return bad(404, 'One of the files was not found. It may have been deleted.')
+  const notReady = files.find((d) => d!.status !== 'ready')
+  if (notReady) return bad(409, `"${notReady.filename}" is still being processed.`)
+  const document = files[0]!
 
   // Corpus loaded ONCE for the whole run: one BM25 build, reused by every slide's query.
   // Owner-scoped inside the retriever, so this is a second independent tenant check.
-  const retriever = await createRetriever(documentId, ownerId)
+  const retriever = await createRetriever(documentIds, ownerId)
   if (retriever.chunkCount() === 0)
     return bad(409, 'That document has no indexed text yet. Try re-processing it.')
+  const outline = retriever.outline()
+
+  // Budget, plan and quota, then the run is recorded — see app/api/decks/generate. Last of
+  // the checks, so a bad id or an unindexed document costs the teacher no quota.
+  const refusal = await startAiDeck(ownerId, 'pdf')
+  if (refusal) return refuse(refusal)
 
   const [reserved] = await db
     .insert(decks)
@@ -128,17 +134,24 @@ export async function POST(req: Request) {
   }
 
   const client = createGenerateClient()
-  const topic = document.filename
+  const multi = files.length > 1
+  const topic = multi ? files.map((d) => d!.filename).join(', ') : document.filename
+  // The outline carries spares past slideCount; generation reaches for one only when a slide
+  // fails, so a run that loses a slide to the answer check still returns the count asked for.
+  const spares = spareSlots(slideCount)
   const blueprintOpts = {
     topic,
-    slideCount,
+    slideCount: slideCount + spares,
     difficulty: rawDifficulty,
-    includePolls,
-    outline: retriever.outline().map((s) => s.heading),
+    outline: outline.map((s) => s.heading),
+    excerpts: retriever.sample().map((e) => ({ file: multi ? documentIds.indexOf(e.documentId) + 1 : undefined, text: e.text })),
+    files: multi
+      ? files.map((d) => ({ name: d!.filename, headings: outline.filter((s) => s.documentId === d!.id).map((s) => s.heading) }))
+      : undefined,
   }
   const floor = Math.max(GEN_LIMITS.minSlides, Math.ceil(slideCount / 2))
 
-  async function requestBlueprint(minEntries: number) {
+  async function requestBlueprint(minEntries: number, strictCoverage: boolean) {
     const res = await client({
       system: SYSTEM_PROMPT,
       messages: buildBlueprintMessages(blueprintOpts),
@@ -147,8 +160,15 @@ export async function POST(req: Request) {
       deadline,
     })
     if (!res.ok) return res
-    const parsed = parseBlueprint(res.input)
+    const parsed = parseBlueprint(res.input, files.length)
     if (!parsed.ok) return { ok: false as const, error: parsed.errors.join(' ') }
+    // Every file contributes (eng review 2026-10-05): a blueprint that leaves a file out is
+    // regenerated once. The retry accepts it, since a deck beats no deck, and the file that
+    // got no topic is the only cost.
+    const used = new Set(parsed.value.slides.slice(0, slideCount).map((e) => e.file))
+    const unused = multi ? files.findIndex((_, i) => !used.has(i + 1)) : -1
+    if (strictCoverage && unused >= 0 && slideCount >= files.length)
+      return { ok: false as const, error: `blueprint left out file ${unused + 1}` }
     if (parsed.value.slides.length < minEntries)
       return {
         ok: false as const,
@@ -157,8 +177,8 @@ export async function POST(req: Request) {
     return { ok: true as const, value: parsed.value }
   }
 
-  let blueprint = await requestBlueprint(slideCount)
-  if (!blueprint.ok) blueprint = await requestBlueprint(floor)
+  let blueprint = await requestBlueprint(slideCount, true)
+  if (!blueprint.ok) blueprint = await requestBlueprint(floor, false)
   if (!blueprint.ok) {
     await releaseReservation()
     logger.error('blueprint phase failed', { ownerId: user.id, documentId, reason: blueprint.error })
@@ -169,13 +189,25 @@ export async function POST(req: Request) {
   // missing value to 'medium', which would silently downgrade a "hard" deck.
   const ctx = { topic, difficulty: rawDifficulty }
 
-  type Produced = { slide: EditableSlide; evidence: RetrievalResult[] }
+  type Produced = ProducedSlide & { evidence?: RetrievalResult[] }
 
-  async function generateEntry(entry: BlueprintSlide): Promise<Produced | null> {
+  async function generateEntry(entry: BlueprintSlide): Promise<Produced> {
+    const drop = (reason: string): Produced => ({ subtopic: entry.subtopic, slide: null, reason })
     // Retrieval depends only on the subtopic, so it happens once and both attempts reuse
     // it. Re-retrieving per attempt spent an embedding call to get the same chunks back.
-    const evidence = await retriever.retrieve(entry.subtopic, EVIDENCE_TOP_K)
-    if (!hasRelevantContext(evidence).ok) return null
+    if (Date.now() >= deadline) return drop('ran out of time')
+    let evidence: RetrievalResult[]
+    try {
+      // A topic assigned to a file is grounded in THAT file only.
+      const scope = entry.file ? files[entry.file - 1]?.id : undefined
+      evidence = await retriever.retrieve(entry.subtopic, EVIDENCE_TOP_K, { deadline, documentId: scope })
+    } catch (error) {
+      logger.warn('slide retrieval failed', { documentId, reason: error instanceof Error ? error.message : String(error) })
+      return drop('could not search your material')
+    }
+    if (!hasRelevantContext(evidence).ok) return drop('your material says too little about this')
+
+    let reason = 'the AI wrote an invalid question'
 
     // The chunk text goes in verbatim — it is what grounds the question. The FENCE carries
     // a per-run random suffix instead, because `</source>` is a string a hostile PDF can
@@ -184,7 +216,7 @@ export async function POST(req: Request) {
     const context = evidence
       .map(
         (r, i) =>
-          `<${tag} id="${i + 1}" page="${r.source.page}" section=${JSON.stringify(r.source.section)}>\n` +
+          `<${tag} id="${i + 1}"${multi ? ` file=${JSON.stringify(r.source.filename)}` : ''} page="${r.source.page}" section=${JSON.stringify(r.source.section)}>\n` +
           `${r.text}\n</${tag}>`,
       )
       .join('\n')
@@ -207,25 +239,33 @@ export async function POST(req: Request) {
         maxOutputTokens: SLIDE_MAX_TOKENS,
         deadline,
       })
-      if (!res.ok) continue
-
-      const draft = generatedToEditable(res.input, entry)
-      if (!draft || validateSlide(draft).length > 0) continue
-
-      // Polls have no answer key, so there is nothing to verify — only quizzes go to the judge.
-      if (draft.type === 'quiz_mcq') {
-        const verdict = await verifySlide(client, {
-          question: draft.prompt,
-          options: draft.options,
-          evidence,
-          deadline,
-        })
-        if (!verdict.ok) continue
+      if (!res.ok) {
+        reason = res.budget ? 'the AI spending limit was reached' : 'the AI service failed or timed out'
+        continue
       }
 
-      return { slide: draft, evidence }
+      const draft = generatedToEditable(res.input)
+      if (!draft || validateSlide(draft).length > 0) continue
+
+      const verdict = await verifySlide(client, {
+        question: draft.prompt,
+        subtopic: entry.subtopic,
+        explanation: draft.explanation,
+        options: draft.options,
+        evidence,
+        deadline,
+      })
+      if (!verdict.ok) {
+        // The judge's own words in brackets are for logs, not the teacher.
+        reason = verdict.unavailable
+          ? 'the answer check could not run'
+          : `failed the answer check (${verdict.failures[0]?.replace(/ \([\s\S]*$/, '') ?? 'rejected'})`
+        continue
+      }
+
+      return { subtopic: entry.subtopic, slide: draft, evidence }
     }
-    return null
+    return drop(reason)
   }
 
   let finalized: ReturnType<typeof finalizeSlides>
@@ -235,12 +275,9 @@ export async function POST(req: Request) {
   // past the end. The identity map survives any amount of dropping.
   const evidenceBySlide = new Map<EditableSlide, RetrievalResult[]>()
   try {
-    const entries = blueprint.value.slides.slice(0, slideCount)
-    const produced = await mapPool(entries, SLIDE_CONCURRENCY, async (entry) => {
-      const result = await generateEntry(entry)
-      if (result) evidenceBySlide.set(result.slide, result.evidence)
-      return { subtopic: entry.subtopic, slide: result?.slide ?? null }
-    })
+    const entries = blueprint.value.slides.slice(0, slideCount + spares)
+    const produced = await fillPool(entries, slideCount, SLIDE_CONCURRENCY, generateEntry, (p) => p.slide !== null)
+    for (const p of produced) if (p.slide && p.evidence) evidenceBySlide.set(p.slide, p.evidence)
     finalized = finalizeSlides(produced, slideCount)
   } catch {
     await releaseReservation()
@@ -252,49 +289,70 @@ export async function POST(req: Request) {
   }
 
   const accepted = finalized.slides
-  await db.transaction(async (tx) => {
-    await tx
-      .update(decks)
-      .set({
-        title: blueprint.value.title,
-        description: blueprint.value.description ?? null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(decks.id, reserved.id), eq(decks.ownerId, ownerId)))
+  // The save is one transaction, so a failure writes nothing — but the reserved deck row was
+  // committed before generation started, and without this catch it outlived the failure as an
+  // empty untitled draft on the dashboard. The realistic trigger is the teacher deleting the
+  // source file mid-run (dashboard → Uploaded files): its chunks are gone, and the citation
+  // insert fails on the foreign key.
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(decks)
+        .set({
+          title: blueprint.value.title,
+          description: blueprint.value.description ?? null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(decks.id, reserved.id), eq(decks.ownerId, ownerId)))
 
-    const inserted = await tx
-      .insert(slidesTable)
-      .values(
-        accepted.map((draft, position) => {
-          const stored = toStoredSlide(draft)
-          return {
-            deckId: reserved.id,
-            position,
-            type: draft.type,
-            prompt: stored.prompt,
-            config: stored.config,
-          }
-        }),
+      const inserted = await tx
+        .insert(slidesTable)
+        .values(
+          accepted.map((draft, position) => {
+            const stored = toStoredSlide(draft)
+            return {
+              deckId: reserved.id,
+              position,
+              type: draft.type,
+              prompt: stored.prompt,
+              config: stored.config,
+            }
+          }),
+        )
+        .returning({ id: slidesTable.id })
+
+      // One insert for every citation rather than one per slide — same rows, one round trip.
+      const rows = accepted.flatMap((draft, i) =>
+        (evidenceBySlide.get(draft) ?? []).map((r) => ({
+          generatedSlideId: inserted[i].id,
+          chunkId: r.chunkId,
+          documentId: r.source.documentId,
+          page: r.source.page,
+          section: r.source.section,
+          charStart: r.source.charStart,
+          charEnd: r.source.charEnd,
+          supportScore: r.similarity,
+        })),
       )
-      .returning({ id: slidesTable.id })
+      if (rows.length > 0) await tx.insert(generationSources).values(rows)
 
-    // One insert for every citation rather than one per slide — same rows, one round trip.
-    const rows = accepted.flatMap((draft, i) =>
-      (evidenceBySlide.get(draft) ?? []).map((r) => ({
-        generatedSlideId: inserted[i].id,
-        chunkId: r.chunkId,
-        documentId,
-        page: r.source.page,
-        section: r.source.section,
-        charStart: r.source.charStart,
-        charEnd: r.source.charEnd,
-        supportScore: r.similarity,
-      })),
-    )
-    if (rows.length > 0) await tx.insert(generationSources).values(rows)
-
-    await tx.update(documents).set({ deckId: reserved.id, updatedAt: new Date() }).where(eq(documents.id, documentId))
-  })
+      await tx.update(documents).set({ deckId: reserved.id, updatedAt: new Date() }).where(inArray(documents.id, documentIds))
+    })
+  } catch (error) {
+    await releaseReservation()
+    const still = await db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(inArray(documents.id, documentIds), eq(documents.ownerId, ownerId), ne(documents.status, DELETED)))
+      .limit(MAX_FILES)
+    if (still.length < documentIds.length) return bad(409, 'A file was deleted while the deck was being generated.')
+    logger.error('deck save failed', {
+      ownerId,
+      documentId,
+      reason: error instanceof Error ? error.message : String(error),
+    })
+    return bad(500, 'Could not save the deck. Try again.')
+  }
 
   return NextResponse.json({
     deckId: reserved.id,
