@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { decks, slides as slidesTable } from '@/lib/db/schema'
 import { getAuthUser } from '@/lib/auth'
-import { validateSlide, toStoredSlide, type EditableSlide } from '@/lib/slides'
+import { validateSlide, toStoredSlide } from '@/lib/slides'
 import {
   GEN_LIMITS,
   BLUEPRINT_TOOL,
@@ -11,13 +11,17 @@ import {
   isDifficulty,
   isSlideCount,
   parseBlueprint,
+  spareSlots,
   type BlueprintSlide,
 } from '@/lib/ai/blueprint'
+import { fillPool } from '@/lib/ai/pool'
 import { SLIDE_TOOL, buildSlideMessages, generatedToEditable } from '@/lib/ai/slide'
-import { finalizeSlides, GEN_MAX_ATTEMPTS } from '@/lib/ai/validate'
+import { finalizeSlides, GEN_MAX_ATTEMPTS, type ProducedSlide } from '@/lib/ai/validate'
 import { createGenerateClient } from '@/lib/ai/generate'
 import { SYSTEM_PROMPT } from '@/lib/ai/prompt'
 import { logger } from '@/lib/logger'
+import { checkLimit, tooMany } from '@/lib/rate-limit'
+import { refuse, startAiDeck } from '@/lib/usage'
 
 // Topic → full draft deck (M6). The orchestrator for the two-phase generation described
 // in docs/architecture.md flow A: blueprint once, then every slide in parallel, validate,
@@ -36,7 +40,6 @@ import { logger } from '@/lib/logger'
 export const maxDuration = 60
 const TIME_BUDGET_MS = 52_000 // headroom under maxDuration for auth, DB and the response
 
-const GENERATIONS_PER_HOUR = 10 // per-creator guardrail; enforced against real shared state (the decks table)
 const BLUEPRINT_MAX_TOKENS = 1_500 // cost cap per call — an outline is short by construction
 const SLIDE_MAX_TOKENS = 1_000 // one question + options + explanation is ~300 tokens worst case
 // Free-tier RPM is the binding constraint on burst size: wider waves just collect 429s.
@@ -46,26 +49,15 @@ function bad(status: number, error: string) {
   return NextResponse.json({ error }, { status })
 }
 
-/** mapWithConcurrency: run `fn` over `items` at most `limit` at a time, preserving order. */
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let next = 0
-  async function worker() {
-    while (next < items.length) {
-      const i = next++
-      results[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
-
 export async function POST(req: Request) {
   const deadline = Date.now() + TIME_BUDGET_MS
   const user = await getAuthUser()
   if (!user) return bad(401, 'Sign in to generate a deck.')
   // Narrowed id for the closures below — TS won't carry the null-check into them.
   const ownerId = user.id
+  // Burst ceiling first: cheap, atomic, and counted even for a request that fails validation.
+  const burst = await checkLimit('aiPerUser', ownerId)
+  if (!burst.ok) return tooMany(burst.retryAfterSec)
 
   let body: unknown
   try {
@@ -87,29 +79,15 @@ export async function POST(req: Request) {
   const slideCount: number = rawSlideCount
   const rawDifficulty = b.difficulty === undefined ? 'medium' : b.difficulty
   if (!isDifficulty(rawDifficulty)) return bad(400, 'Difficulty must be easy, medium or hard.')
-  const includePolls = b.includePolls === undefined ? true : b.includePolls === true
 
-  // --- Reserve the rate-limit slot BEFORE any provider call -------------------
+  // --- Budget and quota BEFORE any provider call ------------------------------
   //
-  // The cap counts decks created in the last hour, and the reservation IS a deck row:
-  // inserting it first means the COUNT below sees in-flight runs, so overlapping
-  // requests each consume a slot. Counting only completions was the /cso finding
-  // (2026-08-22): every request passed while generation ran, because the row that
-  // backs the counter didn't exist yet.
-  // ponytail: two truly simultaneous requests can still both pass on the same count
-  // (single-INSERT race window, milliseconds). Ceiling: a burst overshoots the hourly
-  // cap by the burst size. Upgrade path when that matters: a per-(owner, window)
-  // counter row with a conditional increment, which is atomic without a lock.
-
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(decks)
-    .where(
-      and(eq(decks.ownerId, ownerId), eq(decks.sourceType, 'topic'), gt(decks.createdAt, hourAgo)),
-    )
-  if (n >= GENERATIONS_PER_HOUR)
-    return bad(429, `Generation limit reached (${GENERATIONS_PER_HOUR}/hour). Try again later.`)
+  // startAiDeck checks the global AI budget and this creator's daily/monthly quota, then
+  // records the run in `ai_usage` so overlapping requests each see it. It replaced an hourly
+  // count of `decks` rows — which deleting a deck reset, so generate, delete, repeat was
+  // unmetered. `ai_usage` rows outlive the deck.
+  const refusal = await startAiDeck(ownerId, 'topic')
+  if (refusal) return refuse(refusal)
 
   const [reserved] = await db
     .insert(decks)
@@ -131,7 +109,10 @@ export async function POST(req: Request) {
   // --- Phase 1: blueprint (one bounded retry) ---------------------------------
 
   const client = createGenerateClient()
-  const blueprintOpts = { topic, slideCount, difficulty: rawDifficulty, includePolls }
+  // The outline carries spares past slideCount; generation reaches for one only when a slide
+  // fails, so the teacher still gets the count they asked for.
+  const spares = spareSlots(slideCount)
+  const blueprintOpts = { topic, slideCount: slideCount + spares, difficulty: rawDifficulty }
 
   // The survival floor, shared by both phases: below this the deck isn't worth showing.
   // finalizeSlides derives the same number from slideCount — kept here to gate the outline.
@@ -175,7 +156,8 @@ export async function POST(req: Request) {
   // parseBlueprint — which would silently generate a "hard" deck at medium.
   const ctx = { topic, difficulty: rawDifficulty }
 
-  async function generateEntry(entry: BlueprintSlide): Promise<EditableSlide | null> {
+  async function generateEntry(entry: BlueprintSlide): Promise<ProducedSlide> {
+    let reason = 'the AI wrote an invalid question'
     for (let attempt = 0; attempt < GEN_MAX_ATTEMPTS; attempt++) {
       const res = await client({
         system: SYSTEM_PROMPT,
@@ -184,25 +166,26 @@ export async function POST(req: Request) {
         maxOutputTokens: SLIDE_MAX_TOKENS,
         deadline,
       })
-      if (!res.ok) continue
-      const draft = generatedToEditable(res.input, entry)
+      if (!res.ok) {
+        reason = res.budget ? 'the AI spending limit was reached' : 'the AI service failed or timed out'
+        continue
+      }
+      const draft = generatedToEditable(res.input)
       if (!draft || validateSlide(draft).length > 0) continue // regenerate invalid output
-      return draft
+      return { subtopic: entry.subtopic, slide: draft }
     }
-    return null // dropped — finalizeSlides decides whether enough survived
+    // Dropped — a spare takes its place if there is one; finalizeSlides decides whether
+    // enough survived.
+    return { subtopic: entry.subtopic, slide: null, reason }
   }
 
   let finalized: Awaited<ReturnType<typeof finalizeSlides>>
   try {
     // Trust the request over the model on count. parseBlueprint only bounds the array
-    // globally (3–20), so "give me 3 slides" answered with 20 entries would otherwise mean
-    // 20 provider calls and a 20-slide deck nobody asked for.
-    const entries = blueprint.value.slides.slice(0, slideCount)
-    const produced = await mapPool(
-      entries.map((entry) => ({ entry, subtopic: entry.subtopic })),
-      SLIDE_CONCURRENCY,
-      async ({ entry, subtopic }) => ({ subtopic, slide: await generateEntry(entry) }),
-    )
+    // globally, so "give me 3 slides" answered with 20 entries would otherwise mean 20
+    // provider calls; fillPool stops starting entries once slideCount have succeeded.
+    const entries = blueprint.value.slides.slice(0, slideCount + spares)
+    const produced = await fillPool(entries, slideCount, SLIDE_CONCURRENCY, generateEntry, (p) => p.slide !== null)
     // slideCount, NOT produced.length: the floor is a fraction of what the CREATOR asked
     // for. Measuring it against the outline's own length halves it twice — a 20-slide
     // request could ship 5 slides and still report success.
@@ -218,29 +201,40 @@ export async function POST(req: Request) {
 
   // --- Persist: fill the reserved draft deck, then straight into the editor ----
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(decks)
-      .set({
-        title: blueprint.value.title,
-        description: blueprint.value.description ?? null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(decks.id, reserved.id), eq(decks.ownerId, ownerId)))
+  // One transaction, so a failure writes nothing — but the reserved row was committed before
+  // generation started and must go too, or it stays as an empty untitled draft.
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(decks)
+        .set({
+          title: blueprint.value.title,
+          description: blueprint.value.description ?? null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(decks.id, reserved.id), eq(decks.ownerId, ownerId)))
 
-    await tx.insert(slidesTable).values(
-      finalized.slides.map((draft, position) => {
-        const stored = toStoredSlide(draft)
-        return {
-          deckId: reserved.id,
-          position,
-          type: draft.type,
-          prompt: stored.prompt,
-          config: stored.config,
-        }
-      }),
-    )
-  })
+      await tx.insert(slidesTable).values(
+        finalized.slides.map((draft, position) => {
+          const stored = toStoredSlide(draft)
+          return {
+            deckId: reserved.id,
+            position,
+            type: draft.type,
+            prompt: stored.prompt,
+            config: stored.config,
+          }
+        }),
+      )
+    })
+  } catch (error) {
+    await releaseReservation()
+    logger.error('deck save failed', {
+      ownerId,
+      reason: error instanceof Error ? error.message : String(error),
+    })
+    return bad(500, 'Could not save the deck. Try again.')
+  }
 
   return NextResponse.json({
     deckId: reserved.id,
