@@ -5,6 +5,7 @@ import { sanitizeNickname } from '@/lib/nickname'
 import { currentSlide, sanitizeSlide } from '@/lib/realtime/live-slide'
 import { bad, findLiveSession, newToken } from '@/lib/realtime/session-util'
 import { answersOpen } from '@/lib/realtime/session-state'
+import { checkLimit, clientIp, peekLimit, tooMany } from '@/lib/rate-limit'
 
 // Abuse guard on joins: a ceiling on how many participants ONE room may hold.
 //
@@ -38,8 +39,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   if (!checked.ok) return bad(400, checked.error)
   const { nickname } = checked
 
+  // Room-code scanning guard — see LIMITS.joinMissPerIp. Checked before the lookup so a
+  // network that has spent its misses is refused even on a code that happens to be right;
+  // counted only on a miss, so a class joining with the right code never pays for it.
+  const ip = clientIp(req.headers)
+  const misses = await peekLimit('joinMissPerIp', ip)
+  if (!misses.ok)
+    return tooMany(misses.retryAfterSec, 'Too many wrong room codes from this network. Wait a few minutes.')
+
   const session = await findLiveSession(code)
-  if (!session) return bad(404, 'session not found')
+  if (!session) {
+    await checkLimit('joinMissPerIp', ip)
+    return bad(404, 'session not found')
+  }
 
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
@@ -67,6 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     avatarSeed,
     status: session.status,
     index: session.currentSlideIndex,
+    total: session.slideSnapshot?.length ?? null,
     slide: slide && sanitizeSlide(slide),
     serverStartedAt: session.currentSlideStartedAt?.toISOString() ?? null,
     timeLimitMs: slide?.config.timeLimitMs ?? null,
