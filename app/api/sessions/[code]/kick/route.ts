@@ -5,6 +5,7 @@ import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
 import { getHostedSession } from '@/lib/sessions'
+import { checkLimit, tooMany } from '@/lib/rate-limit'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -27,6 +28,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   // never confirm a session exists to someone who can't host it.
   const session = await getHostedSession(code, await hostTokenFrom(req, code))
   if (!session) return bad(404, 'session not found')
+  // Every host action fans out to every phone in the room — see LIMITS.hostActionPerSession.
+  const paced = await checkLimit('hostActionPerSession', session.id)
+  if (!paced.ok) return tooMany(paced.retryAfterSec)
 
   const body = await req.json().catch(() => null)
   // Shape-checked, not just non-empty: `participants.id` is a uuid column, so a malformed
