@@ -1,17 +1,16 @@
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sessions } from '@/lib/db/schema'
-import { correctOptionId } from '@/lib/mcq'
-import { explanationOf, isScored } from '@/lib/slides'
-import { broadcast, broadcastToHost } from '@/lib/realtime/broadcast'
+import { broadcast } from '@/lib/realtime/broadcast'
 import { EVENTS } from '@/lib/realtime/events'
-import { sanitizeSlide, slideAt, slideCount, tallySlideAnswers } from '@/lib/realtime/live-slide'
+import { sanitizeSlide } from '@/lib/realtime/live-slide'
+import { sessionSlides } from '@/lib/realtime/session-progress'
 import { bad, hostTokenFrom } from '@/lib/realtime/session-util'
 import { getHostedSession } from '@/lib/sessions'
+import { checkLimit, tooMany } from '@/lib/rate-limit'
 
-// Host-only: move the room to a slide and start its clock. One endpoint covers start
-// (index 0), next, back and skip — the caller names the TARGET index, so a double-click
-// or a retried request lands on the same slide instead of skipping one.
+// Host-only: start the quiz. It runs once, from the lobby onto the first question; after
+// that the room moves itself, each deadline handled by /progress.
 //
 // CSRF: the credential here is the `htk_<code>` cookie, set SameSite=Lax in
 // lib/actions.ts. Browsers do not attach a Lax cookie to a cross-site POST, and this
@@ -23,78 +22,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   // to someone who can't host it.
   const session = await getHostedSession(code, await hostTokenFrom(req, code))
   if (!session) return bad(404, 'session not found')
-  if (!session.deckId) return bad(409, 'session has no deck')
+  // Every host action fans out to every phone in the room — see LIMITS.hostActionPerSession.
+  const paced = await checkLimit('hostActionPerSession', session.id)
+  if (!paced.ok) return tooMany(paced.retryAfterSec)
 
-  const body = await req.json().catch(() => null)
-  const index = body?.index
-  const slide = Number.isInteger(index) ? await slideAt(session.deckId, index) : null
-  if (!slide) return bad(400, 'index must be a valid slide index')
-
-  // Going BACK to a slide whose answer was already disclosed must not reopen scoring: the
-  // correct option is public by then, so anyone who sat that question out could submit it
-  // for full points. Re-show it in its revealed state instead — which is what a host going
-  // back to discuss a question actually wants — and answersOpen() keeps the window shut.
-  const alreadyRevealed = session.revealedSlideIds.includes(slide.id)
-  const status = alreadyRevealed ? 'revealed' : 'active'
+  // The launch snapshot, the same list /progress walks, so question 1 is the one the review
+  // and the results will show even if the deck was edited after launch.
+  const slides = await sessionSlides(session)
+  const slide = slides[0]
+  if (!slide) return bad(409, 'session has no questions')
   const startedAt = new Date()
 
-  // Compare-and-set on status, not a bare update by id: `end` can commit between the read
-  // above and this write, and an unconditional update would resurrect the closed room —
-  // status back to active with ended_at set, still taking answers. No lock needed; losing
-  // the race just means the session ended underneath us.
+  // Compare-and-set on 'lobby': a double click, a retry, or `end` committing between the
+  // read above and this write must not restart a running room or resurrect a closed one.
   const applied = await db
     .update(sessions)
-    .set({
-      currentSlideIndex: index,
-      currentSlideStartedAt: startedAt,
-      status,
-      lastBcast: null, // fresh leaky-bucket window, so the new slide's first answer broadcasts
-    })
-    .where(and(eq(sessions.id, session.id), ne(sessions.status, 'ended')))
+    .set({ currentSlideIndex: 0, currentSlideStartedAt: startedAt, status: 'active' })
+    .where(and(eq(sessions.id, session.id), eq(sessions.status, 'lobby')))
     .returning({ id: sessions.id })
-  if (applied.length === 0) return bad(409, 'session has ended')
+  if (applied.length === 0) return bad(409, 'session already started')
+
   const payload = {
-    index,
+    index: 0,
     slide: sanitizeSlide(slide),
     serverStartedAt: startedAt.toISOString(),
     timeLimitMs: slide.config.timeLimitMs,
-    // Carried so a client can't briefly render a revealed slide as answerable while it
-    // waits for the slide:reveal that follows.
-    status,
+    status: 'active' as const,
+    total: slides.length,
   }
   await broadcast(code, EVENTS.SLIDE_SHOW, payload)
-
-  // Unscored slides show their distribution while the window is still open, so re-showing a
-  // poll has to hand back the votes already in rather than an empty chart that only refills
-  // on the next answer. A live quiz still gets null — its counts wait for the reveal.
-  const aggregate =
-    alreadyRevealed || !isScored(slide.type) ? await tallySlideAnswers(session.id, slide.id) : null
-  const correct = alreadyRevealed ? correctOptionId(slide.config) : null
-  const explanation = alreadyRevealed ? explanationOf(slide.config) : undefined
-  if (alreadyRevealed) {
-    // Re-disclose so the room sees the results it was already shown, not a blank slide.
-    await broadcast(code, EVENTS.SLIDE_REVEAL, {
-      slideId: slide.id,
-      correctOptionId: correct ?? undefined,
-      aggregate,
-      explanation,
-    })
-  } else if (aggregate && aggregate.total > 0) {
-    // An open poll with votes already in: slide:show carries no aggregate and the projector
-    // clears its chart on it, so without this the host sits on an empty chart until the next
-    // vote happens to arrive. Only reachable on an unscored slide — a live quiz's aggregate is
-    // null above, which is what keeps its tally off the wire. Host channel, same as the live
-    // feed it is replacing: this is the chart the projector draws, not something phones read.
-    await broadcastToHost(code, EVENTS.RESULTS_UPDATE, { slideId: slide.id, aggregate })
-  }
-
   // The host gets the slide back rather than waiting on its own broadcast — the console
   // renders even if Realtime is slow or dropped it (broadcast is best-effort).
-  return Response.json({
-    ...payload,
-    total: await slideCount(session.deckId),
-    correctOptionId: correct,
-    aggregate,
-    explanation,
-  })
+  return Response.json(payload)
 }
