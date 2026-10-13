@@ -4,693 +4,205 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { X } from '@phosphor-icons/react/ssr'
 import { createClient } from '@/lib/supabase/client'
-import { avatarUrl } from '@/lib/avatars'
-import { resolveRoster } from '@/lib/realtime/aggregate'
 import { openHostChannel, openSessionChannel } from '@/lib/realtime/channels'
 import { EVENTS } from '@/lib/realtime/events'
-import type {
-  AggregateMcq,
-  LeaderboardEntry,
-  PresenceState,
-  ResultsUpdatePayload,
-  SanitizedSlide,
-  SlideRevealPayload,
-} from '@/lib/realtime/events'
-import { isScored } from '@/lib/slides'
+import type { ProgressState } from '@/lib/realtime/session-progress'
+import { useSessionProgress } from '@/lib/realtime/use-session-progress'
 import { DeleteButton } from '@/components/DeleteButton'
 import { Leaderboard } from '@/components/Leaderboard'
-import { Podium } from '@/components/Podium'
-import { ProjectorSlide } from '@/components/ProjectorSlide'
-import { ResultsChart } from '@/components/ResultsChart'
 import { btn, capCls } from '@/components/ui'
 
-type Status = 'lobby' | 'active' | 'revealed' | 'ended'
-
-// The presenter view — this is the screen that goes on the projector, so everything is
-// sized to be read from the back of a room. The host's controls live on the same page in a
-// compact bar rather than a second route: a teacher's laptop is usually mirrored to the
-// projector, and two windows would need cross-window sync for no gain. The participant's
-// phone view is app/play.
-//
-// Every control is a POST to a host-only route; the httpOnly host-token cookie authorizes
-// it, so this component never holds the token. Server responses drive state directly rather
-// than waiting on the session's own broadcast — best-effort Realtime shouldn't strand the host.
-export function HostConsole({
-  code,
-  sessionId,
-  joinHost,
-  total,
-  initialIndex,
-  initialStatus,
-  initialSlide,
-  initialAnswered,
-  initialAggregate,
-  initialCorrectId,
-  initialExplanation,
-  initialServerStartedAt,
-  initialTimeLimitMs,
-}: {
+export function HostConsole({ code, sessionId, joinHost, initialState }: {
   code: string
-  /** The session's own id, for the results link on the ended screen. Not the code: a code is
-   *  freed for reuse the moment a session ends, so it cannot name this game afterwards. */
   sessionId: string
-  /** The domain the room joins on, resolved server-side so the projector never paints a
-   *  half-written URL. See app/host/[code]/page.tsx. */
   joinHost: string
-  total: number
-  initialIndex: number
-  initialStatus: string
-  initialSlide: SanitizedSlide | null
-  initialAnswered: number
-  initialAggregate: AggregateMcq | null
-  initialCorrectId: string | null
-  initialExplanation: string | null
-  initialServerStartedAt: string | null
-  initialTimeLimitMs: number | null
+  initialState: ProgressState
 }) {
-  const [status, setStatus] = useState<Status>(initialStatus as Status)
-  const [index, setIndex] = useState(initialIndex)
-  const [slide, setSlide] = useState<SanitizedSlide | null>(initialSlide)
-  // Which slide the live counters below are allowed to be about. Kept as a ref, and written
-  // in the same tick as setSlide rather than from an effect, so there is no frame in which a
-  // broadcast for the incoming slide is judged against the outgoing one and dropped.
-  const slideIdRef = useRef<string | null>(initialSlide?.id ?? null)
-  // The server's start stamp for what's on screen, used to drop an out-of-order slide:show
-  // (see the handler below). Same reasoning as the phone's copy in app/play/page.tsx: two
-  // rapid advances publish independently and can arrive reversed, and this console follows
-  // the room, not just its own clicks — a second host tab or the load harness moves it too.
-  const startedAtRef = useRef<number>(
-    initialServerStartedAt ? Date.parse(initialServerStartedAt) : 0,
-  )
-  const showSlide = useCallback((s: SanitizedSlide | null, serverStartedAt?: string | null) => {
-    slideIdRef.current = s?.id ?? null
-    if (serverStartedAt !== undefined) {
-      startedAtRef.current = serverStartedAt ? Date.parse(serverStartedAt) : 0
-    }
-    setSlide(s)
-  }, [])
-  // The roster is TWO sources, deliberately. Presence says which participant ids are
-  // currently connected; it is client-written, so nothing rendered comes out of it. The
-  // names and avatars come from GET /roster, which reads the participants table the join
-  // endpoint wrote after sanitizeNickname. Rendering the intersection means an id nobody
-  // was issued resolves to no row and never reaches the projector — which is what stops
-  // anyone in the room from tracking presence under an arbitrary nickname and putting it
-  // on the wall past the filter. See app/api/sessions/[code]/roster/route.ts.
-  const [liveIds, setLiveIds] = useState<string[]>([])
-  const [named, setNamed] = useState<Map<string, PresenceState>>(() => new Map())
-  const roster = resolveRoster(liveIds, named)
-  const [answered, setAnswered] = useState(initialAnswered)
-  const [correctId, setCorrectId] = useState<string | null>(initialCorrectId)
-  const [aggregate, setAggregate] = useState<AggregateMcq | null>(initialAggregate)
-  const [explanation, setExplanation] = useState<string | null>(initialExplanation)
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  // Restored on reload so a mid-question refresh keeps counting down instead of showing
-  // nothing. Only meaningful while the question is open — reveal and lobby clear it.
-  const [deadline, setDeadline] = useState<number | null>(() =>
-    initialStatus === 'active' && initialServerStartedAt && initialTimeLimitMs
-      ? Date.parse(initialServerStartedAt) + initialTimeLimitMs
-      : null,
-  )
-  // The full window, kept so the drain bar knows what fraction is left. Without it the bar
-  // would only know the remaining milliseconds, not the share.
-  const [windowMs, setWindowMs] = useState<number | null>(initialTimeLimitMs)
+  const [state, setState] = useState(initialState)
+  const stateRef = useRef(initialState)
+  const rankingVersion = useRef(-1)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const copyCode = useCallback(() => {
-    // ponytail: `navigator.clipboard` is undefined on an insecure origin, so on plain http
-    // over a LAN IP this no-ops instead of throwing. Upgrade path if a host ever presents
-    // off a non-HTTPS box: a hidden input + document.execCommand('copy') fallback.
-    navigator.clipboard?.writeText(code).then(() => setCopied(true), () => {})
-  }, [code])
+  const applyState = useCallback((next: ProgressState) => {
+    const current = stateRef.current
+    if (current.status === 'ended' && next.status !== 'ended') return
+    if (next.serverStartedAt && current.serverStartedAt && Date.parse(next.serverStartedAt) < Date.parse(current.serverStartedAt)) return
+    stateRef.current = next
+    setState(next)
+    setError('')
+  }, [])
+
+  const sync = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/sessions/${code}/progress`, { cache: 'no-store' })
+      if (!res.ok) return
+      applyState(await res.json())
+    } catch { /* The deadline wake-up retries a lost connection. */ }
+  }, [code, applyState])
+
+  useSessionProgress({ code, status: state.status, index: state.index,
+    serverStartedAt: state.serverStartedAt, timeLimitMs: state.timeLimitMs,
+    onProgress: applyState, onError: setError })
+
+  useEffect(() => {
+    const supabase = createClient()
+    let syncTimer: ReturnType<typeof setTimeout> | undefined
+    const room = openSessionChannel(supabase, code)
+    const host = openHostChannel(supabase, code)
+    const updateRanking = (payload: { top: ProgressState['leaderboard']; completedIndex?: number }) => {
+      const version = payload.completedIndex ?? stateRef.current.index
+      if (version < rankingVersion.current) return
+      rankingVersion.current = version
+      applyState({ ...stateRef.current, leaderboard: payload.top })
+    }
+    host.on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, ({ payload }) => updateRanking(payload)).subscribe()
+    room
+      .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
+        applyState({ ...stateRef.current, status: payload.status, index: payload.index,
+          slide: payload.slide, serverStartedAt: payload.serverStartedAt, timeLimitMs: payload.timeLimitMs })
+      })
+      .on('broadcast', { event: EVENTS.SESSION_ENDED }, ({ payload }) => {
+        applyState({ ...stateRef.current, status: 'ended', slide: null, leaderboard: payload.fullRanking })
+      })
+      // A class arriving fires one sync per join; refetch once it settles, not 100 times.
+      .on('presence', { event: 'sync' }, () => {
+        clearTimeout(syncTimer)
+        syncTimer = setTimeout(() => void sync(), 750)
+      })
+      .subscribe()
+    const resume = () => { if (document.visibilityState === 'visible') void sync() }
+    window.addEventListener('focus', resume)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      clearTimeout(syncTimer)
+      void supabase.removeChannel(room)
+      void supabase.removeChannel(host)
+      window.removeEventListener('focus', resume)
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [code, applyState, sync])
 
   useEffect(() => {
     if (!copied) return
-    const t = setTimeout(() => setCopied(false), 2000)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
   }, [copied])
-  const [error, setError] = useState('')
 
-  const call = useCallback(
-    async (path: string, body?: unknown) => {
-      setBusy(true)
-      setError('')
-      try {
-        const res = await fetch(`/api/sessions/${code}/${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body),
-        })
-        const data = await res.json().catch(() => null)
-        if (!res.ok) {
-          setError(data?.error ?? 'That did not go through. Try again.')
-          return null
-        }
-        return data
-      } catch {
-        setError('Network error. Try again.')
-        return null
-      } finally {
-        setBusy(false)
-      }
-    },
-    [code],
-  )
-
-  async function goTo(target: number) {
-    const data = await call('advance', { index: target })
-    if (!data) return
-    setIndex(data.index)
-    showSlide(data.slide, data.serverStartedAt)
-    // Re-showing an already-revealed slide comes back 'revealed' with its tally, so going
-    // back to discuss a question shows the results again instead of a blank re-run.
-    setStatus(data.status)
-    setAggregate(data.aggregate ?? null)
-    setCorrectId(data.correctOptionId ?? null)
-    setExplanation(data.explanation ?? null)
-    setAnswered(0) // live counter for a fresh question; a revealed slide reads its tally instead
-    setWindowMs(data.timeLimitMs ?? null)
-    setDeadline(
-      data.status === 'active' ? Date.parse(data.serverStartedAt) + data.timeLimitMs : null,
-    )
+  async function call(path: string, body?: unknown) {
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/sessions/${code}/${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? 'That did not go through. Try again.')
+      return data
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error. Try again.')
+      return null
+    } finally { setBusy(false) }
   }
 
-  async function reveal() {
-    const data = await call('reveal')
-    if (!data) return
-    setStatus('revealed')
-    setCorrectId(data.correctOptionId ?? null)
-    setAggregate(data.aggregate)
-    setExplanation(data.explanation ?? null)
-    setLeaderboard(data.top)
-    setDeadline(null)
-  }
-
-  async function kick(participantId: string) {
-    await call('kick', { participantId })
-    // Take the name off the projector on the click. Presence still lists them until their
-    // phone leaves the channel, and the roster refetch only fires when the id set changes,
-    // so without this the name a host just removed stays on the wall for another round
-    // trip — which is the one moment this control exists for.
-    setNamed((prev) => {
-      const next = new Map(prev)
-      next.delete(participantId)
-      return next
-    })
+  async function start() {
+    const data = await call('advance', { index: 0 })
+    if (data) applyState({ ...stateRef.current, ...data })
   }
 
   async function end() {
     const data = await call('end')
-    if (!data) throw new Error('end failed') // DeleteButton surfaces the retry hint
-    setStatus('ended')
-    setLeaderboard(data.fullRanking)
+    if (!data) throw new Error('Could not end the session. Try again.')
+    applyState({ ...stateRef.current, status: 'ended', slide: null, leaderboard: data.fullRanking })
   }
 
-  // TWO subscriptions, split by audience, not by importance:
-  //
-  //   session:{code}        the room. Slide changes, reveals, leaderboard, end. Every phone
-  //                         is on this one, so each event here costs ~1 message per phone.
-  //   session:{code}:host   this screen only. The answered counter and the live poll chart,
-  //                         which fire every second and which no participant renders. On the
-  //                         room channel they were 100 phones decoding data they discard.
-  //
-  // Presence stays on the room channel: it's the participants' own writes that populate the
-  // roster, so it has to live where the participants are.
-  //
-  // Every slide-addressed event checks `payload.slideId` against the slide actually on
-  // screen — both live counters AND the reveal. Answers land continuously while the host is
-  // clicking Next, so a broadcast for the outgoing slide routinely arrives after the incoming
-  // slide:show has already reset the counter to 0; without the check it overwrites the new
-  // slide's readout with the previous slide's number, or (on a reveal) closes a question the
-  // room is still answering. Read through a ref because this effect subscribes once (deps are
-  // [code]) and a handler closing over `slide` would see it frozen at mount.
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = openSessionChannel(supabase, code)
-    const host = openHostChannel(supabase, code)
-    const isCurrent = (payload: { slideId?: string }) =>
-      !slideIdRef.current || payload.slideId === slideIdRef.current
-    host
-      .on('broadcast', { event: EVENTS.ANSWERED_COUNT }, ({ payload }) => {
-        if (isCurrent(payload)) setAnswered(payload.answered)
-      })
-      // Unscored slides send the distribution itself while voting is open — this is the poll
-      // filling in live. A scored question never sends it (see isScored), so an open quiz
-      // can't reach here and leak its tally.
-      .on('broadcast', { event: EVENTS.RESULTS_UPDATE }, ({ payload }) => {
-        const p = payload as ResultsUpdatePayload
-        if (isCurrent(p)) setAggregate(p.aggregate)
-      })
-      .subscribe()
-    channel
-      // The console also follows the room, not just its own button clicks. Without these it
-      // goes stale whenever the session moves by any other route — a second host tab, or
-      // the load-test harness driving over HTTP — and would then render one slide while the
-      // server is on another.
-      .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
-        // Older than what's on screen → a reordered publish for a slide the room already
-        // left. Applying it would put the console on one slide while the server is on
-        // another, which is precisely what this handler exists to prevent.
-        if (Date.parse(payload.serverStartedAt) < startedAtRef.current) return
-        setIndex(payload.index)
-        showSlide(payload.slide as SanitizedSlide, payload.serverStartedAt)
-        setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
-        setAnswered(0)
-        setCorrectId(null)
-        setAggregate(null)
-        setExplanation(null)
-        setWindowMs(payload.timeLimitMs ?? null)
-        setDeadline(
-          payload.status === 'revealed'
-            ? null
-            : Date.parse(payload.serverStartedAt) + payload.timeLimitMs,
-        )
-      })
-      .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
-        const p = payload as SlideRevealPayload
-        // Addressed to a slide like the two counters above, so it gets the same check. A
-        // reveal for the OUTGOING slide arriving after the incoming slide:show would
-        // otherwise mark a live question revealed and paint it with the previous slide's
-        // tally and explanation — worse than a stale counter, because it closes the UI on a
-        // question the room is still answering.
-        if (!isCurrent(p)) return
-        setStatus('revealed')
-        setCorrectId(p.correctOptionId ?? null)
-        setAggregate(p.aggregate)
-        setExplanation(p.explanation ?? null)
-        setDeadline(null)
-      })
-      .on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, ({ payload }) => {
-        setLeaderboard(payload.top as LeaderboardEntry[])
-      })
-      .on('broadcast', { event: EVENTS.SESSION_ENDED }, ({ payload }) => {
-        setLeaderboard(payload.fullRanking as LeaderboardEntry[])
-        setStatus('ended')
-      })
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState<PresenceState>()
-        // Ids only. Whatever else the payload carries is a string the client chose.
-        setLiveIds(
-          Object.values(state).flatMap((entries) =>
-            typeof entries[0]?.participantId === 'string' ? [entries[0].participantId] : [],
-          ),
-        )
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-      supabase.removeChannel(host)
+  async function kick(participantId: string) {
+    if (await call('kick', { participantId })) {
+      applyState({ ...stateRef.current, leaderboard: stateRef.current.leaderboard.filter((p) => p.participantId !== participantId) })
     }
-  }, [code, showSlide])
+  }
 
-  // Resolve connected ids to server-issued names. Keyed on the id set rather than on "is
-  // there an id I don't know", because an id the server will never return — the forged case
-  // — would make that condition permanently true and refetch forever.
-  // ponytail: one query per change to the set of connected ids, which is one per join or
-  // leave. Fine at 300 (the join route's room cap) with an index on session_id. If a room
-  // ever churns hard enough for that to show, debounce the effect rather than trusting the
-  // presence payload again.
-  const namedFor = useRef('')
-  useEffect(() => {
-    const key = [...liveIds].sort().join(',')
-    if (key === namedFor.current) return
-    namedFor.current = key
-    // Nobody connected: nothing to resolve. The stale map is not cleared because `roster`
-    // is derived from liveIds, so an empty set already renders an empty lobby.
-    if (liveIds.length === 0) return
-    let cancelled = false
-    fetch(`/api/sessions/${code}/roster`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        setNamed(new Map((data.roster as PresenceState[]).map((p) => [p.participantId, p])))
-      })
-      .catch(() => {
-        // Best-effort, like every other read here: a failed fetch leaves the last known
-        // roster on screen rather than blanking the lobby mid-class.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [code, liveIds])
-
-  // The clock no longer lives here. It used to be a 250ms setInterval writing `now` into
-  // this component's state, which re-rendered the WHOLE console four times a second for the
-  // length of every question: the roster (up to 300 rows, each with an <img>), the projector
-  // slide, and during a live poll the pie chart mid-transition. Nothing in that tree reads
-  // the clock. Only two leaves do, and they own their own tick now (see useCountdown).
-  const running = status === 'active' ? deadline : null
-  const atLast = index >= total - 1
-  // While a question is open the count comes from the leaky-bucket broadcast, which is a
-  // throttled estimate — answers landing inside the same 1s window as the last one never
-  // get their own message, so it can sit low. Once an aggregate exists (reveal, or a re-shown
-  // revealed slide) it is the DB-authoritative count, so read the total off it. Derived
-  // rather than assigned at each reveal path, so the readout can't disagree with the bars
-  // drawn from that same aggregate.
-  const answeredCount = aggregate?.total ?? answered
-  // Unscored slides draw their results while the room is still voting; a quiz waits for the
-  // reveal. Same predicate the server uses to decide what to broadcast, so the screen can't
-  // show a chart the server never filled — or withhold one it did.
-  const scored = slide ? isScored(slide.type) : true
-  const showResults = slide !== null && (status === 'revealed' || !scored)
-  // Standings ride beside the results rather than under them (see the grid below), so the
-  // whole reveal fits one projector viewport. Hoisted because both the grid's columns and
-  // the section itself key off it.
-  const showStandings = status === 'revealed' && scored && leaderboard.length > 0
+  const lobby = state.status === 'lobby'
+  const ended = state.status === 'ended'
+  const deadline = state.status === 'active' && state.serverStartedAt && state.timeLimitMs
+    ? Date.parse(state.serverStartedAt) + state.timeLimitMs : null
 
   return (
-    // `stage` flips every token to the dark surface. The host console IS the projector --
-    // it is the screen on the wall of a dimmed hall, and a full-cream wall behind a
-    // question is a flashbang. Nothing below needs to know: the same class strings render
-    // on either surface.
-    <main id="main" className="stage flex min-h-screen flex-col">
-      {/* The page's h1, and it is off-screen for the same reason the deck editor's is: the
-          projector has no room for a title, but the document outline started at h2 with
-          nothing above it. Matches the tab title, so a host with five tabs open hears the
-          same name they read. */}
-      <h1 className="sr-only">Room {code}</h1>
-      {/* The drain. A full-width line at the very top is the one countdown cue that reads
-          from the back of a hall without stealing space from the question. */}
-      <DrainBar key={running ?? "idle"} deadline={running} windowMs={windowMs} />
-
-      <header className="flex flex-wrap items-end justify-between gap-8 border-b border-rule px-6 py-6 sm:px-10">
+    <main id="main" className="stage flex min-h-svh flex-col">
+      <RoomTimer key={deadline ?? 'idle'} deadline={deadline} windowMs={state.timeLimitMs} />
+      <header className="flex flex-wrap items-end justify-between gap-5 border-b border-rule px-6 py-6 sm:px-10">
         <div>
-          <div className={capCls}>Join at {joinHost}/play</div>
-          <div className="mt-1 flex items-center gap-4">
-            <div className="tabular text-5xl leading-none tracking-[0.14em] text-pen sm:text-6xl">
-              {code}
-            </div>
-            <button type="button" onClick={copyCode} className={btn('secondary', 'sm')}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+          <p className={capCls}>Join at {joinHost}/play</p>
+          <div className="mt-2 flex items-center gap-4">
+            <h1 className="tabular text-4xl tracking-[0.12em] text-pen sm:text-5xl">{code}</h1>
+            <button type="button" className={btn('secondary', 'sm')} onClick={() => {
+              navigator.clipboard?.writeText(code).then(() => setCopied(true), () => setError('Could not copy the code.'))
+            }}>{copied ? 'Copied' : 'Copy'}</button>
+            <span className="sr-only" aria-live="polite">{copied ? 'Room code copied' : ''}</span>
           </div>
-          {/* The button's own label changes, which a screen reader only reads if focus
-              happens to be on it. This is the confirmation for everyone else. */}
-          <span aria-live="polite" className="sr-only">
-            {copied ? 'Room code copied' : ''}
-          </span>
         </div>
-        <div className="flex items-end gap-8 sm:gap-10">
-          <Stat value={roster.length} label={roster.length === 1 ? 'player' : 'players'} />
-          {status !== 'lobby' && status !== 'ended' && (
-            <>
-              <Stat value={answeredCount} label="answered" />
-              <SecondsStat key={running ?? "idle"} deadline={running} />
-            </>
-          )}
+        <div className="text-right">
+          <p className="text-lg font-semibold">{state.leaderboard.length} participants</p>
+          <p className="mt-1 text-sm text-dim">{lobby ? 'Waiting to start' : ended ? 'Quiz complete' : `Question ${state.index + 1} of ${state.total} · advances automatically`}</p>
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col gap-10 px-6 py-10 sm:px-10">
-        {status === 'lobby' && (
-          <section className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
-            <div>
-              <h2 className="font-display text-4xl sm:text-5xl">
-                {roster.length === 0 ? 'Waiting for the room' : 'Ready when you are'}
-              </h2>
-              <p className="mt-3 text-lg text-dim">
-                {roster.length === 0
-                  ? 'Students join by entering the code above on their phones.'
-                  : `${roster.length} ${roster.length === 1 ? 'person is' : 'people are'} in.`}
-              </p>
-            </div>
-            {roster.length > 0 && <Roster roster={roster} onKick={kick} busy={busy} />}
-          </section>
-        )}
-
-        {status === 'ended' ? (
-          <section className="flex flex-col gap-10">
-            <h2 className="font-display text-center text-4xl sm:text-5xl">
-              Final standings
-            </h2>
-            {leaderboard.length > 0 ? (
-              <Podium ranking={leaderboard} />
-            ) : (
-              <p className="text-center text-dim">Nobody scored. No players joined.</p>
-            )}
-            <p className="text-center text-sm text-dim">
-              Session ended. The code is free for reuse.
-            </p>
-            {/* The way out. The control bar below is gated on `status !== 'ended'`, so once a
-                class finishes this section was the whole screen and it carried no link at
-                all — the host's only exit from the last thing they see every session was the
-                browser's back button.
-
-                Results is the pen button, not "Back to your decks": this screen is still on a
-                projector in front of the class, and the thing a teacher does next is look at
-                which questions the room got wrong. The link survives the room — it is keyed
-                by session id, so it still works after the code is reused. */}
-            <div className="flex flex-wrap justify-center gap-3">
-              <Link href={`/results/${sessionId}`} className={btn('pen', 'lg')}>
-                See the results
-              </Link>
-              <Link href="/dashboard" className={btn('secondary', 'lg')}>
-                Back to your decks
-              </Link>
-            </div>
-          </section>
-        ) : (
-          <>
-            {/* The reveal has to fit ONE viewport. Stacked, it measured 2058px against a
-                1080p projector: ranks 2–10 sat below the fold, and the sticky control bar
-                floated over rank 1 — the winner was the single row the toolbar covered. The
-                room cannot scroll, so the standings move BESIDE the results from 1280px up,
-                which is where a projector lives. Below that the host is on a laptop and
-                scrolling is normal, so it stays stacked. */}
-            <div
-              className={`grid gap-10 ${
-                showStandings ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start' : ''
-              }`}
-            >
-              {slide && (
-                // key on the slide id: advancing remounts this, which replays the
-                // entrance. Under 300ms because the host is waiting on it.
-                <section key={slide.id} className="anim-fade-up flex min-w-0 flex-col gap-8">
-                  {showResults ? (
-                    <>
-                      {/* One step down from ProjectorSlide's asking size, and a wider
-                          measure. While the question is being answered it is the whole
-                          screen; at the reveal the room has already read it and the
-                          distribution is the subject. At signage scale it wrapped to four
-                          lines and ate 264px of the one viewport this state has to fit. */}
-                      <h2 className="font-display max-w-[34ch] text-3xl leading-[1.15] sm:text-4xl lg:text-5xl">
-                        {slide.prompt}
-                      </h2>
-                      <ResultsChart slide={slide} aggregate={aggregate} correctId={correctId} />
-                    </>
-                  ) : (
-                    <ProjectorSlide prompt={slide.prompt} options={slide.options} />
-                  )}
-                  {status === 'revealed' && explanation && (
-                    <p className="rounded-plate border border-pen bg-pen-wash px-6 py-5 text-xl leading-relaxed text-dim lg:text-3xl lg:px-8 lg:py-7">
-                      {explanation}
-                    </p>
-                  )}
-                </section>
-              )}
-
-              {/* Scored slides only. A poll awards nothing, so the standings are unchanged from
-                  the last question — putting them up right after one reads as if the poll scored. */}
-              {showStandings && (
-                <section className="min-w-0">
-                  <h3 className={`${capCls} mb-4`}>Leaderboard</h3>
-                  <Leaderboard entries={leaderboard} />
-                </section>
-              )}
-            </div>
-
-            {/* Mid-game access to the same remove control. A native <details> so there's no
-                open/closed state to hold, and it stays collapsed on the projector until the
-                host actually needs it. Only rendered once the lobby roster is gone. */}
-            {status !== 'lobby' && roster.length > 0 && (
-              <details className="text-sm">
-                <summary className="cursor-pointer text-dim hover:text-ink">
-                  Players ({roster.length})
-                </summary>
-                <div className="pt-4">
-                  <Roster roster={roster} onKick={kick} busy={busy} />
-                </div>
-              </details>
-            )}
-          </>
-        )}
-      </div>
-
-      {status !== 'ended' && (
-        // The error lives INSIDE the sticky bar. It used to render after it, at the end of
-        // the flow, which put it one line past the bottom of a viewport that min-h-screen
-        // had already filled — and a room cannot scroll the screen it is reading, so the
-        // host saw nothing at all. role="alert" was firing for a screen reader and for
-        // nobody else.
-        <div className="sticky bottom-0 border-t border-rule bg-ground/95 backdrop-blur">
-          {error && (
-            <p role="alert" className="px-6 pt-4 text-sm text-wrong sm:px-10">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-3 px-6 py-4 sm:px-10">
-            {status === 'lobby' ? (
-              <button onClick={() => goTo(0)} disabled={busy || total === 0} className={btn('primary', 'xl')}>
-                {busy ? 'Starting' : 'Start the session'}
-              </button>
-            ) : (
-              <>
-                <button onClick={() => goTo(index - 1)} disabled={busy || index <= 0} className={btn('secondary', 'lg')}>
-                  Back
-                </button>
-                {status === 'active' && (
-                  <button onClick={reveal} disabled={busy} className={btn('primary', 'xl')}>
-                    {/* Same endpoint either way — it closes the answer window. On a quiz that
-                        also discloses the key, which is the whole event; on a poll there is
-                        nothing to disclose, so calling it "Reveal" would promise a result the
-                        room has been watching for the last 30 seconds. */}
-                    {scored ? 'Reveal the answer' : 'Close voting'}
-                  </button>
-                )}
-                <button onClick={() => goTo(index + 1)} disabled={busy || atLast} className={btn('secondary', 'lg')}>
-                  {status === 'active' ? 'Skip' : 'Next'}
-                </button>
-                <span className="tabular text-sm text-dim">
-                  {index + 1} / {total}
-                </span>
-              </>
-            )}
-            <div className="ml-auto">
-              <DeleteButton
-                action={end}
-                confirmText="End this session for everyone?"
-                label="End session"
-                pendingLabel="Ending"
-                className={btn('danger', 'md')}
-              />
-            </div>
-          </div>
+      <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-5 py-8 sm:px-10">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="font-display text-3xl sm:text-5xl">{lobby ? 'Your classroom' : ended ? 'Final leaderboard' : 'Leaderboard'}</h2>
+          {!lobby && <span className={capCls}>Rank · name · score</span>}
         </div>
-      )}
+        {lobby ? (
+          <>
+            <p className="text-dim">Students join with the code above. Start once your class is ready.</p>
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {state.leaderboard.map((p) => (
+                <li key={p.participantId} className="flex items-center justify-between gap-3 rounded-plate border border-rule bg-raised p-4">
+                  <span className="min-w-0 break-words text-lg font-semibold">{p.nickname}</span>
+                  <button type="button" onClick={() => kick(p.participantId)} disabled={busy}
+                    aria-label={`Remove ${p.nickname}`} className="grid size-11 shrink-0 place-items-center rounded-full text-dim hover:bg-wrong-wash hover:text-wrong">
+                    <X size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {state.leaderboard.length === 0 && <p className="py-12 text-center text-dim">Waiting for students to join…</p>}
+          </>
+        ) : state.leaderboard.length > 0 ? (
+          <Leaderboard entries={state.leaderboard} />
+        ) : <p className="py-12 text-center text-dim">No participants joined.</p>}
+        {ended && (
+          <div className="flex flex-wrap gap-3 pt-4">
+            <Link href={`/results/${sessionId}`} className={btn('pen', 'lg')}>View improvement report</Link>
+            <Link href="/dashboard" className={btn('secondary', 'lg')}>Back to your decks</Link>
+          </div>
+        )}
+      </section>
+
+      {!ended && <footer className="sticky bottom-0 border-t border-rule bg-ground/95 px-6 py-4 backdrop-blur sm:px-10">
+        {error && <p role="alert" className="mb-3 text-sm text-wrong">{error}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {lobby ? <button type="button" onClick={start} disabled={busy || state.total === 0} className={btn('pen', 'lg')}>
+            {busy ? 'Starting…' : 'Start the session'}
+          </button> : <p className="text-sm text-dim">Scores update after every question. Students review their answers at the end.</p>}
+          <DeleteButton action={end} confirmText="End this session for everyone?" label="End session" pendingLabel="Ending" className={btn('danger', 'md')} />
+        </div>
+      </footer>}
     </main>
   )
 }
 
-/**
- * Milliseconds left against a server deadline, re-read on a 250ms tick.
- *
- * The tick lives in whichever leaf calls this, never in HostConsole itself. Two components
- * need the clock and they sit in different parts of the tree, so they each run their own
- * interval: two timers is the cheap side of the trade, against re-rendering a 300-row roster
- * and a mid-transition chart four times a second, which is what one shared `now` in the
- * parent cost. Both read the same `Date.now()` against the same deadline, so the worst skew
- * between the bar and the number is a quarter of a second on a value rounded to seconds.
- *
- * Returns null when nothing is running, which is what unmounts the readout.
- */
-function useCountdown(deadline: number | null) {
-  // `now` is the only thing the interval writes; the remainder is derived during render, so
-  // there is no setState in the effect and no seeding pass. Callers key these components on
-  // the deadline, which remounts them per question and re-runs this initializer — without
-  // that, `now` would still hold the last tick from the previous slide for up to 250ms.
+function RoomTimer({ deadline, windowMs }: { deadline: number | null; windowMs: number | null }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!deadline) return
-    const id = setInterval(() => setNow(Date.now()), 250)
-    return () => clearInterval(id)
+    const timer = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(timer)
   }, [deadline])
-  return deadline ? Math.max(0, deadline - now) : null
-}
-
-/** The countdown as a full-width line at the very top — the one cue that reads from the back
- *  of a hall without stealing space from the question. */
-function DrainBar({ deadline, windowMs }: { deadline: number | null; windowMs: number | null }) {
-  const msLeft = useCountdown(deadline)
-  const fraction = msLeft !== null && windowMs ? Math.min(1, msLeft / windowMs) : null
-  return (
-    <div className="h-1.5 w-full shrink-0 bg-rule" aria-hidden suppressHydrationWarning>
-      {fraction !== null && (
-        <div
-          // scaleX, not width: this transition re-fires every 200ms for the whole answer
-          // window, and `width` is a layout property — on the host it reflows behind the
-          // question, on 100 phones it does it 100 times. A transform is compositor-only.
-          // The bar is a square-edged rectangle, so there is no radius to distort.
-          //
-          // Always --pen. Under 5s this used to flip to --wrong, spending the coral that
-          // means "wrong answer" moments before the reveal used it for exactly that, on
-          // the same two screens. docs/design.md §3 reserves correct/wrong for graded
-          // answers and §8 specifies the drain in --pen; the draining bar and the counting
-          // number already carry urgency without a reserved token.
-          className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear"
-          style={{ transform: `scaleX(${fraction})` }}
-        />
-      )}
-    </div>
-  )
-}
-
-/** The seconds remaining, beside the player and answered counts. */
-function SecondsStat({ deadline }: { deadline: number | null }) {
-  const msLeft = useCountdown(deadline)
-  if (msLeft === null) return null
-  return <Stat value={Math.ceil(msLeft / 1000)} label="seconds" tone="text-pen" suppress />
-}
-
-/** The room, with a remove control on every player. Shared by the lobby (where it's the main
- *  event) and the in-game disclosure below the controls — a bad nickname is at its most
- *  visible once that player is on the leaderboard, which is exactly when the lobby is gone. */
-function Roster({
-  roster,
-  onKick,
-  busy,
-}: {
-  roster: PresenceState[]
-  onKick: (participantId: string) => void
-  busy: boolean
-}) {
-  return (
-    <ul className="flex flex-wrap justify-center gap-2.5">
-      {roster.map((p) => (
-        <li
-          key={p.participantId}
-          className="group flex items-center gap-2 rounded-full border border-rule bg-raised py-1.5 pl-1.5 pr-2 text-lg"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={avatarUrl(p.avatarSeed)} alt="" className="h-8 w-8 rounded-full bg-overlay" />
-          <span className="font-semibold">{p.nickname}</span>
-          <button
-            onClick={() => onKick(p.participantId)}
-            disabled={busy}
-            // The nickname is in the label, not just the glyph, so a screen reader announces
-            // WHICH player this removes — there is one of these per person on screen.
-            aria-label={`Remove ${p.nickname}`}
-            title={`Remove ${p.nickname}`}
-            className="hit rounded-full p-1 text-faint transition-colors hover:bg-wrong/15 hover:text-wrong disabled:opacity-40"
-          >
-            <X size={14} weight="regular" />
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function Stat({
-  value,
-  label,
-  tone,
-  suppress,
-}: {
-  value: number
-  label: string
-  tone?: string
-  /** Clock-derived values differ between the server render and the client's first paint. */
-  suppress?: boolean
-}) {
-  return (
-    <div>
-      <div
-        suppressHydrationWarning={suppress}
-        className={`tabular text-4xl leading-none tabular-nums sm:text-5xl ${tone ?? 'text-ink'}`}
-      >
-        {value}
-      </div>
-      <div className={`${capCls} mt-2`}>{label}</div>
-    </div>
-  )
+  const fraction = deadline && windowMs ? Math.max(0, Math.min(1, (deadline - now) / windowMs)) : 0
+  return <div className="h-1.5 bg-rule" aria-hidden suppressHydrationWarning>
+    <div className="h-full w-full origin-left bg-pen transition-transform duration-200 ease-linear" style={{ transform: `scaleX(${fraction})` }} />
+  </div>
 }
