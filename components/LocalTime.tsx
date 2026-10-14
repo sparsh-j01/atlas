@@ -1,5 +1,6 @@
 'use client'
 
+import { formatLocalTime } from '@/lib/local-time'
 import { useIsClient } from '@/lib/use-is-client'
 
 /**
@@ -15,18 +16,7 @@ import { useIsClient } from '@/lib/use-is-client'
  * readable instant throughout, which is what a screen reader and a copy-paste get either way.
  */
 export function LocalTime({ iso, dateOnly = false }: { iso: string; dateOnly?: boolean }) {
-  const isClient = useIsClient()
-  const opts: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    ...(dateOnly ? {} : { hour: '2-digit', minute: '2-digit' }),
-    // Undefined means "the reader's zone", which is the whole point; UTC is only the
-    // placeholder that keeps the two first renders identical.
-    ...(isClient ? {} : { timeZone: 'UTC' }),
-  }
-
-  return (
-    <time dateTime={iso}>{new Intl.DateTimeFormat('en-GB', opts).format(new Date(iso))}</time>
-  )
+  // Undefined means "the reader's zone", which is the whole point; UTC is only the
+  // placeholder that keeps the two first renders identical.
+  return <time dateTime={iso}>{formatLocalTime(iso, dateOnly, useIsClient() ? undefined : 'UTC')}</time>
 }
