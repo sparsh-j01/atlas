@@ -20,7 +20,9 @@ export function SiteHeader({
   wide?: boolean
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-rule bg-ground/90 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-rule bg-ground">
+      {/* Solid paper, not bg-ground/90 + blur: the editor scrolls dense text under a sticky
+          header, and at 90% the slide text showed through as a ghost behind the wordmark. */}
       {/* First focusable thing on the page. Hidden until it takes focus, then it sits over
           the header. Every surface that renders this header gives its main landmark
           id="main" — a skip link pointing at nothing is worse than none. */}
@@ -31,7 +33,7 @@ export function SiteHeader({
         Skip to content
       </a>
       <div
-        className={`flex h-[72px] items-center justify-between gap-4 px-6 lg:px-[4.5vw] ${
+        className={`flex h-[72px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-[4.5vw] ${
           wide ? '' : 'mx-auto max-w-6xl lg:px-6'
         }`}
       >
