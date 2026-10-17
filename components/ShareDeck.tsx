@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { setDeckSharedAction } from '@/lib/actions'
 import { useIsClient } from '@/lib/use-is-client'
-import { btn, inputCls, panelCls } from '@/components/ui'
+import { btn, editorButton, editorFieldCls, inputCls, panelCls } from '@/components/ui'
 
 /**
  * The deck's public link: off by default, on by a toggle, revocable.
@@ -14,7 +14,7 @@ import { btn, inputCls, panelCls } from '@/components/ui'
  * clipboard is about to eat. It renders empty until mount for that reason, which is fine:
  * the field is disabled until sharing is on anyway.
  */
-export function ShareDeck({ deckId, initialToken }: { deckId: string; initialToken: string | null }) {
+export function ShareDeck({ deckId, initialToken, compact = false }: { deckId: string; initialToken: string | null; compact?: boolean }) {
   const [token, setToken] = useState(initialToken)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +51,7 @@ export function ShareDeck({ deckId, initialToken }: { deckId: string; initialTok
   }
 
   return (
-    <section className={`${panelCls} mt-4 px-5 py-4`}>
+    <section className={compact ? 'border-t border-rule px-5 py-4' : `${panelCls} mt-4 px-5 py-4`}>
       <div className="flex flex-wrap items-center gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">{token ? 'Shared by link' : 'Not shared'}</h2>
@@ -65,7 +65,7 @@ export function ShareDeck({ deckId, initialToken }: { deckId: string; initialTok
           type="button"
           onClick={() => set(!token)}
           disabled={pending}
-          className={btn(token ? 'ghost' : 'secondary', 'md')}
+          className={compact ? editorButton(token ? 'ghost' : 'secondary') : btn(token ? 'ghost' : 'secondary', 'md')}
         >
           {token ? 'Stop sharing' : 'Create link'}
         </button>
@@ -87,9 +87,9 @@ export function ShareDeck({ deckId, initialToken }: { deckId: string; initialTok
             // so the utility would fall back to Tailwind's default stack — a fourth family
             // on a screen that has three. A share URL is copied, not read character by
             // character, so it has nothing to disambiguate.
-            className={`${inputCls} min-w-0 flex-1 text-sm`}
+            className={`${compact ? editorFieldCls : inputCls} min-w-0 flex-1 text-sm`}
           />
-          <button type="button" onClick={copy} className={btn('secondary', 'md')}>
+          <button type="button" onClick={copy} className={compact ? editorButton() : btn('secondary', 'md')}>
             {copied ? 'Copied' : 'Copy'}
           </button>
           {/* Rotating is the only revoke: minting a new token orphans every copy of the old
@@ -99,7 +99,7 @@ export function ShareDeck({ deckId, initialToken }: { deckId: string; initialTok
             type="button"
             onClick={() => set(true)}
             disabled={pending}
-            className={btn('ghost', 'md')}
+            className={compact ? editorButton('ghost') : btn('ghost', 'md')}
           >
             New link
           </button>
