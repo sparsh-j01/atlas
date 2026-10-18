@@ -92,7 +92,22 @@ export const inputCls = `rounded-pill ${FIELD}`
  * ~8px from a sloping edge while the label above it and the help text below it both started
  * at the column's left edge, which is what read as broken alignment.
  */
-export const textareaCls = `rounded-plate ${FIELD}`
+/** Consistent controls for the dense deck creation and editing workspace. */
+export const editorFieldCls =
+  'rounded-md border border-rule-strong bg-raised px-3 py-2.5 text-ink leading-relaxed ' +
+  'transition-colors hover:border-dim focus:border-pen'
+export const fieldLabelCls = 'text-sm font-semibold text-ink'
+
+/** Quiet, compact actions for the authoring workspace. No movement on repeated actions. */
+export function editorButton(variant: 'primary' | 'secondary' | 'ghost' | 'danger' = 'secondary') {
+  const color = {
+    primary: 'border-ink bg-ink text-ground hover:bg-ink/85',
+    secondary: 'border-rule-strong bg-raised text-ink hover:bg-overlay',
+    ghost: 'border-transparent text-dim hover:bg-overlay hover:text-ink',
+    danger: 'border-transparent text-wrong hover:bg-wrong-wash',
+  }[variant]
+  return `inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40 ${color}`
+}
 
 /** Flat bordered surface. Use where a card sits inside other content. */
 export const panelCls = 'rounded-plate border border-rule bg-raised'
@@ -128,9 +143,3 @@ export function statusDotCls(ready: boolean) {
   return `h-2 w-2 shrink-0 rounded-full ${ready ? 'bg-pen' : 'border border-faint'}`
 }
 
-/** The blue section eyebrow from the comp. Decorative label above a heading. */
-export const eyebrowCls = 'text-[13px] font-bold uppercase tracking-[0.3em] text-pen-ink'
-
-/** Inline text link that ends in an arrow. The comp's quiet secondary CTA. */
-export const arrowLinkCls =
-  'group inline-flex items-center gap-1.5 text-[15px] font-semibold text-ink transition-colors hover:text-pen-ink'
