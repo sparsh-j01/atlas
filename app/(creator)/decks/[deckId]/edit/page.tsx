@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { requireUser } from '@/lib/auth'
-import { getDeckWithSlides } from '@/lib/decks'
+import { getDeckWithSlides, getSlideSources } from '@/lib/decks'
 import { DeckEditor } from '@/components/DeckEditor'
 
 // The deck's own name, so two editor tabs are distinguishable. Same cached fetch the page
@@ -19,5 +19,5 @@ export default async function EditDeckPage({ params }: { params: Promise<{ deckI
   const data = await getDeckWithSlides(deckId, user.id)
   if (!data) notFound() // not owned or doesn't exist — same 404 either way (no ownership leak)
 
-  return <DeckEditor deck={data.deck} slides={data.slides} />
+  return <DeckEditor deck={data.deck} slides={data.slides} sources={await getSlideSources(deckId, user.id)} />
 }
