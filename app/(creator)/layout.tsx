@@ -18,12 +18,25 @@ export default async function CreatorLayout({ children }: { children: React.Reac
           {/* Hidden on a phone, where the wordmark beside it already links to /dashboard
               and the row has no width to spare. Results has no such duplicate, so it
               stays at every width. */}
-          <Link href="/dashboard" className={`${btn('ghost', 'sm')} hidden sm:inline-flex`}>
-            Decks
-          </Link>
+          {/* Hidden on a WRAPPER. `hidden` on the link itself lost to the `inline-flex` in
+              btn(): Tailwind emits .inline-flex after .hidden, so Decks never hid and the
+              header ran 68px past a 390px phone, scrolling every creator page sideways
+              (docs/failure-patterns.md #55, the same cascade class). */}
+          <span className="hidden sm:contents">
+            <Link href="/dashboard" className={btn('ghost', 'sm')}>
+              Decks
+            </Link>
+          </span>
           <Link href="/results" className={btn('ghost', 'sm')}>
             Results
           </Link>
+          {/* Below 400px there is room for two links and Sign out; Usage is the one that
+              can wait (it is a reference page, not a task). */}
+          <span className="contents max-[399px]:hidden">
+            <Link href="/usage" className={btn('ghost', 'sm')}>
+              Usage
+            </Link>
+          </span>
           <span className="hidden max-w-[22ch] truncate text-sm text-dim lg:block">
             {user.email}
           </span>
