@@ -1,6 +1,7 @@
 import { requireUser } from '@/lib/auth'
 import { getSessionResults } from '@/lib/sessions'
 import { csvFilename, toGradebookCsv } from '@/lib/results'
+import { checkLimit, tooMany } from '@/lib/rate-limit'
 
 /**
  * The gradebook CSV for one finished session.
@@ -16,6 +17,8 @@ import { csvFilename, toGradebookCsv } from '@/lib/results'
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const user = await requireUser()
+  const paced = await checkLimit('exportPerUser', user.id)
+  if (!paced.ok) return tooMany(paced.retryAfterSec)
   const { sessionId } = await params
   const page = await getSessionResults(sessionId, user.id)
   // Same 404 as the page: not yours, or not over yet.
