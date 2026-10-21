@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requireUser } from '@/lib/auth'
 import { getSessionResults } from '@/lib/sessions'
 import { LocalTime } from '@/components/LocalTime'
+import { TeacherImprovementReport } from '@/components/TeacherImprovementReport'
 import { SLIDE_TYPE_LABEL, type SlideType } from '@/lib/slides'
 import type { QuestionResult } from '@/lib/results'
 import { btn, capCls, panelCls } from '@/components/ui'
@@ -88,6 +89,7 @@ export default async function SessionResultsPage({ params }: Params) {
         </div>
       ) : (
         <>
+          <TeacherImprovementReport results={results} />
           {classAccuracy !== null && (
             <p className="mt-10 text-dim">
               The room answered{' '}
