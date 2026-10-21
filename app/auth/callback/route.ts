@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { nextPathSchema } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
+import { checkLimit, clientIp } from '@/lib/rate-limit'
 
 // Where the PKCE authorization code comes back — from Supabase's default email templates,
 // and from social sign-in started at ../signin. Both legs are the same Authorization Code
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
   }
 
   if (code) {
+    const paced = await checkLimit('verifyPerIp', clientIp(request.headers))
+    if (!paced.ok) return NextResponse.redirect(`${origin}/login?error=rate`)
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     // A replayed, tampered or expired code fails here and lands on the login page with no
