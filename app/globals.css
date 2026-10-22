@@ -11,7 +11,7 @@
 
    Everything reads through the tokens below. The dark surface redefines the same
    token names inside .stage, so a component never knows which surface it is on --
-   ProjectorSlide, Leaderboard and the landing page's own dark section all render
+   Leaderboard and the landing page's own dark section both render
    correctly on either.
 
    Contrast is gated by docs/design-contrast.mjs. Three values are deliberately
