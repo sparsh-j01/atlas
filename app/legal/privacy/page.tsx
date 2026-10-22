@@ -357,7 +357,8 @@ export default function Privacy() {
         </li>
         <li>
           <strong>Uploaded files and their extracted text</strong> — until you delete the
-          document, or the account.
+          file (from your dashboard, under Uploaded files), or the account. An upload that never
+          finishes processing is deleted automatically, usually within two days.
         </li>
         <li>
           <strong>Session records</strong> — nicknames, answers, and scores are kept so you can
