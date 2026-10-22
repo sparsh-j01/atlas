@@ -13,4 +13,4 @@ export const JURISDICTION = '[CITY]'
 export const SITE_URL = '[SITE URL]'
 
 /** Bump both when either document changes materially. */
-export const LAST_UPDATED = '4 September 2026'
+export const LAST_UPDATED = '4 October 2026'
