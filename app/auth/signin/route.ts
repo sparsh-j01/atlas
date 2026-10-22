@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { oauthSignInParamsSchema } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
+import { checkLimit, clientIp } from '@/lib/rate-limit'
 
 // Starts a social sign-in. The whole OAuth 2.0 / OIDC exchange belongs to Supabase Auth:
 // it holds the Google client secret, builds the authorize URL, and validates the ID token
@@ -27,6 +28,10 @@ export async function GET(request: Request) {
     next: searchParams.get('next'),
   })
   if (!params.success) return NextResponse.redirect(`${origin}/login?error=provider`)
+
+  // A navigation, not an API call, so the refusal is a redirect to copy the login page owns.
+  const paced = await checkLimit('oauthPerIp', clientIp(request.headers))
+  if (!paced.ok) return NextResponse.redirect(`${origin}/login?error=rate`)
 
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signInWithOAuth({
