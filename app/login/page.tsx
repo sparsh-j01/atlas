@@ -12,6 +12,7 @@ import {
 } from '@/lib/auth-actions'
 import { SiteHeader } from '@/components/SiteHeader'
 import { btn, capCls, inputCls } from '@/components/ui'
+import { TURNSTILE_SITE_KEY, Turnstile } from '@/components/Turnstile'
 
 // Codes set by /auth/signin and /auth/callback. Mapped to our own copy here so the page
 // never renders a message that came from the provider's error response.
@@ -19,6 +20,7 @@ const AUTH_ERRORS: Record<string, string> = {
   denied: 'Google sign-in was cancelled.',
   oauth: 'Google sign-in did not finish. Try again, or use your email and password.',
   provider: 'That sign-in method is not available.',
+  rate: 'Too many attempts from this network. Try again in a few minutes.',
 }
 
 function authError(code: string | null): string | null {
@@ -55,6 +57,11 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(authError(params.get('error')))
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [busy, startTransition] = useTransition()
+  // Turnstile's token, when the bot check is on. Single-use: every attempt spends it, so
+  // `captchaReset` asks the widget for a fresh one after each.
+  const [captcha, setCaptcha] = useState<string | null>(null)
+  const [captchaReset, setCaptchaReset] = useState(0)
+  const waitingOnCaptcha = Boolean(TURNSTILE_SITE_KEY) && !captcha
 
   // Every handler ends here. The password and the validation both live on the server now
   // (lib/auth-actions.ts) — this component never holds a token and never sees a session.
@@ -74,7 +81,10 @@ function LoginForm() {
   function run(action: () => Promise<AuthResult>) {
     setError(null)
     setNeedsConfirm(false)
-    startTransition(async () => apply(await action()))
+    startTransition(async () => {
+      apply(await action())
+      setCaptchaReset((n) => n + 1)
+    })
   }
 
   // FormData, not plain arguments: `next dev` prints an action's positional arguments to
@@ -84,6 +94,7 @@ function LoginForm() {
     form.set('email', email)
     form.set('password', password)
     form.set('next', next)
+    if (captcha) form.set('captchaToken', captcha)
     return form
   }
 
@@ -207,7 +218,7 @@ function LoginForm() {
               {' '}
               <button
                 type="button"
-                onClick={() => run(() => resendConfirmationAction(email, next))}
+                onClick={() => run(() => resendConfirmationAction(email, next, captcha ?? undefined))}
                 className="font-semibold underline"
               >
                 Send the link again
@@ -217,7 +228,13 @@ function LoginForm() {
         </p>
       )}
 
-      <button type="submit" disabled={busy || !email || !password} className={btn('primary', 'lg')}>
+      <Turnstile onToken={setCaptcha} resetKey={captchaReset} />
+
+      <button
+        type="submit"
+        disabled={busy || !email || !password || waitingOnCaptcha}
+        className={btn('primary', 'lg')}
+      >
         {busy ? 'Working' : signup ? 'Create account' : 'Sign in'}
       </button>
 
@@ -242,8 +259,8 @@ function LoginForm() {
             Forgot your password?{' '}
             <button
               type="button"
-              onClick={() => run(() => requestPasswordResetAction(email))}
-              disabled={busy}
+              onClick={() => run(() => requestPasswordResetAction(email, captcha ?? undefined))}
+              disabled={busy || waitingOnCaptcha}
               className="font-semibold text-pen-ink hover:underline disabled:opacity-40"
             >
               Email me a reset link
