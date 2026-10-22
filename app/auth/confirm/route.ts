@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { confirmParamsSchema } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
+import { checkLimit, clientIp } from '@/lib/rate-limit'
 
 // Where the emailed links land: ?token_hash=...&type=signup|recovery|email_change.
 //
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
   })
 
   if (params.success) {
+    const paced = await checkLimit('verifyPerIp', clientIp(request.headers))
+    if (!paced.ok) return NextResponse.redirect(`${origin}/login?error=rate`)
     const supabase = await createClient()
     const { error } = await supabase.auth.verifyOtp({
       type: params.data.type,
