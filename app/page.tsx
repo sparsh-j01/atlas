@@ -61,7 +61,7 @@ const faqs = [
   },
   {
     q: 'What kinds of questions can it ask?',
-    a: 'Multiple-choice questions, which are scored and ranked on the leaderboard, and polls, which show the room how it answered without a right answer.',
+    a: 'Multiple-choice questions, scored on correctness and speed and ranked on the leaderboard. Each student gets a review of their answers at the end.',
   },
 ]
 
