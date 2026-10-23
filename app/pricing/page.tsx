@@ -18,7 +18,7 @@ const tiers = [
       'Up to 50 students in a room',
       'Unlimited hand-built decks',
       '3 AI-generated decks a month, from a topic',
-      'Quiz and poll slides, live leaderboard',
+      'Multiple-choice quizzes, live leaderboard',
       'Projector view and six-digit join codes',
     ],
   },
