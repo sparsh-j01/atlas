@@ -4,9 +4,11 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { avatarUrl } from '@/lib/avatars'
-import { Podium } from '@/components/Podium'
+import { StudentReview } from '@/components/StudentReview'
+import type { ParticipantReview } from '@/lib/participant-review'
+import type { ProgressState } from '@/lib/realtime/session-progress'
+import { useSessionProgress } from '@/lib/realtime/use-session-progress'
 import { openSessionChannel } from '@/lib/realtime/channels'
-import { isScored } from '@/lib/slides'
 import { EVENTS } from '@/lib/realtime/events'
 import { SiteHeader } from '@/components/SiteHeader'
 import { btn, capCls, inputCls } from '@/components/ui'
@@ -14,12 +16,11 @@ import type {
   LeaderboardEntry,
   ParticipantKickedPayload,
   SanitizedSlide,
-  SlideRevealPayload,
 } from '@/lib/realtime/events'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
-type Status = 'lobby' | 'active' | 'revealed' | 'ended'
+type Status = 'lobby' | 'active' | 'ended'
 type Joined = {
   code: string
   clientToken: string
@@ -62,6 +63,12 @@ function PlayRoom() {
   // whenever a student checks a message mid-game, not only on a deliberate reload.
   const [booted, setBooted] = useState(false)
   const [status, setStatus] = useState<Status>('lobby')
+  const [index, setIndex] = useState(0)
+  const [total, setTotal] = useState<number | null>(null)
+  const [serverStartedAt, setServerStartedAt] = useState<string | null>(null)
+  const [review, setReview] = useState<ParticipantReview | null>(null)
+  const [reviewError, setReviewError] = useState('')
+  const [reviewRetry, setReviewRetry] = useState(0)
   const [slide, setSlide] = useState<SanitizedSlide | null>(null)
   const [deadline, setDeadline] = useState<number | null>(null)
   // The full window. The drain bar needs the share remaining, which the deadline alone
@@ -70,13 +77,11 @@ function PlayRoom() {
   const [now, setNow] = useState(() => Date.now())
   const [picked, setPicked] = useState<string | null>(null)
   const pickedRef = useRef<string | null>(null)
-  // This phone's own answer per slide. The host can navigate back to a slide we already
-  // answered, and a broadcast can't carry the pick (one payload, every participant), so
-  // without this a player who answered would be told "No answer in". Read inside the
-  // broadcast handler, which closes over stale state — hence a ref, not state.
+  // This phone's own answer per slide, so a slide shown again (a reconnect, or a progress
+  // response racing the broadcast) keeps the pick: a broadcast can't carry it (one payload,
+  // every participant). Read inside the broadcast handler, which closes over stale state —
+  // hence a ref, not state.
   const picksRef = useRef<Record<string, string>>({})
-  const [correctId, setCorrectId] = useState<string | null>(null)
-  const [explanation, setExplanation] = useState<string | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [notice, setNotice] = useState('')
 
@@ -91,6 +96,8 @@ function PlayRoom() {
   // Which slide this phone is on, for the slide-addressed events (reveal). Same role the
   // console's slideIdRef plays; written in the same tick as the slide itself.
   const slideIdRef = useRef<string | null>(null)
+  // An in-flight progress response or delayed broadcast cannot reopen a completed quiz.
+  const endedRef = useRef(false)
 
   // Every path onto a slide (join, reconnect, slide:show) lands here, so a new slide can't
   // leave a stale pick or a stale reveal behind.
@@ -102,6 +109,7 @@ function PlayRoom() {
       alreadyPicked: string | null = null,
     ) => {
       startedAtRef.current = serverStartedAt ? Date.parse(serverStartedAt) : 0
+      setServerStartedAt(serverStartedAt)
       slideIdRef.current = s?.id ?? null
       setSlide(s)
       // ponytail: the countdown compares the server's start stamp against the phone's clock,
@@ -113,8 +121,6 @@ function PlayRoom() {
       if (s && alreadyPicked) picksRef.current[s.id] = alreadyPicked
       pickedRef.current = alreadyPicked
       setPicked(alreadyPicked)
-      setCorrectId(null)
-      setExplanation(null) // cleared with the answer key; both only return at reveal
       setNotice('')
     },
     [],
@@ -150,7 +156,11 @@ function PlayRoom() {
       }
       // Server-issued token, stored so a reload or a dropped connection rejoins the same seat.
       localStorage.setItem(STORE_KEY, JSON.stringify(joined))
+      endedRef.current = false
       setStatus(data.status)
+      setIndex(data.index ?? 0)
+      setTotal(data.total ?? null)
+      setReview(null)
       showSlide(data.slide, data.serverStartedAt, data.timeLimitMs)
       setMe(joined)
     } catch {
@@ -173,6 +183,12 @@ function PlayRoom() {
         body: JSON.stringify({ clientToken: me.clientToken, optionId }),
       })
       const data = await res.json().catch(() => null)
+      // The room can advance while the request is in flight. Its result belongs to the
+      // previous question and must not clear or lock the new question's selection.
+      if (slideIdRef.current !== slideId) {
+        if (res.ok && data?.accepted) picksRef.current[slideId] = optionId
+        return
+      }
       // A rejected submit (late / window closed / invalid) must not masquerade as a locked-in
       // answer — otherwise "Not this time" at reveal is indistinguishable from an honest miss.
       // Roll back the optimistic lock and say why.
@@ -190,6 +206,7 @@ function PlayRoom() {
       // still sees this phone reporting the answer it actually gave.
       picksRef.current[slideId] = optionId
     } catch {
+      if (slideIdRef.current !== slideId) return
       pickedRef.current = null
       setPicked(null)
       setNotice('Network error. Try again.')
@@ -219,14 +236,20 @@ function PlayRoom() {
         })
         const data = await res.json().catch(() => null)
         if (cancelled) return
-        if (!res.ok || data?.status === 'ended') {
+        if (!res.ok) {
           localStorage.removeItem(STORE_KEY)
           return
         }
         setStatus(data.status)
+        endedRef.current = data.status === 'ended'
+        setIndex(data.index ?? 0)
+        setTotal(data.total ?? null)
+        if (data.status === 'ended') {
+          setReview(data.review ?? null)
+          setMe(saved)
+          return
+        }
         showSlide(data.slide, data.serverStartedAt, data.timeLimitMs, data.myOptionId ?? null)
-        setCorrectId(data.correctOptionId ?? null)
-        setExplanation(data.explanation ?? null)
         setMe(saved)
       } catch {
         // Offline on load — fall through to the join form rather than pretending to be in a
@@ -244,6 +267,35 @@ function PlayRoom() {
     }
   }, [showSlide])
 
+  const applyProgress = useCallback((data: ProgressState) => {
+    if (endedRef.current && data.status !== 'ended') return
+    if (data.serverStartedAt && Date.parse(data.serverStartedAt) < startedAtRef.current) return
+    if (data.status === 'ended') endedRef.current = true
+    setStatus(data.status as Status)
+    setIndex(data.index)
+    setTotal(data.total)
+    setLeaderboard(data.leaderboard)
+    if (data.slide && (slideIdRef.current !== data.slide.id || Date.parse(data.serverStartedAt ?? '') !== startedAtRef.current)) {
+      showSlide(data.slide, data.serverStartedAt, data.timeLimitMs, picksRef.current[data.slide.id] ?? null)
+    }
+  }, [showSlide])
+
+  useSessionProgress({ code: me?.code ?? '', clientToken: me?.clientToken, status,
+    index, serverStartedAt, timeLimitMs: windowMs, onProgress: applyProgress, onError: setNotice })
+
+  useEffect(() => {
+    if (status !== 'ended' || !me || review) return
+    let cancelled = false
+    fetch(`/api/sessions/${me.code}/state`, { headers: { Authorization: `Bearer ${me.clientToken}` }, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Review unavailable')
+        const data = await res.json()
+        if (!data.review) throw new Error('Review unavailable')
+        if (!cancelled) { setReview(data.review); setReviewError('') }
+      }).catch(() => { if (!cancelled) setReviewError('Could not load your answer review. Please retry.') })
+    return () => { cancelled = true }
+  }, [status, me, review, reviewRetry])
+
   // Subscribe + announce presence once joined. Presence is what fills the host's lobby roster.
   useEffect(() => {
     if (!me) return
@@ -251,38 +303,24 @@ function PlayRoom() {
     const channel = openSessionChannel(supabase, me.code)
     channel
       .on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
+        if (endedRef.current) return
         const next = payload.slide as SanitizedSlide
         // Drop a slide:show older than the one on screen. Ordering between two independent
         // publishes isn't guaranteed, and applying the stale one strands this phone on a
         // slide the room has left — it would sit there until the next broadcast, unable to
-        // answer, since the server scores against ITS current slide. Not `!==`: re-showing
-        // the same slide is legitimate (Back), and it always carries a newer stamp.
+        // answer, since the server scores against ITS current slide.
         const startedAt = Date.parse(payload.serverStartedAt)
         if (startedAt < startedAtRef.current) return
-        // Trust the server's status: a re-shown slide arrives already 'revealed', so the
-        // options never flash as tappable before the slide:reveal lands.
-        setStatus(payload.status === 'revealed' ? 'revealed' : 'active')
+        setIndex(payload.index)
+        if (payload.total) setTotal(payload.total)
+        setStatus('active')
         // Restore this phone's answer if it already has one for the slide being shown.
         showSlide(next, payload.serverStartedAt, payload.timeLimitMs, picksRef.current[next.id] ?? null)
       })
-      .on('broadcast', { event: EVENTS.SLIDE_REVEAL }, ({ payload }) => {
-        const p = payload as SlideRevealPayload
-        // The console's copy of this handler was the one flagged in review, but the phone
-        // runs the same shape and the consequence here is worse: a reveal for the outgoing
-        // slide would grey out the options and print "Not this time" on a question this
-        // player is still answering, comparing their pick to the previous slide's key.
-        if (slideIdRef.current && p.slideId !== slideIdRef.current) return
-        setCorrectId(p.correctOptionId ?? null)
-        setExplanation(p.explanation ?? null)
-        setStatus('revealed')
-      })
-      .on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, ({ payload }) => {
-        setLeaderboard(payload.top as LeaderboardEntry[])
-      })
       .on('broadcast', { event: EVENTS.SESSION_ENDED }, ({ payload }) => {
+        endedRef.current = true
         setLeaderboard(payload.fullRanking as LeaderboardEntry[])
         setStatus('ended')
-        localStorage.removeItem(STORE_KEY)
       })
       // Broadcast has no per-client addressing, so the whole room hears this and only the
       // phone it names acts. Back to the join form rather than a dead-end screen: rejoining
@@ -438,10 +476,24 @@ function PlayRoom() {
   const myEntry = leaderboard.find((e) => e.participantId === me.participantId)
 
   if (status === 'ended') {
+    if (review) return <StudentReview review={review} onJoinAgain={() => {
+      endedRef.current = false
+      localStorage.removeItem(STORE_KEY)
+      picksRef.current = {}
+      pickedRef.current = null
+      slideIdRef.current = null
+      startedAtRef.current = 0
+      setMe(null)
+      setSlide(null)
+      setReview(null)
+      setReviewError('')
+      setPicked(null)
+      setStatus('lobby')
+    }} />
     return (
-      <main className="stage flex min-h-svh flex-col justify-center gap-10 p-6">
+      <main className="safe flex min-h-svh flex-col items-center justify-center gap-6 p-6">
         <div className="text-center">
-          <h1 className="font-display text-3xl">That is a wrap</h1>
+          <h1 className="font-display text-3xl">Quiz complete</h1>
           {myEntry ? (
             <p className="mt-3 text-lg text-dim">
               You finished{' '}
@@ -452,9 +504,10 @@ function PlayRoom() {
             <p className="mt-3 text-dim">Thanks for playing.</p>
           )}
         </div>
-        {/* The same podium the projector shows, with this player's own row picked out.
-            session:ended carries the full ranking, so no extra fetch per phone. */}
-        {leaderboard.length > 0 && <Podium ranking={leaderboard} highlightId={me.participantId} />}
+        {reviewError ? <>
+          <p role="alert" className="text-sm text-wrong">{reviewError}</p>
+          <button type="button" className={btn('primary', 'md')} onClick={() => { setReviewError(''); setReviewRetry((n) => n + 1) }}>Retry answer review</button>
+        </> : <p role="status" className="text-dim">Loading your questions and explanations…</p>}
       </main>
     )
   }
@@ -485,12 +538,6 @@ function PlayRoom() {
   // possibly skewed; a fast phone forfeits its last few hundred ms. That is the better
   // trade than a live-looking button that always loses.
   const windowClosed = msLeft !== null && msLeft <= 0
-  const scored = isScored(slide.type)
-  // Only a scored slide has a right answer to be judged against. Without the `scored` gate a
-  // poll would compare the pick to a null correctId, fail, and tell every voter "Not this
-  // time." for answering a question that had no wrong answer.
-  const myResult =
-    status === 'revealed' && picked && scored ? (picked === correctId ? 'correct' : 'wrong') : null
 
   return (
     <main className="stage safe flex min-h-svh flex-col">
@@ -515,39 +562,36 @@ function PlayRoom() {
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-6 p-5">
-        {/* flex-1: the question takes the slack the tiles gave up and sits centred in it,
-            rather than pinned to the top with a dead band underneath. */}
-        <div className="flex flex-1 items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold leading-snug">{slide.prompt}</h1>
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-5 py-8 sm:px-8 sm:py-12">
+        {/* One readable column on phones and laptops, with the timer above the question. */}
+        <div className="flex items-center justify-between gap-4 border-b border-rule pb-4">
+          <span className={capCls}>Question {index + 1}{total ? ` of ${total}` : ''}</span>
           {/* --pen at every count, for the same reason as the drain bar above. */}
           {secondsLeft !== null && (
             <span
               aria-live="off"
               suppressHydrationWarning
-              className="shrink-0 tabular text-3xl tabular-nums text-pen"
+              className="shrink-0 tabular text-2xl tabular-nums text-pen"
+              aria-label={`${secondsLeft} seconds remaining`}
             >
               {secondsLeft}
             </span>
           )}
         </div>
+        {/* flex-1: the question takes the slack and sits centred in it, so the answer block
+            below settles at the foot of the screen. Top-anchored, the tiles on a 390×844 phone
+            ended at half height: option A in the hardest place to reach one-handed and the
+            easy-reach half empty. */}
+        <div className="flex flex-1 items-center">
+          <h1 className="text-2xl font-semibold leading-snug sm:text-3xl">{slide.prompt}</h1>
+        </div>
 
-        {/* Bottom-anchored: this block never grows, so the flex-1 question row above takes
-            every spare pixel and the tiles settle at the foot of the viewport. On a 390×844
-            phone the stack ran 105px→421px — ending at exactly half the screen, with option
-            A in the hardest place to reach one-handed and the easy-reach half empty. It now
-            ends at 824. The lock-in and rejection messages sit inside this block, so a
-            closed window is answered beside the tile that was tapped rather than at the
-            foot of the page. */}
-        <div className="flex shrink-0 flex-col gap-3">
+        {/* Bottom-anchored and never growing. Feedback sits beside the options it describes. */}
+        <div className="flex shrink-0 flex-col gap-4">
           <div className="grid gap-3">
             {slide.options.map((o, i) => {
               const isPicked = picked === o.id
-              const isCorrect = status === 'revealed' && o.id === correctId
               const live = status === 'active' && !picked && !windowClosed
-              // After the reveal, everything that is neither the key nor your own pick fades
-              // back so the two answers that matter are the two you can read.
-              const muted = status === 'revealed' && !isCorrect && !isPicked
               return (
                 <button
                   key={o.id}
@@ -555,35 +599,20 @@ function PlayRoom() {
                   disabled={status !== 'active' || picked !== null || windowClosed}
                   style={{ touchAction: 'manipulation' }}
                   className={`flex items-center gap-4 rounded-plate border px-4 py-4 text-left transition-[transform,background-color,border-color,opacity] duration-150 ease-out ${
-                    live ? 'active:scale-[0.97]' : ''
+                    live ? 'active:scale-[0.99]' : ''
                   } ${
-                    isCorrect
-                      ? 'border-correct bg-correct/15'
-                      : isPicked
-                        ? status === 'revealed' && scored
-                          ? 'border-wrong bg-wrong/15'
-                          : 'border-pen bg-pen/15'
-                        : 'border-rule bg-raised'
+                    isPicked ? 'border-pen bg-pen/15' : 'border-rule bg-raised'
                   } ${live ? 'active:border-pen active:bg-overlay' : 'cursor-default'}`}
                 >
                   <span
                     aria-hidden
                     className={`grid h-9 w-9 shrink-0 place-items-center rounded-pill tabular ${
-                      isCorrect
-                        ? 'bg-correct text-pen-on'
-                        : isPicked
-                          ? status === 'revealed' && scored
-                            ? 'bg-wrong text-pen-on'
-                            : 'bg-pen text-pen-on'
-                          : 'bg-overlay text-dim'
+                      isPicked ? 'bg-pen text-pen-on' : 'bg-overlay text-dim'
                     }`}
                   >
                     {LETTERS[i] ?? i + 1}
                   </span>
-                  {/* The muted state dims the TEXT, not the tile. Opacity on the button dropped
-                      the letter badge to 2.4:1, and the letter is how a student matches their
-                      phone to the projector — it is the last thing that may fade. */}
-                  <span className={`text-lg leading-snug ${muted ? 'opacity-60' : ''}`}>{o.text}</span>
+                  <span className="text-lg leading-snug">{o.text}</span>
                 </button>
               )
             })}
@@ -591,13 +620,13 @@ function PlayRoom() {
 
           {status === 'active' && picked && (
             <p className="text-center text-dim">
-              {scored ? 'Answer locked in. Hang tight.' : 'Vote locked in. Watch the screen.'}
+              Answer saved. The next question starts when time ends.
             </p>
           )}
           {/* Says why the tiles went dead, in the place they went dead. */}
           {status === 'active' && !picked && windowClosed && (
             <p role="status" className="text-center text-sm text-dim">
-              {scored ? 'Time. Answers are closed.' : 'Time. Voting is closed.'}
+              Moving to the next question…
             </p>
           )}
           {notice && (
@@ -607,44 +636,6 @@ function PlayRoom() {
           )}
         </div>
 
-        {status === 'revealed' && (
-          <div className="flex flex-col gap-4">
-            <p
-              className={`text-center text-2xl font-bold ${
-                myResult === 'correct'
-                  ? 'text-correct'
-                  : myResult === 'wrong'
-                    ? 'text-wrong'
-                    : 'text-dim'
-              }`}
-            >
-              {scored
-                ? myResult === 'correct'
-                  ? 'Correct'
-                  : myResult === 'wrong'
-                    ? 'Not this time'
-                    : 'No answer in'
-                : picked
-                  ? 'Vote counted'
-                  : 'No vote in'}
-            </p>
-            {/* Rank shows for the broadcast top-N only. A personal score for everyone would
-                mean 100 simultaneous /state fetches at every reveal. Withheld after a poll:
-                nothing about the standings changed, so quoting a rank there implies the vote
-                scored. */}
-            {myEntry && scored && (
-              <p className="text-center text-dim">
-                <span className="tabular text-ink">#{myEntry.rank}</span> with{' '}
-                <span className="tabular text-ink">{myEntry.score}</span>
-              </p>
-            )}
-            {explanation && (
-              <p className="rounded-plate border border-pen bg-pen-wash px-4 py-3 text-sm leading-relaxed text-dim">
-                {explanation}
-              </p>
-            )}
-          </div>
-        )}
       </div>
     </main>
   )
