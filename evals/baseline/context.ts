@@ -57,7 +57,7 @@ export function buildBaselineContext(
         score: 1,
         rank: 1,
         similarity: BASELINE_SIMILARITY,
-        source: { page: 1, section: 'whole document', charStart: 0, charEnd: text.length },
+        source: { documentId: 'doc', filename: 'doc.pdf', page: 1, section: 'whole document', charStart: 0, charEnd: text.length },
       },
     ],
     truncated,
