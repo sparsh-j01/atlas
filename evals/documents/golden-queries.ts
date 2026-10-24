@@ -35,7 +35,12 @@
  *  or its evidence changes, so two runs can never be silently compared across a dataset
  *  edit. Corpus version and dataset version move independently — the same three documents
  *  can carry a revised query set. */
-export const GOLDEN_SET_VERSION = 'golden-queries-v1'
+import { readFileSync } from 'node:fs'
+
+const querySnapshot = process.env.EVAL_QUERIES_PATH
+  ? JSON.parse(readFileSync(process.env.EVAL_QUERIES_PATH, 'utf8')) as { version: string; queries: GoldenQuery[] }
+  : null
+export const GOLDEN_SET_VERSION = querySnapshot?.version ?? 'golden-queries-v1'
 
 export type QueryCategory =
   | 'direct_fact'
@@ -61,7 +66,7 @@ export interface GoldenQuery {
   note?: string
 }
 
-export const GOLDEN_QUERIES: GoldenQuery[] = [
+const PINNED_GOLDEN_QUERIES: GoldenQuery[] = [
   // ─────────────────────────────────────────────────────────────────────────────
   // openstax-social-psychology — experimental social science.
   // Named studies and researchers give df=1 terms; the heavy shared vocabulary
@@ -541,3 +546,5 @@ export const GOLDEN_QUERIES: GoldenQuery[] = [
     evidenceSpans: [],
   },
 ]
+
+export const GOLDEN_QUERIES: GoldenQuery[] = querySnapshot?.queries ?? PINNED_GOLDEN_QUERIES
