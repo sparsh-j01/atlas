@@ -147,10 +147,6 @@ export const INJECTION_MARKERS = [
   'internal reference code',
 ]
 
-export function getGoldenDocument(id: string): GoldenDocument | undefined {
-  return GOLDEN_DOCUMENTS.find((d) => d.id === id)
-}
-
 export function fullTextOf(doc: GoldenDocument): string {
   return doc.pages.join('\n\n')
 }
