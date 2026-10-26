@@ -8,7 +8,7 @@ import type { Verdict } from '@/lib/ai/verify'
 // SCOPE, STATED SO IT IS NEVER OVERCLAIMED. This measures the PER-SLIDE generation loop of
 // `app/api/decks/generate-pdf/route.ts` — retrieval → relevance floor → prompt assembly →
 // emit_slide → validateSlide → verifySlide, with bounded regeneration. It does NOT run the
-// blueprint phase, `finalizeSlides` (production's dedupe and survival floor), `mapPool`
+// blueprint phase, `finalizeSlides` (production's dedupe and survival floor), `fillPool`
 // concurrency, or the persistence transaction. A golden query is injected where a blueprint
 // subtopic would be. Duplicate rates here are computed by this file, NOT by the shipped
 // `finalizeSlides` deduper. This is not an end-to-end deck measurement.
@@ -55,15 +55,6 @@ export type AbstentionClassification =
   | 'unsupported_generation' // Unanswerable, generated anyway
   | 'supported_generation' // Answerable, generated and judge-verified
   | 'inconclusive' // The provider never answered. Not evidence of anything.
-
-/** Classes that represent a measured pipeline decision. `inconclusive` is not one. */
-export const EVALUABLE_CLASSES: AbstentionClassification[] = [
-  'correct_abstention_floor',
-  'correct_abstention_judge',
-  'false_abstention',
-  'unsupported_generation',
-  'supported_generation',
-]
 
 export interface QueryGenerationOutcome {
   query: GoldenQuery
