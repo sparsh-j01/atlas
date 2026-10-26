@@ -380,7 +380,7 @@ async function main(): Promise<void> {
     scope:
       'Per-slide generation loop of app/api/decks/generate-pdf/route.ts — retrieval, relevance floor, ' +
       'prompt assembly, emit_slide, validateSlide, verifySlide, bounded regeneration. Does NOT run the ' +
-      'blueprint phase, finalizeSlides (production dedupe + survival floor), mapPool concurrency, or the ' +
+      'blueprint phase, finalizeSlides (production dedupe + survival floor), fillPool concurrency, or the ' +
       'persistence transaction. Golden queries are injected where blueprint subtopics would be. ' +
       'Duplicate rates are computed by this harness, not by the shipped deduper. Not an end-to-end deck measurement.',
     documents: documentSummaries,
