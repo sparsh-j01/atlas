@@ -45,6 +45,7 @@
 // must be re-checked on both counts — `book.license` is asserted in the corpus tests.
 
 import raw from './openstax-corpus.json'
+import { readFileSync } from 'node:fs'
 
 export interface CorpusBook {
   slug: string
@@ -87,10 +88,12 @@ interface CorpusFile {
   documents: CorpusDocument[]
 }
 
-const corpus = raw as CorpusFile
+// An explicit evaluation snapshot gets its own version/DB ids; never overwrite v1.
+const corpus = (process.env.EVAL_CORPUS_PATH
+  ? JSON.parse(readFileSync(process.env.EVAL_CORPUS_PATH, 'utf8'))
+  : raw) as CorpusFile
 
 export const CORPUS_VERSION = corpus.version
-export const CORPUS_BUILT_AT = corpus.builtAt
 export const ARCHIVE_BUILD = corpus.archiveBuild
 export const CORPUS_DOCUMENTS: CorpusDocument[] = corpus.documents
 
