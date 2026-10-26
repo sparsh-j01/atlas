@@ -19,7 +19,7 @@ const SLIDE_MAX_TOKENS = 1_000
  *   evidence → relevance floor → prompt assembly → generate → validateSlide → verifySlide (judge)
  *   with bounded regeneration (up to GEN_MAX_ATTEMPTS = 2).
  *
- * SCOPE: the per-slide loop only. No blueprint phase, no `finalizeSlides`, no `mapPool`, no
+ * SCOPE: the per-slide loop only. No blueprint phase, no `finalizeSlides`, no `fillPool`, no
  * persistence — see the header of `./metrics.ts`.
  *
  * A PROVIDER FAILURE IS NOT A RESULT. Every path that ends without a slide records WHY, and
@@ -116,7 +116,7 @@ export async function evaluateQueryGeneration(
       continue
     }
 
-    const draft = generatedToEditable(res.input, entry)
+    const draft = generatedToEditable(res.input)
     const schemaErrors = draft ? validateSlide(draft) : ['unusable_schema_payload']
 
     if (!draft || schemaErrors.length > 0) {
@@ -137,6 +137,8 @@ export async function evaluateQueryGeneration(
     if (draft.type === 'quiz_mcq') {
       const verdict = await verifySlide(client, {
         question: draft.prompt,
+          subtopic: entry.subtopic,
+          explanation: draft.explanation,
         options: draft.options,
         evidence,
         deadline,

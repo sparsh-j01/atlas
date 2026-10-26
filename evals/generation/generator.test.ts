@@ -48,7 +48,7 @@ function evidence(similarity = 0.82, charStart = 0, charEnd = 100): RetrievalRes
       score: 0.03,
       rank: 1,
       similarity,
-      source: { page: 1, section: 'Helping Behaviour', charStart, charEnd },
+      source: { documentId: 'doc', filename: 'doc.pdf', page: 1, section: 'Helping Behaviour', charStart, charEnd },
     },
   ]
 }
@@ -90,6 +90,8 @@ const judgeOk = (quote = 'Diffusion of responsibility is the tendency for no one
     answerable: true,
     correct_option_supported: true,
     exactly_one_correct: true,
+    matches_subtopic: true,
+    explanation_supported: true,
     supporting_quote: quote,
   },
 })
@@ -99,6 +101,8 @@ const judgeNo = (): GenerateResult => ({
     answerable: false,
     correct_option_supported: false,
     exactly_one_correct: false,
+    matches_subtopic: true,
+    explanation_supported: true,
     supporting_quote: '',
     reason: 'the extracts do not cover this',
   },
