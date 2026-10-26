@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs'
-import { RETRIEVAL_THRESHOLDS, checkThresholds } from './thresholds'
+import { RETRIEVAL_THRESHOLDS, checkThresholds, artifactCompatibility } from './thresholds'
 
 /**
  * Phase 2F — compare a retrieval run against the committed baseline artifact.
@@ -26,7 +26,14 @@ function main(): void {
   const currentPath = process.argv[2] ?? CURRENT_DEFAULT
   const baselinePath = process.argv[3] ?? BASELINE_DEFAULT
 
-  const results = checkThresholds(RETRIEVAL_THRESHOLDS, load(baselinePath), load(currentPath))
+  const baseline = load(baselinePath)
+  const current = load(currentPath)
+  const errors = artifactCompatibility(baseline, current)
+  if (errors.length) {
+    console.error(`Invalid comparison:\n${errors.join('\n')}`)
+    process.exit(2)
+  }
+  const results = checkThresholds(RETRIEVAL_THRESHOLDS, baseline, current)
 
   console.log('========== PHASE 2F: RETRIEVAL REGRESSION ==========')
   console.log(`Baseline: ${baselinePath}`)
@@ -36,7 +43,7 @@ function main(): void {
   for (const r of results) {
     const fmt = (x: number | null) => (x === null ? '  --  ' : x.toFixed(4))
     const sign = r.delta !== null && r.delta > 0 ? '+' : ''
-    const status = r.regressed ? 'REGRESSED' : r.armed ? 'ok       ' : 'report   '
+    const status = r.invalid ? 'INVALID  ' : r.regressed ? 'REGRESSED' : r.armed ? 'ok       ' : 'report   '
     console.log(`  ${status} ${r.label.padEnd(36)} ${fmt(r.baseline)} -> ${fmt(r.current)}  ${r.delta === null ? '' : sign + r.delta.toFixed(4)}`)
     console.log(`            ${r.note}`)
     if (r.armed) armed += 1
@@ -50,6 +57,7 @@ function main(): void {
     console.log('  they can only be armed from repeated `npm run eval:benchmark` runs.')
     console.log('  See evals/regression/thresholds.ts for the steps.')
   }
+  if (results.some((r) => r.invalid)) process.exit(2)
   if (regressed.length > 0) process.exit(1)
 }
 
