@@ -22,7 +22,7 @@ config({ path: '.env.local', quiet: true })
  * Splitting them is the point. A single cross-owner test passes because the owner join
  * worked, and would pass identically with the re-filter deleted.
  *
- * Cost: two query embeddings. No generation calls.
+ * Cost: three query embeddings (the scoped C3 re-embeds B's probe from cache). No generation calls.
  */
 
 const FOREIGN_OWNER = createHash('sha256').update('atlas:eval:foreign-tenant').digest('hex')
@@ -111,13 +111,41 @@ async function main(): Promise<void> {
     detail: `documentA chunks=${aIds.size}, documentB chunks=${bIds.size} (both expected > 0)`,
   })
 
+  // --- C: decks built from several files (2026-10-05). A LIST of ids is a new way to name
+  // documents, so each isolation property above is re-proven for it. ---------------------
+  const foreignList = await createRetriever([docAId, docBId], foreignOwnerId)
+  checks.push({
+    name: 'C1 foreign tenant naming a list of real ids loads nothing',
+    passed: foreignList.chunkCount() === 0 && foreignList.outline().length === 0,
+    detail: `chunkCount=${foreignList.chunkCount()}, sections=${foreignList.outline().length} (both expected 0)`,
+  })
+
+  const both = await createRetriever([docAId, docBId], ownerId)
+  checks.push({
+    name: 'C2 the owner\'s list loads exactly those files\' chunks',
+    passed: both.chunkCount() === aIds.size + bIds.size,
+    detail: `chunkCount=${both.chunkCount()} (expected ${aIds.size} + ${bIds.size})`,
+  })
+
+  // Retrieval scoped to A with B's subject matter: the per-file scoping a blueprint entry
+  // uses must not let the other file's chunks back in.
+  const scoped = await both.retrieve(probe.query, 8, { documentId: docAId })
+  const scopedLeak = scoped.filter((r) => !aIds.has(r.chunkId))
+  checks.push({
+    name: 'C3 retrieval scoped to one file returns only that file',
+    passed: scopedLeak.length === 0 && scoped.every((r) => r.source.documentId === docAId),
+    detail: `evidence=${scoped.length}, outside document A=${scopedLeak.length} (expected 0)`,
+  })
+
   console.log('---------- RESULTS ----------')
   for (const c of checks) {
     console.log(`  ${c.passed ? 'PASS' : 'FAIL'}  ${c.name}\n        ${c.detail}`)
   }
   const failed = checks.filter((c) => !c.passed)
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`)
-  if (failed.length > 0) process.exit(1)
+  // Explicit either way: the DB pool keeps the event loop alive, so returning from main()
+  // left a passing run hanging until something killed it.
+  process.exit(failed.length > 0 ? 1 : 0)
 }
 
 main().catch((err) => {
