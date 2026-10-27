@@ -109,9 +109,10 @@ describe('checkThresholds', () => {
     expect(checkThresholds(armed, baseline, better)[0].regressed).toBe(false)
   })
 
-  it('reports a missing metric without failing', () => {
+  it('marks a missing metric as an invalid comparison', () => {
     const r = checkThresholds(armed, baseline, { runs: {} })[0]
     expect(r.regressed).toBe(false)
+    expect(r.invalid).toBe(true)
     expect(r.note).toContain('not present in the current artifact')
   })
 })

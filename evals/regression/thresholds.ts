@@ -1,7 +1,7 @@
 /**
  * Phase 2F, master doc section 15 — regression thresholds.
  *
- * EVERY THRESHOLD HERE IS REPORT-ONLY, ON PURPOSE.
+ * Thresholds are armed only after repeated measurements (see provenance below).
  *
  * The master doc is explicit: do not invent thresholds before the first benchmark, and
  * this file is where that rule gets obeyed rather than restated. `evals/retrieval/metrics.ts`
@@ -125,7 +125,7 @@ export function readPath(obj: unknown, path: string): number | null {
     if (cur === null || typeof cur !== 'object') return null
     cur = (cur as Record<string, unknown>)[key]
   }
-  return typeof cur === 'number' ? cur : null
+  return typeof cur === 'number' && Number.isFinite(cur) ? cur : null
 }
 
 export interface RegressionResult {
@@ -138,6 +138,8 @@ export interface RegressionResult {
   delta: number | null
   /** True only when a tolerance is armed AND the movement exceeds it in the bad direction. */
   regressed: boolean
+  /** Missing or non-finite metrics invalidate the comparison. */
+  invalid: boolean
   /** Why this did not fail, when it did not. */
   note: string
 }
@@ -160,6 +162,7 @@ export function checkThresholds(
         current,
         delta: null,
         regressed: false,
+        invalid: true,
         note: baseline === null ? 'not present in the baseline artifact' : 'not present in the current artifact',
       }
     }
@@ -177,6 +180,7 @@ export function checkThresholds(
         current,
         delta: raw,
         regressed: false,
+        invalid: false,
         note: 'report-only: no tolerance yet — needs repeated retrieval runs to measure this metric\'s spread',
       }
     }
@@ -190,9 +194,43 @@ export function checkThresholds(
       current,
       delta: raw,
       regressed,
+      invalid: false,
       note: regressed
         ? `exceeds tolerance ${t.tolerance} (${t.provenance})`
         : `within tolerance ${t.tolerance}`,
     }
   })
+}
+
+/** Reject comparisons between different tasks or embedding spaces before grading deltas. */
+export function artifactCompatibility(baseline: unknown, current: unknown): string[] {
+  const get = (value: unknown, path: string): unknown => {
+    let cur = value
+    for (const key of path.split('.')) {
+      if (!cur || typeof cur !== 'object') return undefined
+      cur = (cur as Record<string, unknown>)[key]
+    }
+    return cur
+  }
+  const errors: string[] = []
+  for (const path of ['corpusVersion', 'goldenSetVersion', 'embedding.provider', 'embedding.model', 'embedding.version']) {
+    const a = get(baseline, path), b = get(current, path)
+    if (typeof a !== 'string' || !a || typeof b !== 'string' || !b) errors.push(`Missing manifest field: ${path}`)
+    else if (a !== b) errors.push(`Incompatible manifest field: ${path}`)
+  }
+  for (const path of ['embedding.dimension', 'reportTopK', 'relevanceFloor']) {
+    const a = readPath(baseline, path), b = readPath(current, path)
+    if (a === null || b === null) errors.push(`Missing manifest field: ${path}`)
+    else if (a !== b) errors.push(`Incompatible manifest field: ${path}`)
+  }
+  for (const arm of ['hybrid', 'vector', 'bm25']) {
+    for (const key of ['gradedQueries', 'negativeQueries']) {
+      const path = `runs.runA.pooled.${arm}.${key}`
+      const a = readPath(baseline, path), b = readPath(current, path)
+      if (a === null || b === null || !Number.isInteger(a) || !Number.isInteger(b) || a <= 0 || b <= 0)
+        errors.push(`Missing or empty denominator: ${path}`)
+      else if (a !== b) errors.push(`Incompatible denominator: ${path}`)
+    }
+  }
+  return errors
 }
