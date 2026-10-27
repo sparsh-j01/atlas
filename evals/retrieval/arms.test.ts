@@ -32,13 +32,14 @@ describe('arms pool configurations', () => {
         score: 0.9,
         rank: 1,
         similarity: 0.9,
-        source: { page: 1, section: 'S', charStart: 0, charEnd: 5 },
+        source: { documentId: 'doc', filename: 'doc.pdf', page: 1, section: 'S', charStart: 0, charEnd: 5 },
       },
     ]
 
     const mockRetriever: Retriever = {
       chunkCount: () => 10,
       outline: () => [],
+      sample: () => [],
       retrieve: vi.fn().mockResolvedValue(mockResult),
     }
 
@@ -61,6 +62,7 @@ describe('arms pool configurations', () => {
     const mockRetriever: Retriever = {
       chunkCount: () => 10,
       outline: () => [],
+      sample: () => [],
       retrieve: vi.fn().mockImplementation(async (_q, _k, options) => {
         options?.onTiming?.({ totalMs: 500, embeddingMs: 450, searchMs: 50, cacheStatus: 'cache_miss' })
         return []
