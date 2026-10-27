@@ -72,6 +72,8 @@ async function buildEvidence(fullText: string, pages: string[]): Promise<Retriev
     rank: i + 1,
     similarity: SYNTHETIC_SIMILARITY,
     source: {
+      documentId: 'injection-fixture',
+      filename: 'injection-fixture',
       page: c.pageStart,
       section: sections.find((s) => s.id === c.sectionId)?.heading ?? 'unknown',
       charStart: c.charStart,
