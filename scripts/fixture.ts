@@ -19,9 +19,8 @@ export const FIXTURE_OWNER = '00000000-0000-4000-8000-00000000dead'
 
 export type Fixture = { deckId: string; ownerId: string }
 
-/** A ready deck of the given slide types, owned by the synthetic creator. Types rather than
- *  a count, so a walk can build the mixed deck it needs — an unscored slide sitting between
- *  two scored ones is where the interesting cross-type bugs live. */
+/** A ready deck of the given slide types, owned by the synthetic creator. Option A is the
+ *  correct answer on every question. */
 export async function createFixtureDeck(
   sql: Sql,
   {
@@ -43,26 +42,17 @@ export async function createFixtureDeck(
     // Option ids are per-slide uuids exactly as the editor writes them, so an answer aimed
     // at the wrong slide fails the same id check it fails in a real game.
     const letters = ['A', 'B', 'C', 'D']
-    const config: SlideConfig =
-      type === 'poll'
-        ? {
-            // No is_correct on any option — that absence is what the walk asserts, so it is
-            // built the way the poll editor builds it rather than by stripping a key.
-            options: letters.map((t) => ({ id: randomUUID(), text: `Option ${t}` })),
-            timeLimitMs,
-            chart: 'donut',
-          }
-        : {
-            options: letters.map((t, j) => ({
-              id: randomUUID(),
-              text: `Option ${t}`,
-              is_correct: j === 0,
-            })),
-            timeLimitMs,
-            points: 1_000,
-            explanation: `Option A is correct on fixture question ${i + 1}.`,
-          }
-    const prompt = type === 'poll' ? `Fixture poll ${i + 1}` : `Fixture question ${i + 1}`
+    const config: SlideConfig = {
+      options: letters.map((t, j) => ({
+        id: randomUUID(),
+        text: `Option ${t}`,
+        is_correct: j === 0,
+      })),
+      timeLimitMs,
+      points: 1_000,
+      explanation: `Option A is correct on fixture question ${i + 1}.`,
+    }
+    const prompt = `Fixture question ${i + 1}`
     await sql`
       insert into slides (deck_id, position, type, prompt, config)
       values (${deck.id}, ${i}, ${type}, ${prompt}, ${sql.json(config)})`
