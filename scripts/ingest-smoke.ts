@@ -18,9 +18,13 @@
  *
  *   npm run dev
  *   npx tsx scripts/ingest-smoke.ts <file.pptx|file.pdf>
+ *
+ * It drives the same flow as the browser: sha256 → POST /api/decks/ingest (upload link) →
+ * PUT straight to Storage → POST /confirm → poll GET /process while the server works in the
+ * background. A file the smoke account already uploaded is reused, not re-processed.
  */
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { config } from 'dotenv'
@@ -108,25 +112,56 @@ async function main() {
   const sql = postgres(DB_URL!, { prepare: false })
 
   try {
-    // --- Upload through the real route: auth, size ladder, magic bytes, probe, storage ---
-    const form = new FormData()
-    form.append('file', new File([new Uint8Array(readFileSync(file))], path.basename(file), { type: mime }))
-    const up = await fetch(`${BASE_URL}/api/decks/ingest`, { method: 'POST', body: form, headers: { cookie } })
-    const uploaded = await up.json()
-    assert.equal(up.status, 200, `upload failed: ${JSON.stringify(uploaded)}`)
-    const id: string = uploaded.documentId
-    console.log(`uploaded  ${path.basename(file)} → ${id} (${uploaded.pageCount} ${format.unit}s)`)
+    // --- Upload exactly as the browser does: fingerprint, link, straight to Storage, confirm ---
+    const bytes = readFileSync(file)
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const link = await fetch(`${BASE_URL}/api/decks/ingest`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ filename: path.basename(file), size: bytes.length, type: mime, hash }),
+    })
+    const linked = await link.json()
+    assert.equal(link.status, 200, `upload link failed: ${JSON.stringify(linked)}`)
+    const id: string = linked.documentId
+    if (linked.duplicate) {
+      console.log(`reused    ${path.basename(file)} → ${id} (${linked.status}); delete it under Uploaded files to test a fresh upload`)
+      // A failed one is retried, exactly as the builder does.
+      if (String(linked.status).startsWith('failed_'))
+        assert.equal((await fetch(`${BASE_URL}/api/documents/${id}/process`, { method: 'POST', headers: { cookie } })).status, 200, 'retry refused')
+    } else {
+      if (linked.upload) {
+        const form = new FormData()
+        form.append('cacheControl', '3600')
+        form.append('', new File([new Uint8Array(bytes)], path.basename(file), { type: mime }))
+        const put = await fetch(linked.upload.signedUrl, { method: 'PUT', body: form, headers: { 'x-upsert': 'false' } })
+        assert.equal(put.status, 200, `storage upload failed: ${put.status}`)
+      }
+      const started = Date.now()
+      const confirm = await fetch(`${BASE_URL}/api/documents/${id}/confirm`, { method: 'POST', headers: { cookie } })
+      const confirmed = await confirm.json()
+      assert.equal(confirm.status, 200, `confirm failed: ${JSON.stringify(confirmed)}`)
+      assert.ok(!confirmed.error, `confirm: ${confirmed.error}`)
+      console.log(`uploaded  ${path.basename(file)} → ${id} (${confirmed.pageCount} ${format.unit}s), confirm ${Date.now() - started}ms`)
 
-    // --- Drive the resumable pipeline exactly as the browser does ---
-    let coverage: { totalPages: number; readPages: number; message: string } | undefined
-    for (let i = 0; i < 40; i++) {
-      const res = await fetch(`${BASE_URL}/api/documents/${id}/process`, { method: 'POST', headers: { cookie } })
-      const step = await res.json()
-      console.log(`  ${step.status}${step.paused ? ' (paused)' : ''}`)
-      assert.ok(!step.error, `ingestion failed: ${step.error}`)
-      if (step.done) { coverage = step.coverage; break }
-      assert.ok(step.paused, `stopped at "${step.status}" without pausing`)
+      // A repeated confirm (lost response, second tab) must not start a second run.
+      const again = await (await fetch(`${BASE_URL}/api/documents/${id}/confirm`, { method: 'POST', headers: { cookie } })).json()
+      assert.ok(!again.started, 'a repeated confirm started a second run')
     }
+
+    // --- Processing runs in the background; the browser only polls ---
+    const t0 = Date.now()
+    let last = ''
+    for (let i = 0; ; i++) {
+      assert.ok(Date.now() - t0 < 300_000, 'not ready within 5 minutes')
+      const step = await (await fetch(`${BASE_URL}/api/documents/${id}/process`, { headers: { cookie } })).json()
+      const line = `${step.status}${step.progress ? ` ${step.progress.done}/${step.progress.total}` : ''}${step.stalled ? ' (stalled)' : ''}`
+      if (line !== last) console.log(`  ${((Date.now() - t0) / 1000).toFixed(1)}s  ${line}`)
+      last = line
+      assert.ok(!String(step.status).startsWith('failed_'), `ingestion failed: ${step.error}`)
+      if (step.done) break
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+    console.log(`ready in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 
     // --- Verify what actually landed, rather than trusting the response ---
     const [doc] = await sql`select * from documents where id = ${id}`
@@ -174,7 +209,6 @@ async function main() {
       `verified  ${pages.length} pages · ${assets.length} assets · ${chunks.length} chunks · ` +
       `${embeddings} embeddings · ${ocrPages.length} OCR-derived · provenance ${chunks.length}/${chunks.length}`,
     )
-    if (coverage?.message) console.log(`coverage  ${coverage.message}`)
     console.log('PASS')
   } finally {
     await sql.end()
