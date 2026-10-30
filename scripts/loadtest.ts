@@ -2,9 +2,10 @@
  * Load test — the "prove 100+ concurrent" artifact.
  *
  * Spins up N simulated participants, each its own Supabase Realtime connection (so this
- * is a real concurrency test, not N channels on one socket). They join over HTTP, answer
- * the live slide, then the host reveals and we measure how long the leaderboard broadcast
- * takes to fan out to every client.
+ * is a real concurrency test, not N channels on one socket). They join over HTTP and answer
+ * the live question; at the server deadline the room moves on the way a real class does —
+ * the host console wakes /progress, every phone schedules its own fallback wake — and we
+ * measure how long the leaderboard broadcast takes to fan out to every client.
  *
  * The room is hosted over HTTP with the session's host token (`Authorization: Bearer`) —
  * the same routes the browser console uses, where the token rides an httpOnly cookie
@@ -20,6 +21,7 @@ import postgres from 'postgres'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { openSessionChannel } from '../lib/realtime/channels'
 import { EVENTS } from '../lib/realtime/events'
+import { ANSWER_GRACE_MS } from '../lib/realtime/session-state'
 import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 import { blocksRun, resolvePlan } from '../lib/loadtest-guard'
 
@@ -95,12 +97,13 @@ const pctl = (xs: number[], p: number) => {
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))]
 }
-const post = (path: string, body?: unknown, hostToken?: string) =>
+/** `token` is the host token, or a participant's client token on /progress. */
+const post = (path: string, body?: unknown, token?: string) =>
   fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(hostToken ? { Authorization: `Bearer ${hostToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -113,7 +116,10 @@ async function main() {
   await sweepStaleFixtures(sql, async (c, token) =>
     (await post(`/api/sessions/${c}/end`, undefined, token)).ok,
   )
-  const { deckId, ownerId } = await createFixtureDeck(sql, { types: ['quiz_mcq'] })
+  // Two questions, so the deadline moves the room on (slide:show) instead of ending it. The
+  // default 20 s window: clients join AFTER the question starts here, and a 10 s one made
+  // most of their answers late.
+  const { deckId, ownerId } = await createFixtureDeck(sql, { types: ['quiz_mcq', 'quiz_mcq'] })
   fixtureDeckId = deckId
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
@@ -123,22 +129,24 @@ async function main() {
     values (${deckId}, ${ownerId}, ${code}, 'lobby', ${hostToken})`
   room = { code, hostToken } // registered immediately, so every later exit path can close it
 
-  // Show the first slide — this is what opens the answer window and starts the server clock.
+  // Start — the console's one button. Opens the answer window and starts the server clock.
   const shown = await post(`/api/sessions/${code}/advance`, { index: 0 }, hostToken)
   if (!shown.ok) {
     console.error(`advance failed (${shown.status}): ${await shown.text()}`)
     await teardown()
     process.exit(1)
   }
-  const { slide, timeLimitMs } = (await shown.json()) as {
+  const { slide, timeLimitMs, serverStartedAt } = (await shown.json()) as {
     slide: { options: { id: string }[] }
     timeLimitMs: number
+    serverStartedAt: string
   }
   const optionIds = slide.options.map((o) => o.id)
   console.log(`Session ${code} live on fixture deck ${deckId} — ${optionIds.length} options.`)
 
   let joinOk = 0
   let answerOk = 0
+  const rejected = new Map<string, number>() // why, for answers the server refused
   // Joined over HTTP but never got a realtime connection. The signature of hitting the
   // project's concurrent-connection cap (200 on Free, 500 on Pro), which is a different
   // failure from a rejected join and has to be reported as its own number.
@@ -149,9 +157,12 @@ async function main() {
   const clients: SupabaseClient[] = []
   const subscribedIdx: number[] = [] // task indices that reached SUBSCRIBED (for the fan-out wait)
 
-  // T0 for the fan-out measurement — stamped just before the single reveal call, read by
+  // T0 for the fan-out measurement — stamped just before the host's deadline wake, read by
   // every client's leaderboard handler (shared closure; no per-channel plumbing).
-  let revealSentAt = 0
+  let progressSentAt = 0
+  // Per task: the client token (for its own fallback wake) and whether question 2 reached it.
+  const tokens: string[] = []
+  const movedOn: boolean[] = []
 
   // --- Message-rate instrumentation -------------------------------------------------
   // Supabase counts and rate-limits Realtime per DELIVERED COPY: one broadcast to this room
@@ -168,9 +179,6 @@ async function main() {
   // A client that drops mid-session and reconnects inside the 10s fan-out wait still
   // receives the leaderboard, so the old pass/fail could not see it. Record it instead.
   const drops: string[] = []
-  // Host-only events seen on the ROOM channel. Any nonzero value means the channel split
-  // regressed, whatever the latency numbers say.
-  let hostOnlyOnRoom = 0
   // Closed only counts as a drop while the run is still measuring: teardown closes all N
   // channels deliberately, and without this gate a clean run reports N disconnects.
   let measuring = true
@@ -186,6 +194,7 @@ async function main() {
         const data = await j.json()
         clientToken = data.clientToken
         participantId = data.participantId
+        tokens[i] = clientToken
         joinOk++
       } catch {
         return
@@ -196,24 +205,14 @@ async function main() {
       const channel = openSessionChannel(supabase, code)
       // Every event this phone would receive counts toward the project's messages/second,
       // so count them all, not just the one the assertion waits on.
-      for (const event of [EVENTS.SLIDE_SHOW, EVENTS.SLIDE_REVEAL, EVENTS.SESSION_ENDED]) {
-        channel.on('broadcast', { event }, countMessage)
-      }
-      // ANSWERED_COUNT and RESULTS_UPDATE publish to the host channel and must never arrive
-      // here. They stay subscribed because they are the two highest-frequency events in the
-      // app and this harness is the only thing measuring the room's message rate — but
-      // COUNTING a regression is not FAILING on one. Routed back onto the room channel they
-      // could stay under the rate limit, disconnect nobody, and exit 0 with the whole point
-      // of the split silently undone. Recorded separately, they fail the run outright.
-      for (const event of [EVENTS.ANSWERED_COUNT, EVENTS.RESULTS_UPDATE]) {
-        channel.on('broadcast', { event }, () => {
-          countMessage()
-          hostOnlyOnRoom++
-        })
-      }
-      channel.on('broadcast', { event: EVENTS.LEADERBOARD_UPDATE }, () => {
+      channel.on('broadcast', { event: EVENTS.SESSION_ENDED }, countMessage)
+      // Question 2 arriving is the fan-out being measured: one message per phone per
+      // transition (the standings go to the host channel only).
+      channel.on('broadcast', { event: EVENTS.SLIDE_SHOW }, ({ payload }) => {
         countMessage()
-        if (revealSentAt) leaderboardLatency.push(Date.now() - revealSentAt)
+        if (payload.index !== 1 || movedOn[i]) return
+        movedOn[i] = true // a real phone's fallback wake stands down here
+        if (progressSentAt) leaderboardLatency.push(Date.now() - progressSentAt)
         gotLeaderboard[i]?.()
       })
       let wasSubscribed = false
@@ -274,21 +273,37 @@ async function main() {
         optionId: optionIds[randomInt(optionIds.length)],
       }).then((r) => r.json())
       if (a?.accepted) answerOk++
+      else rejected.set(a?.reason ?? a?.error ?? 'unknown', (rejected.get(a?.reason ?? a?.error ?? 'unknown') ?? 0) + 1)
     }),
   )
 
-  console.log(`Joined ${joinOk}/${N}, answers accepted ${answerOk}/${joinOk}. Revealing…`)
+  console.log(`Joined ${joinOk}/${N}, answers accepted ${answerOk}/${joinOk}. Waiting for the question timer…`)
+  await new Promise((r) => setTimeout(r, Math.max(0, Date.parse(serverStartedAt) + timeLimitMs + ANSWER_GRACE_MS - Date.now())))
 
   // Key the resolvers by the SAME task index the broadcast handler uses (gotLeaderboard[i]).
   // `clients` is push-ordered by join-completion, so clients.map's index diverged from `i`
   // and most `done` promises never resolved — the wait always hit the 10s cap.
   const done = subscribedIdx.map((i) => new Promise<void>((resolve) => (gotLeaderboard[i] = resolve)))
-  revealSentAt = Date.now()
-  // fetch() resolves on HTTP errors, so an unchecked reveal turns a broken run into a
+  // Every phone schedules its own wake 1.2–2 s past the deadline, as use-session-progress
+  // does, and stands down if question 2 already arrived. Each one that still fires is a
+  // /progress call the broadcast failed to make unnecessary, so they are counted.
+  const expected = { index: 0, serverStartedAt }
+  let phoneWakes = 0
+  for (const i of subscribedIdx) {
+    setTimeout(() => {
+      if (movedOn[i] || !measuring) return
+      phoneWakes++
+      void post(`/api/sessions/${code}/progress`, expected, tokens[i]).catch(() => {})
+    }, 1200 + randomInt(800))
+  }
+  await new Promise((r) => setTimeout(r, 30)) // the host console's own wake delay
+  progressSentAt = Date.now()
+  // fetch() resolves on HTTP errors, so an unchecked wake turns a broken run into a
   // "0 clients received" result that still exits 0 — the run has to fail loudly instead.
-  const revealed = await post(`/api/sessions/${code}/reveal`, undefined, hostToken)
-  if (!revealed.ok) {
-    console.error(`reveal failed (${revealed.status}): ${await revealed.text()}`)
+  const progressed = await post(`/api/sessions/${code}/progress`, expected, hostToken)
+  const moved = progressed.ok ? await progressed.json() : null
+  if (!moved || moved.index !== 1) {
+    console.error(`progress failed (${progressed.status}): ${JSON.stringify(moved)}`)
     await teardown()
     process.exit(1)
   }
@@ -304,11 +319,12 @@ async function main() {
       `${subscribeFailed ? `  (${subscribeFailed} never connected — connection cap?)` : ''}` +
       `${presenceFailed ? `  (${presenceFailed} connected but Presence track failed — Presence limit?)` : ''}`,
   )
-  console.log(`Answers accepted:    ${answerOk}/${joinOk}`)
-  console.log(`Leaderboard fan-out: ${leaderboardLatency.length}/${joinOk} clients received`)
+  console.log(`Answers accepted:    ${answerOk}/${joinOk}${rejected.size ? `  (refused: ${[...rejected].map(([k, n]) => `${n} ${k}`).join(', ')})` : ''}`)
+  console.log(`Next-question fan-out: ${leaderboardLatency.length}/${joinOk} clients received`)
   console.log(`  p50: ${pctl(leaderboardLatency, 50)} ms`)
   console.log(`  p95: ${pctl(leaderboardLatency, 95)} ms`)
   console.log(`  max: ${Math.max(...leaderboardLatency, 0)} ms`)
+  console.log(`Phone fallback wakes: ${phoneWakes}/${subscribedIdx.length} still fired after the host's`)
 
   // The number that decides whether this scales, measured rather than assumed. Free allows
   // 100 msg/s, Pro 500; over the limit Supabase disconnects clients until the rate drops.
@@ -341,16 +357,8 @@ async function main() {
   // A run where clients dropped is not a pass, however good the latency numbers look — the
   // fan-out wait is 10s, which is long enough for a dropped client to reconnect and receive
   // the leaderboard anyway. That is what made this failure invisible before.
-  if (drops.length || hostOnlyOnRoom) {
-    if (drops.length) {
-      console.error(`\nFAILED: ${drops.length} client(s) left the channel mid-session.`)
-    }
-    if (hostOnlyOnRoom) {
-      console.error(
-        `\nFAILED: ${hostOnlyOnRoom} host-only message(s) reached the room channel — ` +
-          `answered:count / results:update are billed per phone, and the split regressed.`,
-      )
-    }
+  if (drops.length) {
+    console.error(`\nFAILED: ${drops.length} client(s) left the channel mid-session.`)
     process.exit(1)
   }
   process.exit(0)
