@@ -2,7 +2,8 @@
  * Live-session acceptance walk — the M3 "done when" proof, and the check that fails if a
  * later change loosens one of the guards. Unit tests cover the pure logic; this one drives
  * the real HTTP routes against a real database, because that's the only place the anti-cheat
- * gates (sanitized payloads, reveal-gate, host-only controls, answer dedupe) actually live.
+ * gates (sanitized payloads, deadline progression, host-only controls, answer dedupe, the
+ * post-quiz review) actually live.
  *
  * Prereqs: a running server (BASE_URL). The deck it runs on is created here (scripts/fixture),
  * so there's nothing to set up by hand and nothing of yours it can touch. Run:  npm run smoke
@@ -11,23 +12,14 @@ import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import { config } from 'dotenv'
 import postgres from 'postgres'
-import { createClient } from '@supabase/supabase-js'
-import { openHostChannel, openSessionChannel } from '../lib/realtime/channels'
-import { EVENTS, type AnsweredCountPayload, type ResultsUpdatePayload } from '../lib/realtime/events'
 import { createFixtureDeck, dropFixtureDeckIfIdle, sweepStaleFixtures } from './fixture'
 
 config({ path: '.env.local' })
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
 const DB_URL = process.env.DIRECT_URL ?? process.env.DATABASE_URL
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-// Asserted, never skipped: the broadcast checks below are the only coverage the live poll
-// feed has, and a walk that quietly dropped them would still print "all checks passed".
-if (!DB_URL || !SUPABASE_URL || !ANON) {
-  console.error(
-    'Missing DIRECT_URL / NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local',
-  )
+if (!DB_URL) {
+  console.error('Missing DIRECT_URL in .env.local')
   process.exit(1)
 }
 
@@ -42,7 +34,6 @@ const ok = (label: string) => {
 let room: { code: string; hostToken: string } | null = null
 let fixtureDeckId: string | null = null
 const sql = postgres(DB_URL!, { prepare: false })
-const supabase = createClient(SUPABASE_URL!, ANON!)
 
 async function teardown() {
   try {
@@ -52,7 +43,6 @@ async function teardown() {
   } catch {
     // Best effort: whatever is left standing gets swept at the start of the next run.
   }
-  await supabase.removeAllChannels().catch(() => {})
   await sql.end().catch(() => {})
 }
 
@@ -74,58 +64,16 @@ async function json(res: Response) {
   return { status: res.status, text, body: text ? JSON.parse(text) : null }
 }
 
-// Broadcasts observed over the anon key, on BOTH channels, tagged with which one carried
-// them. The rest of the walk is pure HTTP; this is the only place it can check what was
-// actually put on the wire, which is where the live-viz rules live.
-//
-// Two channels because the audiences differ: `room` is what a participant's phone receives,
-// `host` is the projector's private feed. Tagging matters — "the room was never told the
-// tally" and "the tally was published somewhere" are now different assertions, and the whole
-// anti-herding rule lives in the gap between them.
-//
-// Matched on slide as well as event name. Both live counters are addressed to a slide, and a
-// throttled broadcast for the previous slide can land after the next one is up — matching on
-// the name alone would let that stale message satisfy a wait, or fail a "never sent" check
-// the server actually honoured.
-type Observed = { event: string; payload: unknown; channel: 'room' | 'host' }
-const seen: Observed[] = []
-const forSlide =
-  (event: string, slideId: string, channel?: 'room' | 'host') => (s: Observed) =>
-    s.event === event &&
-    (s.payload as { slideId?: string })?.slideId === slideId &&
-    (!channel || s.channel === channel)
-const countOf = (event: string, slideId: string, channel?: 'room' | 'host') =>
-  seen.filter(forSlide(event, slideId, channel)).length
-
-async function waitFor(fn: () => boolean, ms = 5_000): Promise<boolean> {
-  const deadline = Date.now() + ms
-  while (!fn()) {
-    if (Date.now() >= deadline) return false
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  return true
-}
-
-async function waitForEvent(
-  event: string,
-  slideId: string,
-  channel?: 'room' | 'host',
-): Promise<unknown | null> {
-  await waitFor(() => seen.some(forSlide(event, slideId, channel)))
-  return seen.find(forSlide(event, slideId, channel))?.payload ?? null
-}
-
 async function main() {
   // Clear anything a previously interrupted run left behind (its own fixtures only), then
-  // build this run's deck. Three slides, and deliberately mixed: the navigation checks are
-  // the point of the walk (silently skipping them on a one-slide deck would report a pass
-  // that never tested advance/back), and the unscored poll sits BETWEEN two scored questions
-  // so the walk can prove a poll doesn't score and doesn't break a streak it sits inside of.
+  // build this run's deck. Two questions, so the walk sees the deadline move the room on
+  // AND end it, and a streak carry from one question to the next. 4 s each keeps it quick.
   await sweepStaleFixtures(sql, async (code, token) =>
     (await call(`${code}/end`, { token })).ok,
   )
   const { deckId, ownerId } = await createFixtureDeck(sql, {
-    types: ['quiz_mcq', 'poll', 'quiz_mcq'],
+    types: ['quiz_mcq', 'quiz_mcq'],
+    timeLimitMs: 4_000,
   })
   fixtureDeckId = deckId
 
@@ -135,46 +83,7 @@ async function main() {
     insert into sessions (deck_id, host_id, code, status, host_token)
     values (${deckId}, ${ownerId}, ${code}, 'lobby', ${hostToken})`
   room = { code, hostToken }
-  console.log(`Session ${code} on fixture deck ${deckId} (quiz · poll · quiz)\n`)
-
-  // Listen on BOTH channels, over the anon key. The room channel is what a participant's
-  // phone receives; the host channel is the projector's private feed. Subscribed before the
-  // first answer so the walk can assert on what was NOT sent as well as what was — a check
-  // that only ever waits for an event can't catch a tally leaking onto the room channel.
-  //
-  // Subscribing to the host channel with the ANON key is also the security check: migration
-  // 0005 lets anyone receive on `session:%`, which is deliberate (nothing here is secret), so
-  // this proves the split is a cost boundary and not a pretend security boundary. What keeps
-  // a live quiz's tally private is that it is never published at all, not who can hear it.
-  const channels = [
-    { name: 'room' as const, ch: openSessionChannel(supabase, code) },
-    { name: 'host' as const, ch: openHostChannel(supabase, code) },
-  ]
-  for (const { name, ch } of channels) {
-    for (const event of [EVENTS.ANSWERED_COUNT, EVENTS.RESULTS_UPDATE]) {
-      ch.on('broadcast', { event }, ({ payload }) => seen.push({ event, payload, channel: name }))
-    }
-  }
-  await Promise.all(
-    channels.map(
-      ({ name, ch }) =>
-        new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error(`${name} channel never subscribed`)),
-            10_000,
-          )
-          ch.subscribe((s) => {
-            if (s === 'SUBSCRIBED') {
-              clearTimeout(timer)
-              resolve()
-            } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
-              clearTimeout(timer)
-              reject(new Error(`${name} channel failed to subscribe: ${s}`))
-            }
-          })
-        }),
-    ),
-  )
+  console.log(`Session ${code} on fixture deck ${deckId} (quiz · quiz)\n`)
 
   // --- Lobby -------------------------------------------------------------------
   const joined = await json(await call(`${code}/join`, { body: { nickname: 'Alice' } }))
@@ -229,35 +138,37 @@ async function main() {
   // --- Host-only controls ------------------------------------------------------
   assert.equal((await call(`${code}/advance`, { body: { index: 0 } })).status, 404)
   assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: randomUUID() })).status, 404)
-  assert.equal((await call(`${code}/reveal`, { token: randomUUID() })).status, 404)
   assert.equal((await call(`${code}/end`, { token: randomUUID() })).status, 404)
-  ok('advance/reveal/end reject a missing or wrong host token (404, no existence oracle)')
+  ok('start/end reject a missing or wrong host token (404, no existence oracle)')
 
-  assert.equal((await call(`${code}/advance`, { body: { index: 99 }, token: hostToken })).status, 400)
-  assert.equal((await call(`${code}/advance`, { body: { index: -1 }, token: hostToken })).status, 400)
-  assert.equal((await call(`${code}/advance`, { body: { index: 'x' }, token: hostToken })).status, 400)
-  ok('advance rejects out-of-range and non-integer slide indexes')
-
-  // --- Show the first slide ----------------------------------------------------
+  // --- Start: the first question -------------------------------------------------
   const shown = await json(await call(`${code}/advance`, { body: { index: 0 }, token: hostToken }))
   assert.equal(shown.status, 200)
   assert.ok(!shown.text.includes('is_correct'), 'slide:show payload must never carry the answer key')
+  assert.ok(!shown.text.includes('explanation'), 'nor the explanation, which names the answer')
   const slide = shown.body.slide as { id: string; options: { id: string; text: string }[] }
+  const q1 = { index: 0, serverStartedAt: shown.body.serverStartedAt as string }
   assert.ok(slide.options.length >= 2)
-  ok('advance shows the slide, sanitized (no is_correct anywhere in the payload)')
+  assert.equal(shown.body.total, 2)
+  ok('start shows question 1, sanitized (no answer key, no explanation)')
+  assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: hostToken })).status, 409)
+  ok('a second start is refused: a running room cannot be restarted')
 
-  const beforeReveal = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
-  assert.equal(beforeReveal.body.status, 'active')
-  assert.equal(beforeReveal.body.correctOptionId, null, '/state must not disclose the answer pre-reveal')
-  assert.equal(beforeReveal.body.myOptionId, null)
-  assert.ok(!beforeReveal.text.includes('is_correct'))
-  ok('/state pre-reveal: slide present, correct option withheld')
+  const fresh = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
+  assert.equal(fresh.body.status, 'active')
+  assert.equal(fresh.body.myOptionId, null)
+  assert.ok(!fresh.text.includes('is_correct') && !('correctOptionId' in fresh.body), '/state has no answer key mid-quiz')
+  ok('/state mid-question: question present, no answer key')
 
   // A token from some other (or older) room must not read this one. Codes get recycled once
   // a session ends, so a phone that was offline at the close still holds a token for a code
   // that now belongs to a different game — it used to get 200 and render this room's slides.
   assert.equal((await call(`${code}/state`, { method: 'GET', token: randomUUID() })).status, 404)
   ok('/state rejects a token that names nobody in this session (recycled-code phones)')
+  // Room-code scanning: someone with no seat must not be able to tell a live code from a dead
+  // one. /state with no token used to return the live room — question included.
+  assert.equal((await call(`${code}/state`, { method: 'GET' })).status, 404)
+  ok('/state with no token is the same 404 as an unknown code')
 
   // --- Answering ---------------------------------------------------------------
   assert.equal((await call(`${code}/answer`, { body: { clientToken: alice, optionId: 'nope' } })).status, 400)
@@ -267,87 +178,56 @@ async function main() {
     403,
   )
   ok('answer rejects a bogus option, a missing token, and an unknown participant')
+  // Same answer for "no such room" as for "not in this room", while a question is OPEN — that
+  // is when the old order leaked (400 from a live room, 409 from a dead code).
+  assert.equal(
+    (await call(`000000/answer`, { body: { clientToken: randomUUID(), optionId: slide.options[0].id } })).status,
+    403,
+  )
+  ok('answer gives an unknown code the same 403 as an unknown participant')
 
-  const pick = slide.options[0].id
+  const pick = slide.options[0].id // fixture marks option A correct
   const first = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
   assert.equal(first.body.accepted, true)
   assert.equal(first.body.alreadyAnswered, undefined)
-  assert.ok(!('isCorrect' in first.body), 'own correctness must stay hidden until reveal')
+  assert.ok(!('isCorrect' in first.body), 'own correctness stays hidden until the review')
   const second = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: slide.options[1].id } }))
   assert.equal(second.body.alreadyAnswered, true, 'one answer per participant per slide')
   ok('answer accepted once, deduped on re-submit, correctness withheld')
 
-  // The anti-herding rule, checked on the wire rather than inferred from the route: a live
-  // quiz may broadcast HOW MANY have answered, never WHAT they answered.
-  const counted = (await waitForEvent(
-    EVENTS.ANSWERED_COUNT,
-    slide.id,
-    'host',
-  )) as AnsweredCountPayload | null
-  assert.ok(counted, 'a quiz answer broadcasts a live answered-count')
-  assert.equal(counted.slideId, slide.id)
-  assert.equal(counted.answered, 1)
-  assert.equal(
-    countOf(EVENTS.RESULTS_UPDATE, slide.id),
-    0,
-    'a live quiz must never broadcast its tally — the room would herd toward the leading answer',
-  )
-  // The cost boundary, asserted as an absence: this counter is for the projector, and putting
-  // it on the room channel would bill one message per phone per second for data no phone
-  // renders. That was the largest line in this app's Realtime spend.
-  assert.equal(
-    countOf(EVENTS.ANSWERED_COUNT, slide.id, 'room'),
-    0,
-    'the answered count is host-only — the room must not be billed for a counter it never draws',
-  )
-  ok('quiz answer counts on the host channel only, never the running distribution')
-
   const mid = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
   assert.equal(mid.body.myOptionId, pick, '/state replays the caller’s own pick for reconnect')
-  assert.equal(mid.body.correctOptionId, null)
-  ok('/state replays this participant’s own answer, still no answer key')
+  ok('/state replays this participant’s own answer')
 
-  // --- Reveal ------------------------------------------------------------------
-  const revealed = await json(await call(`${code}/reveal`, { token: hostToken }))
-  assert.equal(revealed.status, 200)
-  assert.ok(revealed.body.correctOptionId, 'reveal discloses the correct option')
-  assert.equal(revealed.body.aggregate.total, 1, 'one of the two players answered')
-  assert.equal(revealed.body.top.length, 2, 'both players are ranked, answered or not')
-  ok('reveal discloses the answer, tallies responses, ranks the leaderboard')
+  // --- Deadline progression ------------------------------------------------------
+  // Early: a phone whose clock runs fast wakes before the deadline. The server answers with
+  // how long is left by ITS clock and moves nothing.
+  const early = await json(await call(`${code}/progress`, { body: q1, token: alice }))
+  assert.equal(early.status, 200)
+  assert.ok(early.body.waitMs > 0, 'an early wake is told how long is left')
+  ok('an early wake is told to wait, by the server clock, and moves nothing')
+  // A wake naming a question that is not the live one catches the caller up instead.
+  const wrong = await json(await call(`${code}/progress`, { body: { ...q1, index: 1 }, token: alice }))
+  assert.equal(wrong.body.index, 0, 'a wake for the wrong question cannot skip ahead')
+  assert.equal((await call(`${code}/progress`, { body: q1, token: randomUUID() })).status, 404)
+  ok('a wake for the wrong question cannot skip, and a stranger cannot wake the room')
 
-  const late = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
-  assert.equal(late.status, 409, 'the reveal-gate closes the answer window immediately')
-  ok('answers are rejected after the reveal (no read-the-answer-then-submit window)')
+  await new Promise((r) => setTimeout(r, early.body.waitMs + 100))
+  const moved = await json(await call(`${code}/progress`, { body: q1, token: hostToken }))
+  assert.equal(moved.status, 200)
+  assert.equal(moved.body.index, 1, 'the deadline moves the room to question 2')
+  assert.ok(!moved.text.includes('is_correct') && !moved.text.includes('explanation'))
+  const q2 = { index: 1, serverStartedAt: moved.body.serverStartedAt as string }
+  const again = await json(await call(`${code}/progress`, { body: q1, token: alice }))
+  assert.equal(again.body.index, 1, 'a late duplicate wake for question 1 changes nothing')
+  ok('at the deadline the room moves on exactly once, still with no answer key')
 
-  const afterReveal = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
-  assert.equal(afterReveal.body.correctOptionId, revealed.body.correctOptionId)
-  ok('/state discloses the answer only once revealed')
-
-  // --- Navigation --------------------------------------------------------------
-  const next = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
-  assert.equal(next.status, 200)
-  assert.notEqual(next.body.slide.id, slide.id)
-  assert.equal(next.body.status, 'active', 'a fresh slide opens the answer window')
   const stale = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: pick } }))
-  assert.equal(stale.status, 400, 'an answer aimed at the previous slide must not score')
-  ok('advance moves on; an answer for the previous slide is rejected, not mis-scored')
+  assert.equal(stale.status, 400, 'an answer aimed at the closed question must not score')
+  ok('an answer for the closed question is rejected, not mis-scored')
 
-  // --- Poll (slide 2): unscored, and no answer key exists to leak ---------------
-  const poll = next.body.slide as {
-    id: string
-    type: string
-    points: number
-    chart?: string
-    options: { id: string }[]
-  }
-  assert.equal(poll.type, 'poll')
-  assert.equal(poll.chart, 'donut', 'the chart kind rides the sanitized slide so the room can draw it')
-  assert.equal(poll.points, 0, 'an unscored slide advertises no points')
-  assert.ok(!next.text.includes('is_correct'), 'a poll payload has no answer key, same as a quiz')
-  ok('advance shows the poll: chart kind present, points zero, no answer key')
-
-  // Read the score/streak straight off the row rather than inferring from the formula — the
-  // invariant is "the poll changed neither", and that is what the column says.
+  // --- Question 2: a second correct answer extends the streak --------------------------
+  // Read straight off the row rather than inferred from the formula.
   const aliceRow = async () => {
     const [r] = await sql<{ score: number; streak: number }[]>`
       select p.score, p.streak from participants p
@@ -355,120 +235,42 @@ async function main() {
       where s.code = ${code} and p.client_token = ${alice}`
     return r
   }
-  const beforeVote = await aliceRow()
-  assert.equal(beforeVote.streak, 1, 'the first question was answered correctly, so a streak is running')
-
-  const vote = await json(
-    await call(`${code}/answer`, { body: { clientToken: alice, optionId: poll.options[1].id } }),
-  )
-  assert.equal(vote.body.accepted, true, 'a poll vote is accepted like any other response')
-  assert.ok(!('isCorrect' in vote.body))
-  const afterVote = await aliceRow()
-  assert.equal(afterVote.score, beforeVote.score, 'a poll vote awards no points')
-  // The cross-type bug this whole slide arrangement exists to catch: routing a poll through
-  // the scoring path would score it as "wrong" and reset the streak to 0.
-  assert.equal(afterVote.streak, beforeVote.streak, 'a poll must not break a quiz streak')
-  ok('poll vote recorded: no points awarded, streak left intact')
-
-  // The M5 headline, on the wire: a poll publishes the distribution WHILE the window is
-  // still open. This is the results:update path M4 left deliberately unused.
-  const live = (await waitForEvent(
-    EVENTS.RESULTS_UPDATE,
-    poll.id,
-    'host',
-  )) as ResultsUpdatePayload | null
-  assert.ok(live, 'a poll vote broadcasts the live distribution')
-  assert.equal(live.slideId, poll.id)
-  assert.equal(live.aggregate.total, 1)
-  assert.equal(live.aggregate.counts[poll.options[1].id], 1, 'and it counts the option actually chosen')
-  assert.equal(
-    countOf(EVENTS.ANSWERED_COUNT, poll.id),
-    0,
-    'a poll sends the distribution instead of the bare count — not both',
-  )
-  // The cost boundary on the event that fires MOST — a poll republishes its chart on every
-  // vote that wins the throttle, so this is the biggest single line in the Realtime bill.
-  // The phones don't draw the chart (app/play/page.tsx has no handler); the projector does.
-  assert.equal(
-    countOf(EVENTS.RESULTS_UPDATE, poll.id, 'room'),
-    0,
-    'the live poll chart is host-only — the room must not be billed for a chart it never draws',
-  )
-  ok('poll broadcasts results:update live on the host channel, while voting is still open')
-
-  // Re-showing a poll that is still OPEN has to hand the projector the votes already in.
-  // slide:show carries no aggregate and the host clears its chart on it, so without a
-  // republished tally the projector would sit empty until the next vote happened to arrive.
-  const beforeReshow = countOf(EVENTS.RESULTS_UPDATE, poll.id, 'host')
-  const reshown = await json(await call(`${code}/advance`, { body: { index: 1 }, token: hostToken }))
-  assert.equal(reshown.body.status, 'active', 'an unrevealed poll re-opens, it was never closed')
-  assert.equal(reshown.body.aggregate.total, 1, 're-showing an open poll returns the votes so far')
-  assert.ok(
-    await waitFor(() => countOf(EVENTS.RESULTS_UPDATE, poll.id, 'host') > beforeReshow),
-    're-showing an open poll must rebroadcast the tally, not just return it to the host',
-  )
-  // Same audience as the live feed it replaces — the re-show path must not be the one place
-  // the chart leaks back onto the room channel.
-  assert.equal(
-    countOf(EVENTS.RESULTS_UPDATE, poll.id, 'room'),
-    0,
-    're-showing an open poll republishes to the host, not to 100 phones',
-  )
-  ok('re-showing an open poll republishes its votes to the projector')
-
-  const pollClose = await json(await call(`${code}/reveal`, { token: hostToken }))
-  assert.equal(pollClose.status, 200)
-  assert.equal(pollClose.body.correctOptionId, null, 'a poll has no answer to disclose')
-  assert.equal(pollClose.body.explanation, undefined)
-  assert.ok(!pollClose.text.includes('is_correct'))
-  assert.equal(pollClose.body.aggregate.total, 1, 'the vote is in the published tally')
-  assert.equal(pollClose.body.aggregate.counts[poll.options[1].id], 1, 'and against the option chosen')
-  const pollState = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
-  assert.equal(pollState.body.correctOptionId, null, '/state must not invent an answer key for a poll')
-  assert.equal(pollState.body.myOptionId, poll.options[1].id, '/state replays a poll vote too')
-  ok('closing a poll publishes the tally and still discloses no answer')
-
-  // --- Slide 3 (quiz): the streak survived the unscored slide -------------------
-  const third = await json(await call(`${code}/advance`, { body: { index: 2 }, token: hostToken }))
-  assert.equal(third.status, 200)
-  assert.equal(third.body.status, 'active')
-  const thirdPick = (third.body.slide.options as { id: string }[])[0].id // fixture marks option A correct
-  const scored = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: thirdPick } }))
+  const afterFirst = await aliceRow()
+  assert.equal(afterFirst.streak, 1, 'the first question was answered correctly, so a streak is running')
+  const secondPick = (moved.body.slide.options as { id: string }[])[0].id
+  const scored = await json(await call(`${code}/answer`, { body: { clientToken: alice, optionId: secondPick } }))
   assert.equal(scored.body.accepted, true)
-  const afterThird = await aliceRow()
-  assert.equal(afterThird.streak, 2, 'the streak continues across the poll instead of restarting at 1')
-  assert.ok(afterThird.score > afterVote.score, 'a correct answer after a poll still scores')
-  ok('a scored question after a poll keeps the streak running')
+  const afterSecond = await aliceRow()
+  assert.equal(afterSecond.streak, 2, 'consecutive correct answers extend the streak')
+  assert.ok(afterSecond.score > afterFirst.score, 'and score')
+  ok('a second correct answer scores and extends the streak')
 
-  // Going Back to a slide whose key is already public must NOT reopen scoring. Left open,
-  // anyone who sat that question out could submit the answer they watched being revealed.
-  const back = await json(await call(`${code}/advance`, { body: { index: 0 }, token: hostToken }))
-  assert.equal(back.body.slide.id, slide.id)
-  assert.equal(back.body.status, 'revealed', 're-showing a revealed slide must stay revealed')
-  assert.equal(back.body.correctOptionId, revealed.body.correctOptionId)
-  const cheat = await json(
-    await call(`${code}/answer`, {
-      body: { clientToken: abstainer, optionId: revealed.body.correctOptionId },
-    }),
-  )
-  assert.equal(cheat.status, 409, 'a player who sat the slide out must not score the disclosed answer')
-  ok('Back re-shows a revealed slide with its results, and cannot reopen scoring')
+  // --- The last deadline ends the quiz --------------------------------------------
+  await new Promise((r) => setTimeout(r, Date.parse(q2.serverStartedAt) + 4_000 + 850 - Date.now()))
+  const ended = await json(await call(`${code}/progress`, { body: q2, token: abstainer }))
+  assert.equal(ended.body.status, 'ended', 'any seat may wake the final deadline, and it ends the quiz')
+  assert.ok(Array.isArray(ended.body.leaderboard))
+  ok('the last question\'s deadline ends the session on its own')
 
-  // --- End ---------------------------------------------------------------------
-  const ended = await json(await call(`${code}/end`, { token: hostToken }))
-  assert.equal(ended.status, 200)
-  assert.ok(Array.isArray(ended.body.fullRanking))
-  assert.equal((await call(`${code}/state`, { method: 'GET', token: alice })).status, 404)
+  // After the end, a seat's /state is its own answer review (the answer key is public now);
+  // a token that names nobody here still gets the same 404 as an unknown code.
+  const review = await json(await call(`${code}/state`, { method: 'GET', token: alice }))
+  assert.equal(review.status, 200)
+  assert.equal(review.body.status, 'ended')
+  assert.equal(review.body.review?.correct, 2, 'the review grades this seat\'s own two answers')
+  const sat = await json(await call(`${code}/state`, { method: 'GET', token: abstainer }))
+  assert.equal(sat.body.review?.unanswered, 2, 'a seat that answered nothing sees both as unanswered')
+  assert.equal((await call(`${code}/state`, { method: 'GET', token: randomUUID() })).status, 404)
   assert.equal((await call(`${code}/join`, { body: { nickname: 'Bob' } })).status, 404)
-  ok('end closes the room: the code stops resolving for state and join')
+  ok('end closes the room to joins; each seat gets its own review, anyone else a 404')
 
-  // An ended room must stay ended. Both transitions compare-and-set on status, so a request
-  // that read the session before it closed can't write it back to active/revealed.
+  // An ended room must stay ended: start compare-and-sets on 'lobby', and progression only
+  // moves a live question.
   assert.equal((await call(`${code}/advance`, { body: { index: 0 }, token: hostToken })).status, 404)
-  assert.equal((await call(`${code}/reveal`, { token: hostToken })).status, 404)
+  assert.equal((await call(`${code}/answer`, { body: { clientToken: alice, optionId: secondPick } })).status, 403)
   const [after] = await sql`select status from sessions where code = ${code}`
   assert.equal(after.status, 'ended', 'nothing may resurrect an ended session')
-  ok('advance/reveal cannot bring an ended session back to life')
+  ok('nothing brings an ended session back to life')
   room = null // proven ended above; teardown only needs to drop the fixture deck now
 
   console.log(`\n${checks} checks passed.`)
