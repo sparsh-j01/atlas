@@ -1,15 +1,15 @@
 # Atlas
 
 A live, in-class quiz game where the questions come from **your own material**.
-Upload a lecture PDF or describe a topic, and AI builds a complete, editable deck of
-quiz questions and polls. Then run it live: students join from their phones with a
-room code, answer in real time, and watch results and a competitive leaderboard
-animate on the big screen.
+Upload your lecture files or describe a topic, and AI builds a complete, editable deck of
+quiz questions. Then run it live: students join from their phones with a room code,
+answer in real time, and watch a competitive leaderboard update on the big screen.
 
-Think Mentimeter's live visuals + Kahoot's competition, with an AI front door that
-builds the whole assessment from your lecture material.
+Think Kahoot's competition, with an AI front door that builds the whole assessment
+from your lecture material.
 
-> Status: early development.
+> Status: working prototype, feature-complete for now (October 2026). It has not been
+> used with a real class yet.
 
 ## What makes it different
 
@@ -21,34 +21,71 @@ Three things at once that nothing else combines:
 - **Grounded in your material.** Not generic internet questions — the deck is
   generated from the exact PDF or topic you give it, and you review and edit every
   question before it goes live.
-- **Competitive and visual.** Speed-based scoring, an animated leaderboard, and live
-  poll charts that fill in on screen as students respond.
+- **Competitive.** Speed-based scoring and a leaderboard that re-ranks after every
+  question.
 
 ## Highlights
 
 - **Two ways in** — host a live class, or join one with a room code + nickname (no signup to play).
-- **AI generation** — topic prompt or lecture PDF → a full, editable deck.
+- **AI generation** — a topic prompt, or up to five PDF or PowerPoint files, becomes a full,
+  editable deck. Questions are written from passages retrieved from your files, checked
+  against that source by a second model call, and saved with a link to the passage they came
+  from. Image-only slides are read with OCR; fully scanned PDFs are turned away.
 - **Built for scale** — designed for 100+ concurrent students per room, and exercised by a
   load-test harness that drives real Realtime connections rather than simulated ones.
-- **Real-time everything** — synced questions, live-animating charts, a live leaderboard.
-- **Slide types** — MCQ quiz (scored, with leaderboard) and poll (more to come).
+- **Real-time everything** — synced questions, a shared timer, a live leaderboard.
+- **Automatic classroom flow** — start once; each timer moves the whole class to the next
+  question. The teacher sees ranked names and scores, updated after each question.
+- **Review and lecture planning** — students review their answers and explanations after
+  the quiz; teachers see class patterns and individual performance with follow-up suggestions.
+- **Questions** — multiple choice, scored on correctness and speed.
 - **Moderation** — nickname filtering and a host kick, because the room is on a projector.
+
+## How the AI part was tested
+
+The retrieval and generation pipeline was benchmarked on 50 labelled requests over three
+OpenStax textbook sections (about 131k tokens in total). Vector and hybrid search both found
+the labelled evidence in the top 8 results for all 40 answerable requests; hybrid did not
+rank it any earlier than vector alone. With the same model and requests, the retrieval
+pipeline produced an accepted question for 40/40 answerable requests, against 38/40 when the
+whole document was sent instead, and used 92% fewer input tokens. Both versions held back a
+question for 9 of the 10 requests the source could not answer, but only the retrieval
+version did so by recognising the answer was missing (8 of 10); the whole-document version
+wrote an off-topic question each time and was caught by the checker.
+
+That is a small benchmark with AI-assisted labels and a model-based judge, so treat it as a
+check on this pipeline, not a general accuracy figure. The harness is in `evals/`.
 
 ## Stack
 
-Next.js (App Router) + TypeScript · Supabase (Postgres, Realtime, Auth, Storage) ·
-Claude API · Vercel.
+Next.js 16 (App Router) + React 19 + TypeScript · Tailwind v4 · Supabase (Postgres with
+pgvector, Realtime, Auth, Storage) · Drizzle · Gemini (generation and embeddings) · Vercel.
 
 ## Development
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in your Supabase project values
+cp .env.example .env.local   # then fill in the values below
+npm run db:migrate           # apply the schema to your Supabase database
 npm run dev                  # http://localhost:3000
 ```
 
-Needs a Supabase project (Postgres + Realtime). Scripts: `dev`, `build`, `lint`,
-`typecheck`, `test`, plus `db:generate` / `db:migrate` for schema changes.
+`.env.example` documents each variable. The ones you need:
+
+- **Supabase** — `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (pooled) and `DIRECT_URL` (direct, used by
+  migrations).
+- **AI** — `GEMINI_API_KEY`. `AI_MONTHLY_BUDGET_USD` (default 5) is a hard monthly cap on
+  AI spend across the whole app; once it is reached, generation is refused until the next
+  month or until you raise it.
+- **Optional** — `CRON_SECRET` for the daily cleanup of abandoned uploads (scheduled in
+  `vercel.json`), `ALERT_WEBHOOK_URL` for spend alerts, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+  for a bot check on sign-in.
+
+Scripts: `dev`, `build`, `lint`, `typecheck`, `test`, `db:generate` / `db:migrate` for
+schema changes, `smoke` (walks a full live session against a running dev server),
+`loadtest` (simulated students over real Realtime connections) and `eval:*` for the
+benchmarks.
 
 ## Auth setup
 
