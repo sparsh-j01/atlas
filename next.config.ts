@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Phones on the same Wi-Fi or hotspot open the dev server by the laptop's private IP for a
+  // local class (docs/LOCAL-CLASS-GUIDE.md). Next 16 blocks dev assets for any hostname but
+  // localhost, so those pages loaded but never became interactive. Private ranges only, and
+  // dev only: this option has no effect on `next build` / `next start`.
+  allowedDevOrigins: ['192.168.*.*', '10.*.*.*', '172.*.*.*'],
   async headers() {
     const isProd = process.env.NODE_ENV === 'production'
 
