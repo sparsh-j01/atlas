@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { confirmParamsSchema } from '@/lib/auth-validation'
+import { confirmParamsSchema, requestOrigin } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
 import { checkLimit, clientIp } from '@/lib/rate-limit'
 
@@ -10,7 +10,8 @@ import { checkLimit, clientIp } from '@/lib/rate-limit'
 // and opens the mail on their phone has none. A token hash verifies anywhere.
 // Set the Supabase email templates to point here — see README, "Auth setup".
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = requestOrigin(request)
 
   // Anyone can type this URL, so nothing in it is trusted: `type` is an allowlist (it goes
   // straight to verifyOtp), and `next` is forced back to a path on this origin, which is

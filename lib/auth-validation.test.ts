@@ -3,6 +3,7 @@ import {
   confirmParamsSchema,
   nextPathSchema,
   oauthSignInParamsSchema,
+  requestOrigin,
   signInSchema,
   signUpSchema,
 } from './auth-validation'
@@ -95,4 +96,17 @@ describe('oauthSignInParamsSchema', () => {
       expect(oauthSignInParamsSchema.parse({ provider: 'google', next }).next).toBe('/dashboard')
     },
   )
+})
+
+describe('requestOrigin', () => {
+  const req = (host: string | null) =>
+    new Request('http://localhost:3000/auth/signin', host ? { headers: { host } } : undefined)
+
+  it('uses the address the browser opened, not the one next dev was started on', () => {
+    expect(requestOrigin(req('10.107.18.163:3000'))).toBe('http://10.107.18.163:3000')
+  })
+  it('falls back to request.url without a usable Host', () => {
+    expect(requestOrigin(req(null))).toBe('http://localhost:3000')
+    expect(requestOrigin(req('evil.test/@x'))).not.toContain('@')
+  })
 })

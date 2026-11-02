@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { nextPathSchema } from '@/lib/auth-validation'
+import { nextPathSchema, requestOrigin } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
 import { checkLimit, clientIp } from '@/lib/rate-limit'
 
@@ -15,7 +15,8 @@ import { checkLimit, clientIp } from '@/lib/rate-limit'
 // Links that carry a `token_hash` instead go to ../confirm, which is the path that also
 // works when the mail is opened on a different device.
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = requestOrigin(request)
   const code = searchParams.get('code')
   // Same guard as ../confirm, from the same schema: a same-origin path or the dashboard.
   const next = nextPathSchema.parse(searchParams.get('next'))

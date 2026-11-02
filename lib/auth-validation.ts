@@ -94,3 +94,19 @@ export const oauthSignInParamsSchema = z.object({
   provider: oauthProviderSchema,
   next: nextPathSchema,
 })
+
+/**
+ * The origin the auth routes redirect to. Not `new URL(request.url).origin`: under `next dev`
+ * Next builds request.url from the address the server was started with (`localhost`), so a
+ * teacher signed in at the laptop's network IP was sent back to localhost, where the PKCE
+ * cookie isn't. The Host header is the address the browser actually used. On Vercel
+ * request.url is already built from Host, so this changes nothing there. A forged Host moves
+ * no real login: browsers don't let pages set it, and Supabase's redirect allowlist still
+ * checks redirect_to. An unparseable Host is ignored by the URL setter.
+ */
+export function requestOrigin(request: Request): string {
+  const url = new URL(request.url)
+  const host = request.headers.get('host')
+  if (host) url.host = host
+  return url.origin
+}

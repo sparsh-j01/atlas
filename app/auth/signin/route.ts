@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { oauthSignInParamsSchema } from '@/lib/auth-validation'
+import { oauthSignInParamsSchema, requestOrigin } from '@/lib/auth-validation'
 import { createClient } from '@/lib/supabase/server'
 import { checkLimit, clientIp } from '@/lib/rate-limit'
 
@@ -21,7 +21,8 @@ import { checkLimit, clientIp } from '@/lib/rate-limit'
 // where /auth/callback will only exchange a code against the verifier cookie held by the
 // browser that began this request.
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = requestOrigin(request)
 
   const params = oauthSignInParamsSchema.safeParse({
     provider: searchParams.get('provider'),
